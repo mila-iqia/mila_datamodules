@@ -3,50 +3,175 @@
 from __future__ import annotations
 
 import typing
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, TypeVar
+from typing import Any, Callable, Literal, TypedDict, TypeVar
 
 import cv2  # noqa
 import ffcv
 import ffcv.transforms
 import numpy as np
 import torch
+from ffcv.fields import Field, IntField, RGBImageField
 from ffcv.fields.basics import IntDecoder
 from ffcv.fields.rgb_image import RandomResizedCropRGBImageDecoder
 from ffcv.loader import Loader, OrderOption
 from ffcv.pipeline.operation import Operation
+from ffcv.traversal_order import QuasiRandom
+from ffcv.traversal_order.base import TraversalOrder
+from ffcv.writer import DatasetWriter
 from pl_bolts.datasets import UnlabeledImagenet
-from torch import nn
-from torch.utils.data import DataLoader
-from typing_extensions import TypeGuard
+from torch import Tensor, nn
+from torch.utils.data import DataLoader, Dataset
 
-from ..imagenet import ImagenetDataModule
-from .ffcv_config import DatasetWriterConfig, FfcvLoaderConfig, ImageResolutionConfig
+from .imagenet import ImagenetDataModule
 
 if typing.TYPE_CHECKING:
     from pytorch_lightning import Trainer
 
-
-# FIXME: This is ugly. Replace with this, if possible.
-# from pl_bolts.datamodules.imagenet_datamodule import imagenet_normalization
-# IMAGENET_MEAN = imagenet_normalization().mean * 255
-# IMAGENET_STD = imagenet_normalization().std * 255
-
+# FIXME: I don't like hard-coded values.
 IMAGENET_MEAN = np.array([0.485, 0.456, 0.406]) * 255
 IMAGENET_STD = np.array([0.229, 0.224, 0.225]) * 255
-DEFAULT_CROP_RATIO = 224 / 256
+
+
+@dataclass(frozen=True, unsafe_hash=True)
+class DatasetWriterConfig:
+    """Arguments to give the FFCV DatasetWriter."""
+
+    max_resolution: int
+    """Max image side length."""
+
+    num_workers: int = field(default=16, hash=False)
+    """ Number of workers to use. """
+
+    chunk_size: int = 100
+    """ Chunk size for writing. """
+
+    write_mode: Literal["raw", "smart", "jpg"] = "smart"
+
+    jpeg_quality: int = 90
+    """ Quality of JPEG images. """
+
+    subset: int = -1
+    """ How many images to use (-1 for all). """
+
+    compress_probability: float | None = None
+
+    def write(self, dataset: Dataset, write_path: str | Path):
+        write_path = Path(write_path)
+        writer = DatasetWriter(
+            str(write_path),
+            {
+                "image": RGBImageField(
+                    write_mode=self.write_mode,
+                    max_resolution=self.max_resolution,
+                    compress_probability=self.compress_probability or 0.0,
+                    jpeg_quality=self.jpeg_quality,
+                ),
+                "label": IntField(),
+            },
+            num_workers=self.num_workers,
+        )
+        writer.from_indexed_dataset(dataset, chunksize=self.chunk_size)
+
+
+class FfcvLoaderConfig(TypedDict, total=False):
+    os_cache: bool
+    """ Leverages the operating system for caching purposes. This is beneficial when there is 
+    enough memory to cache the dataset and/or when multiple processes on the same machine training
+    using the same dataset. See https://docs.ffcv.io/performance_guide.html for more information.
+    """
+
+    order: TraversalOrder
+    """Traversal order, one of: SEQUENTIAL, RANDOM, QUASI_RANDOM
+    QUASI_RANDOM is a random order that tries to be as uniform as possible while minimizing the
+    amount of data read from the disk. Note that it is mostly useful when `os_cache=False`.
+    Currently unavailable in distributed mode.
+    """
+
+    distributed: bool
+    """For distributed training (multiple GPUs). Emulates the behavior of DistributedSampler from
+    PyTorch.
+    """
+
+    seed: int
+    """Random seed for batch ordering."""
+
+    indices: Sequence[int]
+    """Subset of dataset by filtering only some indices. """
+
+    custom_fields: Mapping[str, type[Field]]
+    """Dictonary informing the loader of the types associated to fields that are using a custom
+    type.
+    """
+
+    drop_last: bool
+    """Drop non-full batch in each iteration."""
+
+    batches_ahead: int
+    """Number of batches prepared in advance; balances latency and memory. """
+
+    recompile: bool
+    """Recompile every iteration. This is necessary if the implementation of some augmentations
+    are expected to change during training.
+    """
+
+
+@dataclass(frozen=True, unsafe_hash=True)
+class ImageResolutionConfig:
+    """Configuration for the resolution of the images when loading from the written ffcv dataset."""
+
+    min_res: int = 160
+    """the minimum (starting) resolution"""
+
+    max_res: int = 224
+    """the maximum (final) resolution"""
+
+    end_ramp: int = 0
+    """ when to stop interpolating resolution. Set to 0 to disable this feature. """
+
+    start_ramp: int = 0
+    """ when to start interpolating resolution """
+
+    def get_resolution(self, epoch: int | None) -> int:
+        """Copied over from the FFCV example, where they ramp up the resolution during training.
+        If `epoch` is None, or `end_ramp` is 0, the ramp-up is disabled and give back the max res.
+        """
+        assert self.min_res <= self.max_res
+        if epoch is None:
+            return self.max_res
+        if epoch >= self.end_ramp:
+            return self.max_res
+
+        if epoch <= self.start_ramp:
+            return self.min_res
+
+        # otherwise, linearly interpolate to the nearest multiple of 32
+        interp = np.interp(
+            [epoch], [self.start_ramp, self.end_ramp], [self.min_res, self.max_res]
+        )
+        final_res = int(np.round(interp[0] / 32)) * 32
+        return final_res
 
 
 class ImagenetFfcvDataModule(ImagenetDataModule):
     """Wrapper around the ImageNetDataModule that uses ffcv for the Train dataloader.
+
+    Iterating over the dataloader can be a *lot* (~10x) faster than PyTorch (especially so if the
+    image resolution is ramped up, see below).
+
 
     1. Copies the Imagenet dataset to SLURM_TMPDIR (same as parent class)
     2. Writes the dataset in ffcv format at SLURM_TMPRID/imagenet/train.ffcv
     3. Train dataloader reads from that file.
 
     The image resolution can be changed dynamically at each epoch (to match the ffcv-imagenet repo)
-    based on the values in a configuration class. This can also be turned off.
+    based on the values in a configuration class.
+
+    BUG: Using this DataModule with a PyTorch-Lightning Trainer is not currently performing well,
+    even though the
+
     """
 
     def __init__(
@@ -106,17 +231,17 @@ class ImagenetFfcvDataModule(ImagenetDataModule):
                 f"Can't use cuda and old-style torchvision transforms. Upgrade "
                 f"torchvision to a more recent version and pass a nn.Sequential instead."
             )
+        elif ffcv_train_transforms is None:
+            # Only using torchvision transforms.
+            pass
         else:
-            if ffcv_train_transforms is None:
-                # Only using torchvision transforms.
-                pass
-            else:
-                # Using both torchvision transforms and ffcv transforms.
-                pass
+            # Using both torchvision transforms and ffcv transforms.
+            pass
 
         self.ffcv_train_transforms: Sequence[Operation] = ffcv_train_transforms or []
         if isinstance(train_transforms, nn.Module):
-            self._train_transforms = train_transforms.to(self.device)
+            train_transforms = train_transforms.to(self.device)
+        self.train_transforms = train_transforms
 
         self.img_resolution_config = img_resolution_config or ImageResolutionConfig()
         self.writer_config = writer_config or DatasetWriterConfig(
@@ -130,10 +255,11 @@ class ImagenetFfcvDataModule(ImagenetDataModule):
         )
         self.loader_config = loader_config or FfcvLoaderConfig(
             # NOTE: Can't use QUASI_RANDOM when using distributed=True atm.
-            order=OrderOption.QUASI_RANDOM,  # type: ignore
+            # NOTE: RANDOM is a LOT slower than QUASI_RANDOM.
+            order=OrderOption.QUASI_RANDOM,
             os_cache=False,
             drop_last=True,
-            distributed=False,
+            distributed=True,
             batches_ahead=3,
             seed=1234,
         )
@@ -145,12 +271,10 @@ class ImagenetFfcvDataModule(ImagenetDataModule):
 
     def prepare_data(self) -> None:
         super().prepare_data()
-        # NOTE: Might not need to do this for val/test, since we can just always use the standard,
-        # regular dataloaders. Just need to make sure taht the train/validation split is done the
-        # same way for both.
+        # NOTE: We don't do this for val/test, since we can just always use the standard pytorch
+        # train_done.txt and dataloaders.
         if not _done_file(self._train_file).exists():
-            # Writes train.ffcv
-            # train.ffcv_done.txt doesn't exist, so we need to rewrite the train.ffcv file
+            # done txt file doesn't exist, so we need to rewrite the train.ffcv file
             _write_dataset(
                 super().train_dataloader(),
                 self._train_file,
@@ -158,23 +282,46 @@ class ImagenetFfcvDataModule(ImagenetDataModule):
             )
             _done_file(self._train_file).touch()
 
-    def train_dataloader(self) -> Iterable:
+    def setup(self, stage: str) -> None:
+        super().setup(stage)
+        if self.loader_config["distributed"]:
+            this_gpu = self.trainer.local_rank if self.trainer else 0
+            torch.distributed.init_process_group(
+                "nccl", rank=self.gpu, world_size=torch.cuda.device_count()
+            )
+            torch.cuda.set_device(this_gpu)
+
+    def train_dataloader(self) -> Iterable[tuple[Tensor, Tensor]]:
         current_epoch = self.current_epoch
         res = self.img_resolution_config.get_resolution(current_epoch)
         print(
             (f"Epoch {current_epoch}: " if current_epoch is not None else "")
             + f"Loading images at {res}x{res} resolution"
         )
-        image_pipeline: list[Operation] = [
+        image_pipeline: list[Operation | nn.Module] = [
             RandomResizedCropRGBImageDecoder((res, res)),
             *self.ffcv_train_transforms,
         ]
-        label_pipeline: list[Operation] = [
+        label_pipeline: list[Operation | nn.Module] = [
             IntDecoder(),
             ffcv.transforms.ToTensor(),
             ffcv.transforms.Squeeze(),
-            ffcv.transforms.ToDevice(self.device, non_blocking=True),
         ]
+        if self.trainer is None:
+            # When using PyTorch-Lightning, we don't want to add this ToDevice operation, because
+            # PL already does it.
+            label_pipeline.append(
+                ffcv.transforms.ToDevice(self.device, non_blocking=True)
+            )
+
+        use_extra_tv_transforms = False
+        if isinstance(self.train_transforms, nn.Module):
+            # Include the 'new-style' transform modules in the image pipeline of ffcv.
+            image_pipeline.append(self.train_transforms)
+        elif self.train_transforms:
+            # We have some 'old-style' torchvision transforms.
+            use_extra_tv_transforms = True
+
         loader = Loader(
             str(self._train_file),
             pipelines={"image": image_pipeline, "label": label_pipeline},
@@ -183,9 +330,10 @@ class ImagenetFfcvDataModule(ImagenetDataModule):
             **self.loader_config,
         )
 
-        if self._train_transforms:
+        if use_extra_tv_transforms:
+            assert self.train_transforms
             # Apply the Torchvision transforms after the FFCV transforms.
-            return ApplyTransformLoader(loader, self._train_transforms)
+            return ApplyTransformLoader(loader, self.train_transforms)
         return loader
 
     def val_dataloader(self) -> DataLoader:
@@ -201,11 +349,6 @@ class ImagenetFfcvDataModule(ImagenetDataModule):
             return self.trainer.current_epoch
         return None
 
-
-from typing import Tuple, TypeVar
-
-from torch import nn
-from torch.utils.data import DataLoader
 
 T = TypeVar("T")
 O = TypeVar("O")
@@ -243,9 +386,3 @@ def _write_dataset(
 
 def _done_file(path: Path) -> Path:
     return path.with_name(path.name + "_done.txt")
-
-
-def _is_sequence_of_operators(ops: Any) -> TypeGuard[Sequence[Operation]]:
-    return isinstance(ops, (list, tuple)) and all(
-        isinstance(op, Operation) for op in ops
-    )

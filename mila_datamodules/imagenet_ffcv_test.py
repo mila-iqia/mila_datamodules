@@ -7,7 +7,30 @@ import pytest
 import torch
 from pytorch_lightning import LightningModule, Trainer
 from torch import Tensor, nn
+from torch.optim.adam import Adam
+from torchvision.models import resnet18
 from .imagenet_ffcv import ImagenetFfcvDataModule
+
+
+class Model(LightningModule):
+    def __init__(self):
+        super().__init__()
+        self.encoder = resnet18()
+        self.loss = nn.CrossEntropyLoss()
+
+    def forward(self, x: Tensor) -> Tensor:  # type: ignore
+        return self.encoder(x)
+
+    def training_step(self, batch: tuple[Tensor, Tensor], batch_idx: int) -> Tensor:  # type: ignore
+        x, y = batch
+        # Check that the memory address is the same as the source tensor, e.g. that no extra
+        # allocation or move was made between the loader and the model.
+        logits = self(x)
+        loss = self.loss(logits, y)
+        return loss
+
+    def configure_optimizers(self):
+        return Adam(self.parameters(), lr=0.001)
 
 
 @pytest.mark.parametrize("accelerator", ["gpu", "auto"])
@@ -29,7 +52,7 @@ def test_no_extra_copy(strategy: str | None, devices: int | str, accelerator: st
         enable_checkpointing=False,
     )
     batch_size = 4
-
+    # Note: Uncomment to test with the same thing.
     # datamodule = ImagenetFfcvDataModule(batch_size=batch_size, num_workers=4)
     # datamodule.prepare_data()
     # batches = list(itertools.islice(datamodule.train_dataloader(), num_batches))
@@ -41,17 +64,10 @@ def test_no_extra_copy(strategy: str | None, devices: int | str, accelerator: st
         for _ in range(num_batches)
     ]
 
-    class DummyModel(LightningModule):
+    class DummyModel(Model):
         def __init__(self, num_classes: int = 1000):
-            super().__init__()
-            self.fc = nn.Sequential(
-                nn.Flatten(), nn.LazyLinear(out_features=num_classes)
-            )
-            self.loss = nn.CrossEntropyLoss()
+            super().__init__(num_classes=num_classes)
             self.batches_seen = 0
-
-        def forward(self, x):
-            return self.fc(x)
 
         def training_step(self, batch: tuple[Tensor, Tensor], batch_idx: int) -> Tensor:
             x, y = batch
@@ -72,13 +88,7 @@ def test_no_extra_copy(strategy: str | None, devices: int | str, accelerator: st
             assert y.is_contiguous() == ref_y.is_contiguous() == True
             assert x.data_ptr() == ref_x.data_ptr()
             assert y.data_ptr() == ref_y.data_ptr()
-            logits = self(x)
-            loss = self.loss(logits, y)
-            self.batches_seen += 1
-            return loss
-
-        def configure_optimizers(self):
-            return torch.optim.SGD(self.parameters(), lr=0.001)
+            return super().training_step((x, y), batch_idx)
 
     model = DummyModel()
     model.cuda()

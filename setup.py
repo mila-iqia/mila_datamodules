@@ -11,6 +11,7 @@ setup(
     install_requires=[
         "pytorch-lightning==1.6.0",
         "lightning-bolts==0.5",
+        
     ],  
     extras_require={
         "ffcv": "ffcv"
