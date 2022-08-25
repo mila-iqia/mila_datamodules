@@ -4,7 +4,10 @@ from pathlib import Path
 
 
 def get_slurm_tmpdir() -> Path:
-    """Returns the SLURM temporary directory. Also works when using `mila code`."""
+    """Returns the SLURM temporary directory.
+
+    Also works when using `mila code`.
+    """
     if "SLURM_TMPDIR" in os.environ:
         return Path(os.environ["SLURM_TMPDIR"])
     if "SLURM_JOB_ID" in os.environ:
@@ -21,4 +24,6 @@ def get_slurm_tmpdir() -> Path:
 def get_cpus_on_node() -> int:
     if "SLURM_CPUS_PER_TASK" in os.environ:
         return int(os.environ["SLURM_CPUS_PER_TASK"])
+    if "SLURM_CPUS_ON_NODE" in os.environ:
+        return int(os.environ["SLURM_CPUS_ON_NODE"])
     return cpu_count()

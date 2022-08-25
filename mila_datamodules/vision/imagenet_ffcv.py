@@ -1,14 +1,19 @@
-""" ImageNet datamodule that uses FFCV. """
+"""ImageNet datamodule that uses FFCV."""
 
 from __future__ import annotations
 
+import dataclasses
+import hashlib
+import json
+import shutil
 import typing
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Literal, TypedDict, TypeVar
+from typing import Callable, Literal, TypedDict, TypeVar
+import os
 
-import cv2  # noqa
+import cv2  # noqa (Has to be done before any ffcv-related imports).
 import ffcv
 import ffcv.transforms
 import numpy as np
@@ -18,11 +23,10 @@ from ffcv.fields.basics import IntDecoder
 from ffcv.fields.rgb_image import RandomResizedCropRGBImageDecoder
 from ffcv.loader import Loader, OrderOption
 from ffcv.pipeline.operation import Operation
-from ffcv.traversal_order import QuasiRandom
 from ffcv.traversal_order.base import TraversalOrder
 from ffcv.writer import DatasetWriter
 from pl_bolts.datasets import UnlabeledImagenet
-from torch import Tensor, nn
+from torch import Tensor, distributed, nn
 from torch.utils.data import DataLoader, Dataset
 
 from .imagenet import ImagenetDataModule
@@ -39,7 +43,7 @@ IMAGENET_STD = np.array([0.229, 0.224, 0.225]) * 255
 class DatasetWriterConfig:
     """Arguments to give the FFCV DatasetWriter."""
 
-    max_resolution: int
+    max_resolution: int = 224
     """Max image side length."""
 
     num_workers: int = field(default=16, hash=False)
@@ -58,27 +62,23 @@ class DatasetWriterConfig:
 
     compress_probability: float | None = None
 
-    def write(self, dataset: Dataset, write_path: str | Path):
-        write_path = Path(write_path)
-        writer = DatasetWriter(
-            str(write_path),
-            {
-                "image": RGBImageField(
-                    write_mode=self.write_mode,
-                    max_resolution=self.max_resolution,
-                    compress_probability=self.compress_probability or 0.0,
-                    jpeg_quality=self.jpeg_quality,
-                ),
-                "label": IntField(),
-            },
-            num_workers=self.num_workers,
-        )
-        writer.from_indexed_dataset(dataset, chunksize=self.chunk_size)
+    def get_hash(self) -> str:
+        """Returns a string hash of this config's values.
+
+        NOTE: Could be used to retrieve a dataset file previously written with the same parameters.
+        """
+        config_dict = dataclasses.asdict(self)
+        # Remove num_workers from hash since it doesn't change the resulting file contents.
+        for f in dataclasses.fields(self):
+            if not f.hash:
+                config_dict.pop(f.name)
+        writer_config_str = json.dumps(config_dict, sort_keys=True)
+        return hashlib.md5(writer_config_str.encode("utf-8")).hexdigest()
 
 
 class FfcvLoaderConfig(TypedDict, total=False):
     os_cache: bool
-    """ Leverages the operating system for caching purposes. This is beneficial when there is 
+    """ Leverages the operating system for caching purposes. This is beneficial when there is
     enough memory to cache the dataset and/or when multiple processes on the same machine training
     using the same dataset. See https://docs.ffcv.io/performance_guide.html for more information.
     """
@@ -102,7 +102,7 @@ class FfcvLoaderConfig(TypedDict, total=False):
     """Subset of dataset by filtering only some indices. """
 
     custom_fields: Mapping[str, type[Field]]
-    """Dictonary informing the loader of the types associated to fields that are using a custom
+    """Dictionary informing the loader of the types associated to fields that are using a custom
     type.
     """
 
@@ -120,7 +120,8 @@ class FfcvLoaderConfig(TypedDict, total=False):
 
 @dataclass(frozen=True, unsafe_hash=True)
 class ImageResolutionConfig:
-    """Configuration for the resolution of the images when loading from the written ffcv dataset."""
+    """Configuration for the resolution of the images when loading from the written ffcv
+    dataset."""
 
     min_res: int = 160
     """the minimum (starting) resolution"""
@@ -136,6 +137,7 @@ class ImageResolutionConfig:
 
     def get_resolution(self, epoch: int | None) -> int:
         """Copied over from the FFCV example, where they ramp up the resolution during training.
+
         If `epoch` is None, or `end_ramp` is 0, the ramp-up is disabled and give back the max res.
         """
         assert self.min_res <= self.max_res
@@ -155,6 +157,18 @@ class ImageResolutionConfig:
         return final_res
 
 
+def default_ffcv_train_transforms(
+    device: torch.device,
+) -> list[Operation | nn.Module]:
+    return [
+        ffcv.transforms.RandomHorizontalFlip(),
+        ffcv.transforms.ToTensor(),
+        ffcv.transforms.ToDevice(device, non_blocking=True),
+        ffcv.transforms.ToTorchImage(),
+        ffcv.transforms.NormalizeImage(IMAGENET_MEAN, IMAGENET_STD, np.float32),  # type: ignore
+    ]
+
+
 class ImagenetFfcvDataModule(ImagenetDataModule):
     """Wrapper around the ImageNetDataModule that uses ffcv for the Train dataloader.
 
@@ -171,7 +185,6 @@ class ImagenetFfcvDataModule(ImagenetDataModule):
 
     BUG: Using this DataModule with a PyTorch-Lightning Trainer is not currently performing well,
     even though the
-
     """
 
     def __init__(
@@ -188,11 +201,12 @@ class ImagenetFfcvDataModule(ImagenetDataModule):
         train_transforms: nn.Module | Callable | None = None,
         val_transforms: nn.Module | Callable | None = None,
         test_transforms: nn.Module | Callable | None = None,
-        ffcv_train_transforms: Sequence[Operation] | None = None,
+        ffcv_train_transforms: Sequence[Operation | nn.Module] | None = None,
         img_resolution_config: ImageResolutionConfig | None = None,
         writer_config: DatasetWriterConfig | None = None,
         loader_config: FfcvLoaderConfig | None = None,
         device: torch.device | None = None,
+        train_only: bool = False,
     ) -> None:
         super().__init__(
             data_dir=data_dir,
@@ -208,41 +222,6 @@ class ImagenetFfcvDataModule(ImagenetDataModule):
             val_transforms=val_transforms,
             test_transforms=test_transforms,
         )
-        self.device = device or torch.device(
-            "cuda" if torch.cuda.is_available() else "cpu"
-        )
-        default_ffcv_train_transforms = [
-            ffcv.transforms.RandomHorizontalFlip(),
-            ffcv.transforms.ToTensor(),
-            ffcv.transforms.ToDevice(self.device, non_blocking=True),
-            ffcv.transforms.ToTorchImage(),
-            ffcv.transforms.NormalizeImage(IMAGENET_MEAN, IMAGENET_STD, np.float32),  # type: ignore
-        ]
-
-        if train_transforms is None:
-            if ffcv_train_transforms is None:
-                # No ffcv transform or torchvision transforms were passed, use the ffcv equivalent
-                # to the usual torchvision transforms.
-                ffcv_train_transforms = default_ffcv_train_transforms
-            else:
-                ffcv_train_transforms = ffcv_train_transforms
-        elif self.device.type == "cuda" and not isinstance(train_transforms, nn.Module):
-            raise RuntimeError(
-                f"Can't use cuda and old-style torchvision transforms. Upgrade "
-                f"torchvision to a more recent version and pass a nn.Sequential instead."
-            )
-        elif ffcv_train_transforms is None:
-            # Only using torchvision transforms.
-            pass
-        else:
-            # Using both torchvision transforms and ffcv transforms.
-            pass
-
-        self.ffcv_train_transforms: Sequence[Operation] = ffcv_train_transforms or []
-        if isinstance(train_transforms, nn.Module):
-            train_transforms = train_transforms.to(self.device)
-        self.train_transforms = train_transforms
-
         self.img_resolution_config = img_resolution_config or ImageResolutionConfig()
         self.writer_config = writer_config or DatasetWriterConfig(
             subset=-1,
@@ -256,15 +235,49 @@ class ImagenetFfcvDataModule(ImagenetDataModule):
         self.loader_config = loader_config or FfcvLoaderConfig(
             # NOTE: Can't use QUASI_RANDOM when using distributed=True atm.
             # NOTE: RANDOM is a LOT slower than QUASI_RANDOM.
-            order=OrderOption.QUASI_RANDOM,
+            order=OrderOption.QUASI_RANDOM,  # type: ignore
             os_cache=False,
             drop_last=True,
-            distributed=True,
+            distributed=False,
             batches_ahead=3,
             seed=1234,
         )
-        # TODO: Incorporate a hash of the writer config into the name of the ffcv file.
-        self._train_file = Path(self.data_dir) / f"train.ffcv"
+        self.device = device or torch.device(
+            "cuda" if torch.cuda.is_available() else "cpu"
+        )
+        self.train_only = train_only
+
+        if train_transforms is None and ffcv_train_transforms is None:
+            # No ffcv transform or torchvision transforms were passed, use the ffcv equivalent
+            # to the usual torchvision transforms.
+            ffcv_train_transforms = default_ffcv_train_transforms(self.device)
+        elif (
+            train_transforms
+            and not isinstance(train_transforms, nn.Module)
+            and self.device.type == "cuda"
+        ):
+            raise RuntimeError(
+                "Can't use cuda and old-style torchvision transforms. Upgrade "
+                "torchvision to a more recent version and pass a nn.Sequential instead."
+            )
+        elif ffcv_train_transforms is None:
+            # Only using torchvision transforms.
+            pass
+        else:
+            # Using both torchvision transforms and ffcv transforms.
+            pass
+
+        self.ffcv_train_transforms = ffcv_train_transforms or []
+        if isinstance(train_transforms, nn.Module):
+            train_transforms = train_transforms.to(self.device)
+        self.train_transforms = train_transforms
+
+        # TODO: Incorporate a hash of the writer config into the name of the ffcv file, so that
+        # we could move the ffcv file to a shared location and re-use it as needed.
+        # However, the validation split would still require the main dataset to be copied over.
+        self._writer_hash = self.writer_config.get_hash()
+        self._train_file = Path(self.data_dir) / "train.ffcv"
+
         self.save_hyperparameters()
         # Note: defined in the LightningDataModule class, gets set when using a Trainer.
         self.trainer: Trainer | None = None
@@ -273,21 +286,43 @@ class ImagenetFfcvDataModule(ImagenetDataModule):
         super().prepare_data()
         # NOTE: We don't do this for val/test, since we can just always use the standard pytorch
         # train_done.txt and dataloaders.
-        if not _done_file(self._train_file).exists():
-            # done txt file doesn't exist, so we need to rewrite the train.ffcv file
-            _write_dataset(
-                super().train_dataloader(),
-                self._train_file,
-                writer_config=self.writer_config,
+        if _done_file(self._train_file).exists():
+            return
+
+        scratch = Path(os.environ["SCRATCH"])
+        ffcv_file_on_scratch = scratch / "imagenet" / f"{self._writer_hash}.ffcv"
+        if ffcv_file_on_scratch.exists():
+            print(
+                f"Copying existing train ffcv file from SCRATCH to SLURM_TMPDIR "
+                f"({ffcv_file_on_scratch})"
             )
-            _done_file(self._train_file).touch()
+            shutil.copy(ffcv_file_on_scratch, self._train_file)
+            return
+
+        # If done txt file doesn't exist and we don't already have this file on scratch, we need
+        # to rewrite the train.ffcv file
+        _write_dataset(
+            super().train_dataloader(),
+            self._train_file,
+            writer_config=self.writer_config,
+        )
+        # Copy the file to $SCRATCH for the next time
+        ffcv_file_on_scratch.parent.mkdir(parents=True, exist_ok=True)
+        print(
+            f"Copying train ffcv file to SCRATCH for next time (at {ffcv_file_on_scratch})"
+        )
+        shutil.copy(self._train_file, ffcv_file_on_scratch)
+
+        _done_file(self._train_file).touch()
 
     def setup(self, stage: str) -> None:
+        # Note: base doesn't really do anything with this here.
         super().setup(stage)
-        if self.loader_config["distributed"]:
+        if self.loader_config.get("distributed"):
+            # TODO: Still a bit experimental. Don't rely on this being correct.
             this_gpu = self.trainer.local_rank if self.trainer else 0
-            torch.distributed.init_process_group(
-                "nccl", rank=self.gpu, world_size=torch.cuda.device_count()
+            distributed.init_process_group(
+                "nccl", rank=this_gpu, world_size=torch.cuda.device_count()
             )
             torch.cuda.set_device(this_gpu)
 
@@ -350,17 +385,17 @@ class ImagenetFfcvDataModule(ImagenetDataModule):
         return None
 
 
-T = TypeVar("T")
-O = TypeVar("O")
-L = TypeVar("L")
+X_in = TypeVar("X_in")
+X = TypeVar("X")
+Y = TypeVar("Y")
 
 
-class ApplyTransformLoader(Iterable[tuple[O, L]]):
-    def __init__(self, data: Iterable[tuple[T, L]], transform: Callable[[T], O]):
+class ApplyTransformLoader(Iterable[tuple[X, Y]]):
+    def __init__(self, data: Iterable[tuple[X_in, Y]], transform: Callable[[X_in], X]):
         self.data_source = data
         self.transform = transform
 
-    def __iter__(self) -> Iterable[tuple[O, L]]:
+    def __iter__(self) -> Iterable[tuple[X, Y]]:
         for x, y in self.data_source:
             yield self.transform(x), y
 
@@ -374,13 +409,40 @@ def _write_dataset(
     dataset = dataloader.dataset
     assert isinstance(dataset, UnlabeledImagenet)
     # NOTE: We write the dataset without any transforms.
+    # TODO: Make sure that the dataset.transforms is actually where the transforms are, and that
+    # we're correctly removing those. Otherwise we're writing the dataset with some
+    # transformations!
+    assert hasattr(dataset, "transform")
+    assert hasattr(dataset, "label_transform")
     dataset.transform = None
     dataset.label_transform = None
     dataset_ffcv_path.parent.mkdir(parents=True, exist_ok=True)
     dataset_done_file = _done_file(dataset_ffcv_path)
     if not dataset_done_file.exists():
         print(f"Writing dataset in FFCV format at {dataset_ffcv_path}")
-        writer_config.write(dataset, dataset_ffcv_path)
+        writer_config = writer_config
+        write_path = dataset_ffcv_path
+        write_path = Path(write_path)
+        writer = DatasetWriter(
+            str(write_path),
+            {
+                "image": RGBImageField(
+                    write_mode=writer_config.write_mode,
+                    max_resolution=writer_config.max_resolution,
+                    compress_probability=writer_config.compress_probability or 0.0,
+                    jpeg_quality=writer_config.jpeg_quality,
+                ),
+                "label": IntField(),
+            },
+            num_workers=writer_config.num_workers,
+        )
+        if writer_config.subset == -1:
+            indices = list(range(len(dataset)))  # type: ignore
+        else:
+            indices = list(range(writer_config.subset))
+        writer.from_indexed_dataset(
+            dataset, chunksize=writer_config.chunk_size, indices=list(indices)
+        )
         dataset_done_file.touch()
 
 

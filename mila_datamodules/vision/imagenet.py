@@ -1,4 +1,4 @@
-""" ImageNet datamodule adapted to the Mila cluster.
+"""ImageNet datamodule adapted to the Mila cluster.
 
 Can be used either with a PyTorch-Lightning Trainer, or by itself to easily get efficient
 dataloaders for the ImageNet dataset.
@@ -18,17 +18,17 @@ import warnings
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Callable, NewType
-from pytorch_lightning import Trainer
 
 from pl_bolts.datamodules.imagenet_datamodule import (
     ImagenetDataModule as _ImagenetDataModule,
 )
 from pl_bolts.datamodules.vision_datamodule import VisionDataModule
 from pl_bolts.datasets import UnlabeledImagenet
+from pytorch_lightning import Trainer
 from torch import nn
 from torch.utils.data import DataLoader
 
-from .utils import get_cpus_on_node, get_slurm_tmpdir
+from ..utils import get_cpus_on_node, get_slurm_tmpdir
 
 C = NewType("C", int)
 H = NewType("H", int)
@@ -183,15 +183,14 @@ def copy_imagenet_to_dest(destination: str | Path) -> None:
     devkit_file = Path("/network/datasets/imagenet/ILSVRC2012_devkit_t12.tar.gz")
     devkit_dest = destination / "ILSVRC2012_devkit_t12.tar.gz"
     if not devkit_dest.exists():
-        print(f"Copying the devkit file...")
+        print("Copying the devkit file...")
         shutil.copyfile(devkit_file, devkit_dest)
     print("DONE!")
 
 
 def _generate_meta_bins(data_dir: str | Path) -> None:
     """Generates the meta.bin file required by the PL imagenet datamodule, and copies it in the
-    train and val directories.
-    """
+    train and val directories."""
     UnlabeledImagenet.generate_meta_bins(str(data_dir))
     data_dir = Path(data_dir)
     meta_bin_file = data_dir / "meta.bin"

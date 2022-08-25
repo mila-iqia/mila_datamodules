@@ -60,16 +60,16 @@ def _trainer():
 
 def main():
 
-    datamodule_torch = ImagenetDataModule(batch_size=512, num_workers=8)
+    datamodule_torch = ImagenetDataModule(batch_size=256, num_workers=8)
     datamodule_torch.prepare_data()
-    datamodule_ffcv = ImagenetFfcvDataModule(batch_size=512, num_workers=8)
+    datamodule_ffcv = ImagenetFfcvDataModule(batch_size=256, num_workers=8)
     datamodule_ffcv.prepare_data()
 
     print(f"Pure for loops over 200 batches:")
-    print("Pure for-loop (PyTorch):\n", for_loop(datamodule_torch, max_batches=200))
-    print("Pure for-loop (FFCV):\n", for_loop(datamodule_ffcv, max_batches=200))
+    # print("PyTorch:\n", for_loop(datamodule_torch, max_batches=200))
+    print("FFCV:\n", for_loop(datamodule_ffcv, max_batches=200))
 
-    print(f"Training on {MAX_BATCHES} batches:")
+    # print(f"Training on {MAX_BATCHES} batches:")
     # TODO: Maybe caching has an impact? Roll everything twice, and only take the second value.
     # print("Manual train loop (FFCV):", manual_loop(datamodule_ffcv))
     # print("Manual train loop (Pytorch):", manual_loop(datamodule_torch))
@@ -84,7 +84,7 @@ def for_loop(datamodule: ImagenetDataModule, max_batches=1000):
     start_time = datetime.datetime.now()
     for _ in tqdm.tqdm(
         itertools.islice(loader, max_batches),
-        leave=False,
+        leave=True,
         total=max_batches,
     ):
         pass

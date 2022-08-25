@@ -1,15 +1,11 @@
 from __future__ import annotations
 
-import itertools
-
-import numpy as np
 import pytest
 import torch
 from pytorch_lightning import LightningModule, Trainer
 from torch import Tensor, nn
 from torch.optim.adam import Adam
 from torchvision.models import resnet18
-from .imagenet_ffcv import ImagenetFfcvDataModule
 
 
 class Model(LightningModule):
@@ -38,8 +34,7 @@ class Model(LightningModule):
 @pytest.mark.parametrize("strategy", [None, "dp", "ddp", "fsdp"])
 def test_no_extra_copy(strategy: str | None, devices: int | str, accelerator: str):
     """Test that no extra move or copy is made by PyTorch-Lightning when the DataLoader gives
-    tensors that are already on the GPU.
-    """
+    tensors that are already on the GPU."""
     assert torch.cuda.is_available()
     num_batches = 5
 
@@ -84,8 +79,8 @@ def test_no_extra_copy(strategy: str | None, devices: int | str, accelerator: st
             assert y.shape == ref_y.shape
             assert (x == ref_x).all()
             assert (y == ref_y).all()
-            assert x.is_contiguous() == ref_x.is_contiguous() == True
-            assert y.is_contiguous() == ref_y.is_contiguous() == True
+            assert x.is_contiguous() == ref_x.is_contiguous() is True
+            assert y.is_contiguous() == ref_y.is_contiguous() is True
             assert x.data_ptr() == ref_x.data_ptr()
             assert y.data_ptr() == ref_y.data_ptr()
             return super().training_step((x, y), batch_idx)
