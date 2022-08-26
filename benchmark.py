@@ -1,5 +1,4 @@
-"""
-"""
+""""""
 from __future__ import annotations
 
 import datetime
@@ -7,17 +6,21 @@ import itertools
 
 # NOTE: Need to import cv2 to prevent a loading error for GLIBCXX with ffcv.
 import cv2  # noqa
-
 import torch
 import tqdm
-from pytorch_lightning import Trainer
-from typing_extensions import ParamSpec
-from torchvision.models import resnet18
-from mila_datamodules import ImagenetDataModule, ImagenetFfcvDataModule
-from pytorch_lightning import LightningModule
-from torch import nn, Tensor
+from pytorch_lightning import LightningDataModule, LightningModule, Trainer
+from torch import Tensor, nn
 from torch.optim import Adam
 from torch.utils.data import DataLoader
+from torchvision.models import resnet18
+from typing_extensions import ParamSpec
+
+from mila_datamodules.vision import (
+    CIFAR10DataModule,
+    ImagenetDataModule,
+    ImagenetFfcvDataModule,
+)
+from mila_datamodules.vision.cityscapes import CityscapesDataModule
 
 P = ParamSpec("P")
 MAX_BATCHES = 50
@@ -59,15 +62,21 @@ def _trainer():
 
 
 def main():
-
-    datamodule_torch = ImagenetDataModule(batch_size=256, num_workers=8)
+    num_workers = 6
+    batch_size = 128
+    datamodule_torch = CityscapesDataModule(batch_size=batch_size, num_workers=num_workers)
+    # datamodule_torch = CIFAR10DataModule(batch_size=batch_size, num_workers=num_workers)
+    # datamodule_torch = ImagenetDataModule(batch_size=batch_size, num_workers=num_workers)
     datamodule_torch.prepare_data()
-    datamodule_ffcv = ImagenetFfcvDataModule(batch_size=256, num_workers=8)
-    datamodule_ffcv.prepare_data()
+    datamodule_torch.setup()
+    # datamodule_ffcv = ImagenetFfcvDataModule(
+    #     batch_size=batch_size, num_workers=num_workers
+    # )
+    # datamodule_ffcv.prepare_data()
 
-    print(f"Pure for loops over 200 batches:")
-    # print("PyTorch:\n", for_loop(datamodule_torch, max_batches=200))
-    print("FFCV:\n", for_loop(datamodule_ffcv, max_batches=200))
+    print("Pure for loops over 200 batches:")
+    print("PyTorch:\n", for_loop(datamodule_torch, max_batches=200))
+    # print("FFCV:\n", for_loop(datamodule_ffcv, max_batches=200))
 
     # print(f"Training on {MAX_BATCHES} batches:")
     # TODO: Maybe caching has an impact? Roll everything twice, and only take the second value.
@@ -79,7 +88,7 @@ def main():
     # print("PL + DataLoaders (no optimizations):", pl_without_dataloader_optimizations())
 
 
-def for_loop(datamodule: ImagenetDataModule, max_batches=1000):
+def for_loop(datamodule: LightningDataModule, max_batches=1000):
     loader = datamodule.train_dataloader()
     start_time = datetime.datetime.now()
     for _ in tqdm.tqdm(

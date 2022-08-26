@@ -5,13 +5,13 @@ from __future__ import annotations
 import dataclasses
 import hashlib
 import json
+import os
 import shutil
 import typing
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Literal, TypedDict, TypeVar
-import os
 
 import cv2  # noqa (Has to be done before any ffcv-related imports).
 import ffcv
@@ -28,6 +28,8 @@ from ffcv.writer import DatasetWriter
 from pl_bolts.datasets import UnlabeledImagenet
 from torch import Tensor, distributed, nn
 from torch.utils.data import DataLoader, Dataset
+
+from mila_datamodules.clusters.utils import SCRATCH
 
 from .imagenet import ImagenetDataModule
 
@@ -150,9 +152,7 @@ class ImageResolutionConfig:
             return self.min_res
 
         # otherwise, linearly interpolate to the nearest multiple of 32
-        interp = np.interp(
-            [epoch], [self.start_ramp, self.end_ramp], [self.min_res, self.max_res]
-        )
+        interp = np.interp([epoch], [self.start_ramp, self.end_ramp], [self.min_res, self.max_res])
         final_res = int(np.round(interp[0] / 32)) * 32
         return final_res
 
@@ -206,7 +206,6 @@ class ImagenetFfcvDataModule(ImagenetDataModule):
         writer_config: DatasetWriterConfig | None = None,
         loader_config: FfcvLoaderConfig | None = None,
         device: torch.device | None = None,
-        train_only: bool = False,
     ) -> None:
         super().__init__(
             data_dir=data_dir,
@@ -236,16 +235,13 @@ class ImagenetFfcvDataModule(ImagenetDataModule):
             # NOTE: Can't use QUASI_RANDOM when using distributed=True atm.
             # NOTE: RANDOM is a LOT slower than QUASI_RANDOM.
             order=OrderOption.QUASI_RANDOM,  # type: ignore
-            os_cache=False,
-            drop_last=True,
+            os_cache=False,  # todo: investigate this option more.
+            drop_last=self.drop_last,
             distributed=False,
             batches_ahead=3,
             seed=1234,
         )
-        self.device = device or torch.device(
-            "cuda" if torch.cuda.is_available() else "cpu"
-        )
-        self.train_only = train_only
+        self.device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         if train_transforms is None and ffcv_train_transforms is None:
             # No ffcv transform or torchvision transforms were passed, use the ffcv equivalent
@@ -275,8 +271,8 @@ class ImagenetFfcvDataModule(ImagenetDataModule):
         # TODO: Incorporate a hash of the writer config into the name of the ffcv file, so that
         # we could move the ffcv file to a shared location and re-use it as needed.
         # However, the validation split would still require the main dataset to be copied over.
-        self._writer_hash = self.writer_config.get_hash()
         self._train_file = Path(self.data_dir) / "train.ffcv"
+        self._val_file = Path(self.data_dir) / "val.ffcv"
 
         self.save_hyperparameters()
         # Note: defined in the LightningDataModule class, gets set when using a Trainer.
@@ -284,36 +280,60 @@ class ImagenetFfcvDataModule(ImagenetDataModule):
 
     def prepare_data(self) -> None:
         super().prepare_data()
+
         # NOTE: We don't do this for val/test, since we can just always use the standard pytorch
         # train_done.txt and dataloaders.
-        if _done_file(self._train_file).exists():
-            return
+        train_dataset = super().train_dataloader().dataset
+        assert isinstance(train_dataset, UnlabeledImagenet)
+        self._setup_ffcv_file_in_slurmtmpdir(
+            dataset=train_dataset,
+            ffcv_file=self._train_file,
+            writer_config=self.writer_config,
+            split="train",
+        )
+        # NOTE: Could also do this to use FFCV for the validation dataset. Not doing this atm.
+        # valid_dataset = super().val_dataloader().dataset
+        # assert isinstance(valid_dataset, UnlabeledImagenet)
+        # # NOTE: Using the same writer config as the train dataset atm.
+        # self._setup_ffcv_file_in_slurmtmpdir(
+        #     dataset=valid_dataset,
+        #     ffcv_file=self._val_file,
+        #     writer_config=self.writer_config,
+        #     split="valid",
+        # )
 
-        scratch = Path(os.environ["SCRATCH"])
-        ffcv_file_on_scratch = scratch / "imagenet" / f"{self._writer_hash}.ffcv"
+    def _setup_ffcv_file_in_slurmtmpdir(
+        self,
+        dataset: UnlabeledImagenet,
+        ffcv_file: Path,
+        writer_config: DatasetWriterConfig,
+        split: Literal["train", "valid"],
+    ) -> None:
+        if _done_file(ffcv_file).exists():
+            return
+        writer_hash = writer_config.get_hash()
+        ffcv_file_on_scratch = SCRATCH / "imagenet" / f"{writer_hash}_{split}.ffcv"
         if ffcv_file_on_scratch.exists():
             print(
-                f"Copying existing train ffcv file from SCRATCH to SLURM_TMPDIR "
-                f"({ffcv_file_on_scratch})"
+                f"Copying existing ffcv file from SCRATCH to SLURM_TMPDIR "
+                f"({ffcv_file_on_scratch} -> {ffcv_file})"
             )
-            shutil.copy(ffcv_file_on_scratch, self._train_file)
+            shutil.copy(ffcv_file_on_scratch, ffcv_file)
             return
-
         # If done txt file doesn't exist and we don't already have this file on scratch, we need
         # to rewrite the train.ffcv file
         _write_dataset(
-            super().train_dataloader(),
-            self._train_file,
-            writer_config=self.writer_config,
+            dataset,
+            ffcv_file,
+            writer_config=writer_config,
         )
-        # Copy the file to $SCRATCH for the next time
+        # Copy the ffcv file to $SCRATCH for the next time.
+        # TODO: Should we remove other files, so we don't take too much space in SCRATCH?
         ffcv_file_on_scratch.parent.mkdir(parents=True, exist_ok=True)
-        print(
-            f"Copying train ffcv file to SCRATCH for next time (at {ffcv_file_on_scratch})"
-        )
-        shutil.copy(self._train_file, ffcv_file_on_scratch)
+        print(f"Copying ffcv file to SCRATCH for future runs ({ffcv_file_on_scratch})")
+        shutil.copy(ffcv_file, ffcv_file_on_scratch)
 
-        _done_file(self._train_file).touch()
+        _done_file(ffcv_file).touch()
 
     def setup(self, stage: str) -> None:
         # Note: base doesn't really do anything with this here.
@@ -345,9 +365,7 @@ class ImagenetFfcvDataModule(ImagenetDataModule):
         if self.trainer is None:
             # When using PyTorch-Lightning, we don't want to add this ToDevice operation, because
             # PL already does it.
-            label_pipeline.append(
-                ffcv.transforms.ToDevice(self.device, non_blocking=True)
-            )
+            label_pipeline.append(ffcv.transforms.ToDevice(self.device, non_blocking=True))
 
         use_extra_tv_transforms = False
         if isinstance(self.train_transforms, nn.Module):
@@ -404,46 +422,49 @@ class ApplyTransformLoader(Iterable[tuple[X, Y]]):
 
 
 def _write_dataset(
-    dataloader: DataLoader, dataset_ffcv_path: Path, writer_config: DatasetWriterConfig
+    dataset: UnlabeledImagenet,
+    dataset_ffcv_path: Path,
+    writer_config: DatasetWriterConfig,
 ) -> None:
-    dataset = dataloader.dataset
     assert isinstance(dataset, UnlabeledImagenet)
     # NOTE: We write the dataset without any transforms.
     # TODO: Make sure that the dataset.transforms is actually where the transforms are, and that
     # we're correctly removing those. Otherwise we're writing the dataset with some
     # transformations!
     assert hasattr(dataset, "transform")
-    assert hasattr(dataset, "label_transform")
     dataset.transform = None
-    dataset.label_transform = None
-    dataset_ffcv_path.parent.mkdir(parents=True, exist_ok=True)
+    if hasattr(dataset, "label_transform"):
+        dataset.label_transform = None  # type: ignore
+    assert hasattr(dataset, "target_transform")
+    dataset.target_transform = None
     dataset_done_file = _done_file(dataset_ffcv_path)
-    if not dataset_done_file.exists():
-        print(f"Writing dataset in FFCV format at {dataset_ffcv_path}")
-        writer_config = writer_config
-        write_path = dataset_ffcv_path
-        write_path = Path(write_path)
-        writer = DatasetWriter(
-            str(write_path),
-            {
-                "image": RGBImageField(
-                    write_mode=writer_config.write_mode,
-                    max_resolution=writer_config.max_resolution,
-                    compress_probability=writer_config.compress_probability or 0.0,
-                    jpeg_quality=writer_config.jpeg_quality,
-                ),
-                "label": IntField(),
-            },
-            num_workers=writer_config.num_workers,
-        )
-        if writer_config.subset == -1:
-            indices = list(range(len(dataset)))  # type: ignore
-        else:
-            indices = list(range(writer_config.subset))
-        writer.from_indexed_dataset(
-            dataset, chunksize=writer_config.chunk_size, indices=list(indices)
-        )
-        dataset_done_file.touch()
+    if dataset_done_file.exists():
+        return
+
+    print(f"Writing dataset in FFCV format at {dataset_ffcv_path}")
+    dataset_ffcv_path.parent.mkdir(parents=True, exist_ok=True)
+    writer_config = writer_config
+    write_path = dataset_ffcv_path
+    write_path = Path(write_path)
+    writer = DatasetWriter(
+        str(write_path),
+        {
+            "image": RGBImageField(
+                write_mode=writer_config.write_mode,
+                max_resolution=writer_config.max_resolution,
+                compress_probability=writer_config.compress_probability or 0.0,
+                jpeg_quality=writer_config.jpeg_quality,
+            ),
+            "label": IntField(),
+        },
+        num_workers=writer_config.num_workers,
+    )
+    if writer_config.subset == -1:
+        indices = list(range(len(dataset)))  # type: ignore
+    else:
+        indices = list(range(writer_config.subset))
+    writer.from_indexed_dataset(dataset, chunksize=writer_config.chunk_size, indices=list(indices))
+    dataset_done_file.touch()
 
 
 def _done_file(path: Path) -> Path:

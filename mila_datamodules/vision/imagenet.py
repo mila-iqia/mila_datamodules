@@ -17,7 +17,7 @@ import sys
 import warnings
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Callable, NewType
+from typing import Callable, NewType, TypedDict
 
 from pl_bolts.datamodules.imagenet_datamodule import (
     ImagenetDataModule as _ImagenetDataModule,
@@ -27,12 +27,51 @@ from pl_bolts.datasets import UnlabeledImagenet
 from pytorch_lightning import Trainer
 from torch import nn
 from torch.utils.data import DataLoader
+from typing_extensions import NotRequired, Required
 
-from ..utils import get_cpus_on_node, get_slurm_tmpdir
+from mila_datamodules.clusters.cluster_enum import ClusterType
+from mila_datamodules.utils import get_cpus_on_node, get_slurm_tmpdir
 
 C = NewType("C", int)
 H = NewType("H", int)
 W = NewType("W", int)
+
+
+class ImageNetFiles(TypedDict):
+    train_archive: str
+    """ Path to the "ILSVRC2012_img_train.tar"-like archive containing the training set. """
+
+    val_archive: NotRequired[str]
+    """ Path to the "ILSVRC2012_img_val.tar" archive containing the test set.
+    One of `val_archive` or `val_folder` must be provided.
+    """
+
+    val_folder: NotRequired[str]
+    """ Path to the 'val' folder containing the test set.
+    One of `val_archive` or `val_folder` must be provided.
+    """
+
+    devkit: str
+    """ Path to the ILSVRC2012_devkit_t12.tar.gz file. """
+
+
+imagenet_file_locations: dict[ClusterType, ImageNetFiles] = {
+    ClusterType.MILA: {
+        "train_archive": "/network/datasets/imagenet/ILSVRC2012_img_train.tar",
+        "val_folder": "/network/datasets/imagenet.var/imagenet_torchvision/val",
+        "devkit": "/network/datasets/imagenet/ILSVRC2012_devkit_t12.tar.gz",
+    },
+    # TODO: Need help with filling these:
+    ClusterType.BELUGA: {
+        "train_archive": "/project/rpp-bengioy/data/curated/imagenet/ILSVRC2012_img_train.tar",
+        "val_archive": "/project/rpp-bengioy/data/curated/imagenet/ILSVRC2012_img_val.tar",
+        "devkit": "/project/rpp-bengioy/data/curated/imagenet/ILSVRC2012_devkit_t12.tar.gz",
+    },
+    # ClusterType.CEDAR: {},
+    # ClusterType.GRAHAM: {},
+    # ...
+}
+""" A map that shows where to retrieve the imagenet files for each SLURM cluster. """
 
 
 class ImagenetDataModule(_ImagenetDataModule):
@@ -140,38 +179,74 @@ class ImagenetDataModule(_ImagenetDataModule):
         self._dims = v
 
 
-def copy_imagenet_to_dest(destination: str | Path) -> None:
+def copy_imagenet_to_dest(
+    destination_dir: str | Path,
+) -> None:
     """Copies/extracts the ImageNet dataset into the destination folder (ideally in `slurm_tmpdir`)
 
     NOTE: This is the transcribed wisdom of @obilaniu (Olexa Bilaniuk).
     See [this Slack thread](https://mila-umontreal.slack.com/archives/CFAS8455H/p1652168938773169?thread_ts=1652126891.083229&cid=CFAS8455H)
     for more info.
     """
-    destination = Path(destination)
+    paths = imagenet_file_locations[ClusterType.current()]
+    train_archive = paths["train_archive"]
+    devkit = paths["devkit"]
+    if "val_folder" in paths:
+        val_folder = paths["val_folder"]
+        val_archive = None
+    elif "val_archive" in paths:
+        val_folder = None
+        val_archive = paths["val_archive"]
+    else:
+        cluster = ClusterType.current()
+        raise RuntimeError(
+            f"One of 'val_folder' or 'val_archive' must be set for cluster {cluster}!"
+        )
+
+    destination_dir = Path(destination_dir)
     raise_errors = False
 
-    train_folder = destination / "train"
+    train_folder = destination_dir / "train"
     train_folder.mkdir(exist_ok=True, parents=True)
 
-    val_done_file = destination / "val_done.txt"
+    val_done_file = destination_dir / "val_done.txt"
     if not val_done_file.exists():
-        print(f"Copying imagenet val dataset to {destination}/val ...")
-        subprocess.run(
-            args=f"cp -r /network/datasets/imagenet.var/imagenet_torchvision/val {destination}",
-            shell=True,
-            check=raise_errors,
-            stdout=sys.stdout,
-        )
+        if val_folder is not None:
+            print(f"Copying imagenet val dataset to {destination_dir}/val ...")
+            subprocess.run(
+                args=f"cp -r {val_folder} {destination_dir}",
+                shell=True,
+                check=raise_errors,
+                stdout=sys.stdout,
+            )
+        else:
+            assert val_archive is not None
+            val_folder = destination_dir / "val"
+            val_folder.mkdir(exist_ok=True, parents=True)
+            raise NotImplementedError(
+                f"Extract the validation set from {val_archive} to {destination_dir}/val"
+            )
+            # TODO: Probably something like this, but need to double-check.
+            with temporarily_chdir(val_folder):
+                subprocess.run(
+                    args=(
+                        f"tar -xf {val_archive} "
+                        "--to-command='mkdir ${TAR_REALNAME%.tar}; tar -xC ${TAR_REALNAME%.tar}'"
+                    ),
+                    shell=True,
+                    check=raise_errors,
+                    stdout=sys.stdout,
+                )
         val_done_file.touch()
 
-    train_done_file = destination / "train_done.txt"
+    train_done_file = destination_dir / "train_done.txt"
     if not train_done_file.exists():
-        print(f"Copying imagenet train dataset to {destination}/train ...")
-        print("(NOTE: This should take approximately 10 minutes.)")
-        with temporarily_chdir(destination / "train"):
+        print(f"Copying imagenet train dataset to {train_folder} ...")
+        print("(NOTE: This should take no more than 10 minutes.)")
+        with temporarily_chdir(train_folder):
             subprocess.run(
                 args=(
-                    "tar -xf /network/datasets/imagenet/ILSVRC2012_img_train.tar "
+                    f"tar -xf {train_archive} "
                     "--to-command='mkdir ${TAR_REALNAME%.tar}; tar -xC ${TAR_REALNAME%.tar}'"
                 ),
                 shell=True,
@@ -180,11 +255,10 @@ def copy_imagenet_to_dest(destination: str | Path) -> None:
             )
         train_done_file.touch()
 
-    devkit_file = Path("/network/datasets/imagenet/ILSVRC2012_devkit_t12.tar.gz")
-    devkit_dest = destination / "ILSVRC2012_devkit_t12.tar.gz"
+    devkit_dest = destination_dir / "ILSVRC2012_devkit_t12.tar.gz"
     if not devkit_dest.exists():
         print("Copying the devkit file...")
-        shutil.copyfile(devkit_file, devkit_dest)
+        shutil.copyfile(devkit, devkit_dest)
     print("DONE!")
 
 
