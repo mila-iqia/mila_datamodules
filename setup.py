@@ -15,4 +15,5 @@ setup(
         "lightning-bolts",
     ],
     extras_require={"ffcv": "ffcv"},
+    include_package_data=True,
 )
