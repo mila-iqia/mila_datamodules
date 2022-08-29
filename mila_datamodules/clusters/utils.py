@@ -45,14 +45,16 @@ def setup_slurm_env_variables():
 
     temp_file_name = Path("_slurm_env_vars.sh").absolute()
     try:
+        print("Extracting SLURM environment variables... ", end="")
         command = f"srun --pty /bin/bash -c 'env | grep SLURM > {temp_file_name}'"
-        print(f"> {command}")
+        # print(f"> {command}")
         subprocess.run(
             command,
             shell=True,
             check=True,
-            timeout=3,
+            timeout=2,
         )
+        print("done!")
 
         # TODO: Using `export` above + `source` here worked at some point, and had the benefit of
         # actually modifying the shell's env, if I recall correctly. However it doesn't currently
@@ -84,6 +86,10 @@ def setup_slurm_env_variables():
     finally:
         if temp_file_name.exists():
             os.remove(temp_file_name)
+
+
+if "SLURM_CLUSTER_NAME" not in os.environ:
+    setup_slurm_env_variables()
 
 
 if "SLURM_TMPDIR" not in os.environ:

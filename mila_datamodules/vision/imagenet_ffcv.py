@@ -1,11 +1,9 @@
 """ImageNet datamodule that uses FFCV."""
-
 from __future__ import annotations
 
 import dataclasses
 import hashlib
 import json
-import os
 import shutil
 import typing
 from collections.abc import Iterable, Mapping, Sequence
@@ -14,27 +12,32 @@ from pathlib import Path
 from typing import Callable, Literal, TypedDict, TypeVar
 
 import cv2  # noqa (Has to be done before any ffcv-related imports).
-import ffcv
-import ffcv.transforms
 import numpy as np
 import torch
-from ffcv.fields import Field, IntField, RGBImageField
-from ffcv.fields.basics import IntDecoder
-from ffcv.fields.rgb_image import RandomResizedCropRGBImageDecoder
-from ffcv.loader import Loader, OrderOption
-from ffcv.pipeline.operation import Operation
-from ffcv.traversal_order.base import TraversalOrder
-from ffcv.writer import DatasetWriter
 from pl_bolts.datasets import UnlabeledImagenet
 from torch import Tensor, distributed, nn
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader
+
+try:
+    import ffcv.transforms
+    from ffcv.fields import IntField, RGBImageField
+    from ffcv.fields.basics import IntDecoder
+    from ffcv.fields.rgb_image import RandomResizedCropRGBImageDecoder
+    from ffcv.loader import Loader, OrderOption
+    from ffcv.writer import DatasetWriter
+except ImportError:
+    pass
+
+
+if typing.TYPE_CHECKING:
+    from ffcv.traversal_order.base import TraversalOrder
+    from pytorch_lightning import Trainer
+    from ffcv.fields import Field
+    from ffcv.pipeline.operation import Operation
 
 from mila_datamodules.clusters.utils import SCRATCH
 
 from .imagenet import ImagenetDataModule
-
-if typing.TYPE_CHECKING:
-    from pytorch_lightning import Trainer
 
 # FIXME: I don't like hard-coded values.
 IMAGENET_MEAN = np.array([0.485, 0.456, 0.406]) * 255
