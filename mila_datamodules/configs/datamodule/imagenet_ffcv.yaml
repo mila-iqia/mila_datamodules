@@ -1,1 +1,0 @@
-_target_: mila_datamodules.vision.imagenet_ffcv.ImagenetFfcvDataModule
