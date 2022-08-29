@@ -9,9 +9,12 @@ from torchvision.models import resnet18
 
 
 class Model(LightningModule):
-    def __init__(self):
+    def __init__(self, num_classes: int = 1000):
         super().__init__()
-        self.encoder = resnet18()
+        self.encoder = nn.Sequential(
+            nn.Flatten(),
+            nn.LazyLinear(out_features=num_classes),
+        )
         self.loss = nn.CrossEntropyLoss()
 
     def forward(self, x: Tensor) -> Tensor:  # type: ignore
@@ -60,8 +63,8 @@ def test_no_extra_copy(strategy: str | None, devices: int | str, accelerator: st
     ]
 
     class DummyModel(Model):
-        def __init__(self, num_classes: int = 1000):
-            super().__init__(num_classes=num_classes)
+        def __init__(self):
+            super().__init__()
             self.batches_seen = 0
 
         def training_step(self, batch: tuple[Tensor, Tensor], batch_idx: int) -> Tensor:
@@ -83,6 +86,7 @@ def test_no_extra_copy(strategy: str | None, devices: int | str, accelerator: st
             assert y.is_contiguous() == ref_y.is_contiguous() is True
             assert x.data_ptr() == ref_x.data_ptr()
             assert y.data_ptr() == ref_y.data_ptr()
+            self.batches_seen += 1
             return super().training_step((x, y), batch_idx)
 
     model = DummyModel()
