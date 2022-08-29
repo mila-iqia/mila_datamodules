@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 import enum
+import itertools
 import os
 import socket
+import subprocess
+import sys
+from logging import getLogger as get_logger
 from pathlib import Path
-from typing import TypeVar
 
-from torch.utils.data import Dataset
-from torchvision.datasets.vision import VisionDataset
+from .utils import setup_slurm_env_variables
+
+logger = get_logger(__name__)
 
 
 class ClusterType(enum.Enum):
@@ -20,7 +24,9 @@ class ClusterType(enum.Enum):
 
     @classmethod
     def current(cls) -> ClusterType:
-        cluster_name = os.environ.get("SLURM_CLUSTER_NAME")
+        setup_slurm_env_variables()
+        cluster_name = os.environ["SLURM_CLUSTER_NAME"]
+
         full_hostname = socket.getfqdn()
         if cluster_name == "mila" or full_hostname.endswith(".server.mila.quebec"):
             return cls.MILA

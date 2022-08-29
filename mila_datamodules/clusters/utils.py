@@ -10,6 +10,7 @@ import inspect
 import os
 import shutil
 import socket
+import subprocess
 from logging import getLogger as get_logger
 from pathlib import Path
 from typing import Callable, Sequence, TypeVar
@@ -30,6 +31,59 @@ logger = get_logger(__name__)
 def on_login_node() -> bool:
     # IDEA: Detect if we're on a login node somehow.
     return socket.getfqdn().endswith(".server.mila.quebec") and "SLURM_TMPDIR" not in os.environ
+
+
+def setup_slurm_env_variables():
+    """Sets the slurm-related environment variables inside the current shell if they are not set.
+
+    Executes a `export | grep SLURM > set_slurm_env_vars.py` command inside a `srun --pty
+    /bin/bash` sub-command (assuming that no other such command is being run). Then, runs this
+    script in a shell sub-process, updating the environment variables of the current shell process.
+    """
+    if "SLURM_CLUSTER_NAME" in os.environ:
+        return
+
+    temp_file_name = Path("_slurm_env_vars.sh").absolute()
+    try:
+        command = f"srun --pty /bin/bash -c 'env | grep SLURM > {temp_file_name}'"
+        print(f"> {command}")
+        subprocess.run(
+            command,
+            shell=True,
+            check=True,
+            timeout=3,
+        )
+
+        # TODO: Using `export` above + `source` here worked at some point, and had the benefit of
+        # actually modifying the shell's env, if I recall correctly. However it doesn't currently
+        # work, so I opted for just reading a dump of the env vars instead.
+        # temp_file_name.chmod(mode=0o755)
+        # command = f"{temp_file_name}"
+        # print(f"> {command}")
+        # subprocess.run(
+        #     command,
+        #     shell=True,
+        #     executable="/bin/bash",
+        #     check=True,
+        # )
+
+        # Read and copy the environment variables from the dumped file.
+        with temp_file_name.open("r") as f:
+            lines = f.readlines()
+            lines = [line.strip() for line in lines]
+            for line in lines:
+                key, _, value = line.partition("=")
+                logger.debug("\t", key, "=", value)
+                os.environ.setdefault(key, value)
+
+    except subprocess.TimeoutExpired:
+        raise RuntimeError(
+            "Unable to extract SLURM environment variables. Check that there isn't already a "
+            "`srun --pty /bin/bash` command running."
+        )
+    finally:
+        if temp_file_name.exists():
+            os.remove(temp_file_name)
 
 
 if "SLURM_TMPDIR" not in os.environ:
