@@ -1,9 +1,10 @@
 # Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved
 from hydra.core.config_search_path import ConfigSearchPath
+from hydra.core.plugins import Plugins
 from hydra.plugins.search_path_plugin import SearchPathPlugin
 
 
-class ExampleSearchPathPlugin(SearchPathPlugin):
+class MilaDatamodulesSearchPathPlugin(SearchPathPlugin):
     def manipulate_search_path(self, search_path: ConfigSearchPath) -> None:
         # Appends the search path for this plugin to the end of the search path
         # Note that foobar/conf is outside of the example plugin module.
@@ -11,4 +12,4 @@ class ExampleSearchPathPlugin(SearchPathPlugin):
         # be available in a package.
         # Remember to verify the config is packaged properly (build sdist and look inside,
         # and verify MANIFEST.in is correct).
-        search_path.append(provider="mila_datamodules", path="pkg://mila_datamodules/conf")
+        search_path.append(provider="mila_datamodules", path="pkg://mila_datamodules.configs")

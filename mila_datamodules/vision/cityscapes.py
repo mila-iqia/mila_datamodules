@@ -12,7 +12,7 @@ from torchvision.datasets import Cityscapes
 from mila_datamodules.clusters.cluster_enum import ClusterType
 from mila_datamodules.clusters.utils import SLURM_TMPDIR, replace_kwargs
 
-from .pl_bolts_fix import VisionDataModule
+from .vision_datamodule import VisionDataModule
 
 cityscapes_dir_locations: dict[ClusterType, str] = {
     ClusterType.MILA: "/network/datasets/cityscapes.var/cityscapes_torchvision",
