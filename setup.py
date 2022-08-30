@@ -14,6 +14,6 @@ setup(
         "pytorch-lightning",
         "lightning-bolts",
     ],
-    extras_require={"ffcv": "ffcv"},
+    extras_require={"ffcv": "ffcv", "hydra": ["hydra-core", "hydra-zen"]},
     include_package_data=True,
 )

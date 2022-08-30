@@ -35,7 +35,7 @@ if typing.TYPE_CHECKING:
     from ffcv.fields import Field
     from ffcv.pipeline.operation import Operation
 
-from mila_datamodules.clusters.utils import SCRATCH
+from mila_datamodules.clusters import SCRATCH
 
 from .imagenet import ImagenetDataModule
 

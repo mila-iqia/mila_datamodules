@@ -9,18 +9,19 @@ from torch import nn
 from torch.utils.data import DataLoader
 from torchvision.datasets import Cityscapes
 
+from mila_datamodules.clusters import CURRENT_CLUSTER, SLURM_TMPDIR
 from mila_datamodules.clusters.cluster_enum import ClusterType
-from mila_datamodules.clusters.utils import SLURM_TMPDIR, replace_kwargs
+from mila_datamodules.clusters.utils import all_files_exist
 
-from .vision_datamodule import VisionDataModule
+from .vision_datamodule import _TransformsFix
 
-cityscapes_dir_locations: dict[ClusterType, str] = {
+# TODO: Add for other clusters!
+cityscapes_dir_locations = {
     ClusterType.MILA: "/network/datasets/cityscapes.var/cityscapes_torchvision",
 }
-cityscapes_dir_location = cityscapes_dir_locations.get(ClusterType.current())
 
 
-class CityscapesDataModule(_CityscapesDataModule):
+class CityscapesDataModule(_CityscapesDataModule, _TransformsFix):
     def __init__(
         self,
         data_dir: str | None = None,
@@ -47,12 +48,13 @@ class CityscapesDataModule(_CityscapesDataModule):
             shuffle=shuffle,
             pin_memory=pin_memory,
             drop_last=drop_last,
+            train_transforms=train_transforms,
+            val_transforms=val_transforms,
+            test_transforms=test_transforms,
         )
-        self.train_transforms = train_transforms
-        self.val_transforms = val_transforms
-        self.test_transforms = test_transforms
 
     def prepare_data(self):
+        cityscapes_dir_location = cityscapes_dir_locations.get(CURRENT_CLUSTER)
         if cityscapes_dir_location is None:
             raise NotImplementedError(
                 f"Don't know where cityscapes data is located in cluster {ClusterType.current()}"

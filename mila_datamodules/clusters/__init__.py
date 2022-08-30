@@ -1,8 +1,6 @@
-import os
-import socket
-
 from .cluster_enum import ClusterType
 
-current = ClusterType.current()
-if current == ClusterType.MILA:
-    from .mila import adapt_dataset
+CURRENT_CLUSTER = ClusterType.current()
+SLURM_TMPDIR = CURRENT_CLUSTER.slurm_tmpdir
+SCRATCH = CURRENT_CLUSTER.scratch
+TORCHVISION_DIR = CURRENT_CLUSTER.torchvision_dir

@@ -11,14 +11,14 @@ from torchvision.models import resnet18
 class Model(LightningModule):
     def __init__(self, num_classes: int = 1000):
         super().__init__()
-        self.encoder = nn.Sequential(
+        self.net = nn.Sequential(
             nn.Flatten(),
             nn.LazyLinear(out_features=num_classes),
         )
         self.loss = nn.CrossEntropyLoss()
 
     def forward(self, x: Tensor) -> Tensor:  # type: ignore
-        return self.encoder(x)
+        return self.net(x)
 
     def training_step(self, batch: tuple[Tensor, Tensor], batch_idx: int) -> Tensor:  # type: ignore
         x, y = batch

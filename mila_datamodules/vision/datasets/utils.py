@@ -1,8 +1,5 @@
-"""Set of functions for creating torchvision datasets when on the Mila cluster.
-
-IDEA: later on, we could also add some functions for loading torchvision models from a cached
-directory.
-"""
+"""Wrappers around torchvision datasets that use a good default value for the 'root' argument based
+on the current cluster."""
 from __future__ import annotations
 
 import functools
@@ -15,9 +12,8 @@ from torch.utils.data import Dataset
 from torchvision.datasets import VisionDataset
 from typing_extensions import ParamSpec
 
-from .utils import (
-    SCRATCH,
-    SLURM_TMPDIR,
+from mila_datamodules.clusters import CURRENT_CLUSTER, SCRATCH, SLURM_TMPDIR
+from mila_datamodules.clusters.utils import (
     all_files_exist,
     copy_dataset_files,
     replace_kwargs,
@@ -30,12 +26,12 @@ C = Callable[P, D]
 
 logger = get_logger(__name__)
 
-TORCHVISION_DIR: Path = Path("/network/datasets/torchvision")
 
 known_dataset_files = {
     tvd.MNIST: ["MNIST"],
     tvd.CIFAR10: ["cifar-10-batches-py"],
     tvd.CIFAR100: ["cifar-100-python"],
+    tvd.FashionMNIST: ["FashionMNIST"],
 }
 """ A map of the files for each dataset type, relative to the `torchvision_dir`. """
 
@@ -54,6 +50,7 @@ def adapt_dataset(dataset_type: Callable[P, D]) -> Callable[P, D]:
     SLURM_TMPDIR. If not, then download the dataset to the fast directory (if possible), and read
     it from there.
     """
+
     fastest_load_fn = replace_kwargs(dataset_type, root=SLURM_TMPDIR / "data")
     if dataset_type not in known_dataset_files:
         raise NotImplementedError(
@@ -76,11 +73,13 @@ def adapt_dataset(dataset_type: Callable[P, D]) -> Callable[P, D]:
 
         return _wrap
 
-    if all_files_exist(required_files, TORCHVISION_DIR):
+    if all_files_exist(required_files, CURRENT_CLUSTER.torchvision_dir):
 
         @functools.wraps(dataset_type)
         def _wrap(*args: P.args, **kwargs: P.kwargs) -> D:
-            copy_dataset_files(required_files, TORCHVISION_DIR, SLURM_TMPDIR / "data")
+            copy_dataset_files(
+                required_files, CURRENT_CLUSTER.torchvision_dir, SLURM_TMPDIR / "data"
+            )
             return fastest_load_fn(*args, **kwargs)
 
         # TODO: Check if this is actually worth doing. (I'm thinking probably not.)
