@@ -2,20 +2,18 @@ from __future__ import annotations
 
 import shutil
 from pathlib import Path
-from typing import Any, Callable
+from typing import Callable
 
 from pl_bolts.datamodules import CityscapesDataModule as _CityscapesDataModule
 from torch import nn
-from torch.utils.data import DataLoader
-from torchvision.datasets import Cityscapes
 
 from mila_datamodules.clusters import CURRENT_CLUSTER, SLURM_TMPDIR
 from mila_datamodules.clusters.cluster_enum import ClusterType
-from mila_datamodules.clusters.utils import all_files_exist
 
 from .vision_datamodule import _TransformsFix
 
 # TODO: Add for other clusters!
+# TODO: Copy the archive and use the script to recreate the dataset in SLURM_TMPDIR.
 cityscapes_dir_locations = {
     ClusterType.MILA: "/network/datasets/cityscapes.var/cityscapes_torchvision",
 }
@@ -63,6 +61,6 @@ class CityscapesDataModule(_CityscapesDataModule, _TransformsFix):
         done_file = Path(self.data_dir) / "done.txt"
         if not done_file.exists():
             print(f"Copying cityscapes data from {cityscapes_dir_location} to {self.data_dir}")
-            shutil.copytree(cityscapes_dir_location, self.data_dir)
+            shutil.copytree(cityscapes_dir_location, self.data_dir, dirs_exist_ok=True)
             done_file.touch()
         super().prepare_data()

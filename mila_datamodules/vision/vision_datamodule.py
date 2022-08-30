@@ -46,3 +46,16 @@ class VisionDataModule(
     _VisionDataModule, *((_TransformsFix,) if _bolts_version <= (0, 5, 0) else ())
 ):
     ...
+
+    # TODO: Could also apply the changes here in the `prepare_data` method!
+    # This could also change the value of self.data_dir, using the same logic as in
+    # `adapt_dataset`.
+    # OR (perhaps better): we could have a fully qualified constructor and change the
+    # self.data_dir attribute? Or even add a `data_dir` property?
+    # However, have to be careful that this also works with multiple workers / GPUS, where only
+    # the first worker would have `prepare_data` be called. --> The current approach (changing
+    # `self.dataset_cls`) might be best for now.
+    def prepare_data(self) -> None:
+        """Saves files to data_dir."""
+        self.dataset_cls(self.data_dir, train=True, download=True)
+        self.dataset_cls(self.data_dir, train=False, download=True)

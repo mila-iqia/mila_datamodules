@@ -50,11 +50,11 @@ def setup_slurm_env_variables(vars_to_ignore: Sequence[str] = ()) -> None:
             logger.info("Extracting SLURM environment variables... ")
             command = "srun --pty /bin/bash -c 'env | grep SLURM'"
             logger.debug(f"> {command}")
-            proc = subprocess.run(
+            subprocess.run(
                 command,
                 shell=True,
                 check=True,
-                timeout=2,  # max 2 seconds (this is plenty enough as far as I can tell).
+                timeout=2,  # max 2 seconds (this is plenty as far as I can tell).
                 stdout=temp_file,
             )
             lines = Path(temp_file.name).read_text().split()
@@ -89,52 +89,3 @@ def setup_slurm_env_variables(vars_to_ignore: Sequence[str] = ()) -> None:
             #     executable="/bin/bash",
             #     check=True,
             # )
-
-
-def all_files_exist(
-    required_files: Sequence[str],
-    base_dir: Path,
-) -> bool:
-    return all((base_dir / f).exists() for f in required_files)
-
-
-def replace_kwargs(dataset_type: Callable[P, D], **fixed_arguments) -> Callable[P, D]:
-    """Returns a callable where the given argument values are fixed.
-
-    NOTE: Simply using functools.partial wouldn't work, since passing one of the fixed arguments
-    would raise an error.
-    """
-    init_signature = inspect.signature(dataset_type)
-
-    @functools.wraps(dataset_type)
-    def _wrap(*args: P.args, **kwargs: P.kwargs) -> D:
-        bound_signature = init_signature.bind_partial(*args, **kwargs)
-        for key, value in fixed_arguments.items():
-            bound_signature.arguments[key] = value
-        args = bound_signature.args  # type: ignore
-        kwargs = bound_signature.kwargs  # type: ignore
-        return dataset_type(*args, **kwargs)
-
-    return _wrap
-
-
-def copy_dataset_files(files_to_copy: Sequence[str], source_dir: Path, dest_dir: Path) -> None:
-    assert all_files_exist(files_to_copy, base_dir=source_dir)
-    for source_file in files_to_copy:
-        source_path = source_dir / source_file
-        destination_path = dest_dir / source_file
-        destination_path.parent.mkdir(parents=True, exist_ok=True)
-        print(f"Copying {source_path} -> {destination_path}")
-        if source_path.is_dir():
-            # Copy the folder over.
-            # TODO: Check that this doesn't overwrite existing files.
-            # TODO: Test this out with symlinks?
-            shutil.copytree(
-                src=source_path,
-                dst=destination_path,
-                symlinks=False,
-                dirs_exist_ok=True,
-            )
-        elif not destination_path.exists():
-            # Copy the file over.
-            shutil.copy(src=source_path, dst=destination_path, follow_symlinks=False)
