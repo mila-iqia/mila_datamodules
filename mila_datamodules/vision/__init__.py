@@ -9,8 +9,11 @@ from mila_datamodules.clusters import CURRENT_CLUSTER
 
 if CURRENT_CLUSTER is None:
     from pl_bolts.datamodules import (
+        BinaryEMNISTDataModule,
+        BinaryMNISTDataModule,
         CIFAR10DataModule,
         CityscapesDataModule,
+        EMNISTDataModule,
         FashionMNISTDataModule,
         ImagenetDataModule,
         MNISTDataModule,
@@ -22,7 +25,13 @@ else:
     from .fashion_mnist import FashionMNISTDataModule
     from .imagenet import ImagenetDataModule
     from .imagenet_ffcv import ImagenetFfcvDataModule
-    from .mnist import MNISTDataModule
+    from .mnist import (
+        BinaryEMNISTDataModule,
+        BinaryMNISTDataModule,
+        EMNISTDataModule,
+        MNISTDataModule,
+    )
+    from .stl10 import STL10DataModule
     from .vision_datamodule import VisionDataModule
 
 # TODO: Re-introduce the CIFAR100DataModule.

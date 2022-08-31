@@ -34,6 +34,9 @@ def setup_slurm_env_variables(vars_to_ignore: Sequence[str] = ()) -> None:
     if "SLURM_CLUSTER_NAME" in os.environ:
         # SLURM-related environment variables have already been set. Ignoring.
         return
+    # TODO: Having issues when running this with multiple processes, e.g. when using `pytest -n 4`.
+    # Perhaps we could store a simple job_{SLURM_JOBID}.txt file with the environment variables,
+    # and reuse it between workers?
     with tempfile.NamedTemporaryFile() as temp_file:
         try:
             logger.info("Extracting SLURM environment variables... ")
@@ -43,7 +46,7 @@ def setup_slurm_env_variables(vars_to_ignore: Sequence[str] = ()) -> None:
                 command,
                 shell=True,
                 check=True,
-                timeout=2,  # max 2 seconds (this is plenty as far as I can tell).
+                timeout=5,  # max 5 seconds (this is plenty as far as I can tell).
                 stdout=temp_file,
             )
             lines = Path(temp_file.name).read_text().split()

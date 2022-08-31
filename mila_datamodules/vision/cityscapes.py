@@ -6,17 +6,16 @@ from typing import Callable
 
 from pl_bolts.datamodules import CityscapesDataModule as _CityscapesDataModule
 from torch import nn
+from torchvision.datasets import Cityscapes
 
-from mila_datamodules.clusters import CURRENT_CLUSTER, SLURM_TMPDIR
+from mila_datamodules.clusters import SCRATCH
 from mila_datamodules.clusters.cluster_enum import ClusterType
+from mila_datamodules.vision.datasets.utils import get_dataset_root
 
 from .vision_datamodule import _TransformsFix
 
-# TODO: Add for other clusters!
-# TODO: Copy the archive and use the script to recreate the dataset in SLURM_TMPDIR.
-cityscapes_dir_locations = {
-    ClusterType.MILA: "/network/datasets/cityscapes.var/cityscapes_torchvision",
-}
+# NOTE: This one is a bit tougher to optimize, because it doesn't use the `dataset_cls` attribute.
+# TODO: Copy the archive and extract the dataset in SLURM_TMPDIR, rather than copying the files.
 
 
 class CityscapesDataModule(_CityscapesDataModule, _TransformsFix):
@@ -35,7 +34,7 @@ class CityscapesDataModule(_CityscapesDataModule, _TransformsFix):
         val_transforms: Callable | nn.Module | None = None,
         test_transforms: Callable | nn.Module | None = None,
     ) -> None:
-        data_dir = str(SLURM_TMPDIR / "cityscapes")
+        data_dir = data_dir or str(SCRATCH / "data")
         super().__init__(
             data_dir=data_dir,
             quality_mode=quality_mode,
@@ -52,7 +51,7 @@ class CityscapesDataModule(_CityscapesDataModule, _TransformsFix):
         )
 
     def prepare_data(self):
-        cityscapes_dir_location = cityscapes_dir_locations.get(CURRENT_CLUSTER)
+        cityscapes_dir_location = get_dataset_root(Cityscapes)
         if cityscapes_dir_location is None:
             raise NotImplementedError(
                 f"Don't know where cityscapes data is located in cluster {ClusterType.current()}"

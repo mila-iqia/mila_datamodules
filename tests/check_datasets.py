@@ -1,6 +1,9 @@
+"""Script to check which `VisionDataset`s work out-of-the-box on the current cluster."""
+
 import json
 from collections import defaultdict
 
+import cv2  # noqa
 from torchvision.datasets import VisionDataset
 
 from mila_datamodules.clusters import CURRENT_CLUSTER

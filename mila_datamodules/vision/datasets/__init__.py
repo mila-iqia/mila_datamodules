@@ -4,7 +4,8 @@ from __future__ import annotations
 import functools
 from typing import Callable, TypeVar, cast
 
-import cv2
+import cv2  # noqa
+import pl_bolts.datasets
 import torchvision.datasets
 from torch.utils.data import Dataset
 
@@ -14,6 +15,11 @@ from typing_extensions import ParamSpec
 from mila_datamodules.clusters import CURRENT_CLUSTER
 from mila_datamodules.clusters.cluster_enum import ClusterType
 from mila_datamodules.utils import replace_arg_defaults
+from mila_datamodules.vision.datasets.dataset_files import (
+    dataset_files,
+    dataset_roots_per_cluster,
+    too_large_for_slurm_tmpdir,
+)
 from mila_datamodules.vision.datasets.utils import adapted_constructor
 
 T = TypeVar("T", bound=type)
@@ -52,9 +58,15 @@ Places365 = _adapt_dataset(torchvision.datasets.Places365)
 STL10 = _adapt_dataset(torchvision.datasets.STL10)
 SVHN = _adapt_dataset(torchvision.datasets.SVHN)
 CocoDetection = _adapt_dataset(torchvision.datasets.CocoDetection)
+
+EMNIST = _adapt_dataset(torchvision.datasets.EMNIST)
+BinaryMNIST = _adapt_dataset(pl_bolts.datasets.BinaryMNIST)
+BinaryEMNIST = _adapt_dataset(pl_bolts.datasets.BinaryEMNIST)
+
+
 if CURRENT_CLUSTER is ClusterType.MILA:
     # TODO: Unsure if we want to go there, but it might be useful to include good default values
-    # for these kinds of datasets which require some argument that is a path to some annotation
+    # for these kinds of datasets which require arguments that are path to some annotation/other
     # file.
     # NOTE: In this case here, the dataset can now be created without any arguments, but if a value
     # is passed for the `annFile` argument, it will be used.

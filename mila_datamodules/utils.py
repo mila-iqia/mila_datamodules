@@ -11,6 +11,7 @@ from typing import Callable, Sequence, TypeVar
 from torch.utils.data import Dataset
 from typing_extensions import Concatenate, ParamSpec
 
+T = TypeVar("T")
 D = TypeVar("D", bound=Dataset)
 P = ParamSpec("P")
 C = Callable[P, D]
@@ -44,9 +45,9 @@ def get_cpus_on_node() -> int:
 
 def all_files_exist(
     required_files: Sequence[str],
-    base_dir: Path,
+    base_dir: str | Path,
 ) -> bool:
-    return all((base_dir / f).exists() for f in required_files)
+    return all((Path(base_dir) / f).exists() for f in required_files)
 
 
 def replace_root(dataset_type: Callable[Concatenate[str, P], D], root: str | Path):
@@ -79,8 +80,8 @@ def replace_kwargs(dataset_type: Callable[P, D], **fixed_arguments):
 
 
 def replace_arg_defaults(
-    dataset_type: Callable[P, D], *new_default_args: P.args, **new_default_kwargs: P.kwargs
-):
+    dataset_type: Callable[P, T], *new_default_args: P.args, **new_default_kwargs: P.kwargs
+) -> Callable[P, T]:
     """Returns a callable where the given argument have a different default value.
 
     NOTE: Simply using functools.partial wouldn't work, since passing one of the fixed arguments
@@ -90,7 +91,7 @@ def replace_arg_defaults(
     new_defaults = init_signature.bind_partial(*new_default_args, **new_default_kwargs)
 
     @functools.wraps(dataset_type)
-    def _wrap(*args: P.args, **kwargs: P.kwargs) -> D:
+    def _wrap(*args: P.args, **kwargs: P.kwargs) -> T:
         bound_signature = init_signature.bind_partial(*args, **kwargs)
         for key, value in new_defaults.arguments.items():
             bound_signature.arguments.setdefault(key, value)
