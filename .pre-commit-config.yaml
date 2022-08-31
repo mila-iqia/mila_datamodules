@@ -51,6 +51,11 @@ repos:
     hooks:
       - id: flake8
         args: ["--ignore", "E501,F401,F841,W504,W503", "--exclude", "logs/*,data/*"]
+  - repo: https://github.com/PyCQA/autoflake
+    rev: v1.4
+    hooks:
+      - id: autoflake
+        args: ["--in-place", "--expand-star-imports", "--remove-all-unused-imports", "--ignore-init-module-imports"]
 
   # NOTE: Disabling this, it's annoying.
   # python security linter
