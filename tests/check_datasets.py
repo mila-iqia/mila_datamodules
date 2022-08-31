@@ -1,12 +1,9 @@
 import json
 from collections import defaultdict
 
-import cv2
-import torchvision.datasets as tvd
 from torchvision.datasets import VisionDataset
 
 from mila_datamodules.clusters import CURRENT_CLUSTER
-from mila_datamodules.vision.datasets import _adapt_dataset
 
 successes = []
 failures = defaultdict(list)

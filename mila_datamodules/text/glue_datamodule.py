@@ -1,29 +1,17 @@
-""" GLUEDataModule from the PL + HuggingFace example.
+"""GLUEDataModule from the PL + HuggingFace example.
 
 https://pytorch-lightning.readthedocs.io/en/stable/notebooks/lightning_examples/text-transformers.html
 """
 from __future__ import annotations
-from datetime import datetime
-from typing import Literal, Optional
+
+from typing import Literal
 
 import datasets
-import torch
-from pytorch_lightning import (
-    LightningDataModule,
-    LightningModule,
-    Trainer,
-    seed_everything,
-)
 from datasets.dataset_dict import DatasetDict
-from torch.utils.data import DataLoader
-from transformers import (
-    AdamW,
-    AutoConfig,
-    AutoModelForSequenceClassification,
-    AutoTokenizer,
-    get_linear_schedule_with_warmup,
-)
 from datasets.load import load_dataset
+from pytorch_lightning import LightningDataModule
+from torch.utils.data import DataLoader
+from transformers import AutoTokenizer
 
 Task = Literal[
     "cola",
@@ -107,9 +95,7 @@ class GlueDataModule(LightningDataModule):
     def setup(self, stage: str | None = None) -> None:
         dataset = load_dataset("glue", self.task_name)
         if self.tokenizer is None:
-            self.tokenizer = AutoTokenizer.from_pretrained(
-                self.model_name_or_path, use_fast=True
-            )
+            self.tokenizer = AutoTokenizer.from_pretrained(self.model_name_or_path, use_fast=True)
         assert isinstance(dataset, DatasetDict)
         self.dataset = dataset
 
@@ -130,15 +116,11 @@ class GlueDataModule(LightningDataModule):
         self.eval_splits = [x for x in self.dataset.keys() if "validation" in x]
 
     def train_dataloader(self):
-        return DataLoader(
-            self.dataset["train"], batch_size=self.train_batch_size, shuffle=True
-        )
+        return DataLoader(self.dataset["train"], batch_size=self.train_batch_size, shuffle=True)
 
     def val_dataloader(self):
         if len(self.eval_splits) == 1:
-            return DataLoader(
-                self.dataset["validation"], batch_size=self.eval_batch_size
-            )
+            return DataLoader(self.dataset["validation"], batch_size=self.eval_batch_size)
         elif len(self.eval_splits) > 1:
             return [
                 DataLoader(self.dataset[x], batch_size=self.eval_batch_size)

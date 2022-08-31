@@ -2,12 +2,10 @@ import inspect
 import itertools
 
 import pytest
-import torch
 from pytorch_lightning import LightningDataModule
 from torch.utils.data import DataLoader
 
 import mila_datamodules.vision
-from mila_datamodules.vision import ImagenetDataModule
 
 datamodules = {
     k: v

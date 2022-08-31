@@ -6,7 +6,6 @@ import itertools
 
 # NOTE: Need to import cv2 to prevent a loading error for GLIBCXX with ffcv.
 import cv2  # noqa
-import torch
 import tqdm
 from pytorch_lightning import LightningDataModule, LightningModule, Trainer
 from torch import Tensor, nn
@@ -15,11 +14,7 @@ from torch.utils.data import DataLoader
 from torchvision.models import resnet18
 from typing_extensions import ParamSpec
 
-from mila_datamodules.vision import (
-    CIFAR10DataModule,
-    ImagenetDataModule,
-    ImagenetFfcvDataModule,
-)
+from mila_datamodules.vision import ImagenetDataModule
 from mila_datamodules.vision.cityscapes import CityscapesDataModule
 
 P = ParamSpec("P")

@@ -22,12 +22,11 @@ from typing import Callable, NewType, TypedDict
 from pl_bolts.datamodules.imagenet_datamodule import (
     ImagenetDataModule as _ImagenetDataModule,
 )
-from pl_bolts.datamodules.vision_datamodule import VisionDataModule
 from pl_bolts.datasets import UnlabeledImagenet
 from pytorch_lightning import Trainer
 from torch import nn
 from torch.utils.data import DataLoader
-from typing_extensions import NotRequired, Required
+from typing_extensions import NotRequired
 
 from mila_datamodules.clusters.cluster_enum import ClusterType
 from mila_datamodules.utils import get_cpus_on_node, get_slurm_tmpdir

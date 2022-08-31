@@ -5,7 +5,6 @@ import torch
 from pytorch_lightning import LightningModule, Trainer
 from torch import Tensor, nn
 from torch.optim.adam import Adam
-from torchvision.models import resnet18
 
 
 class Model(LightningModule):
