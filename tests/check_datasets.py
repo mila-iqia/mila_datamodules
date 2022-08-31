@@ -7,16 +7,17 @@ from mila_datamodules.clusters import CURRENT_CLUSTER
 
 successes = []
 failures = defaultdict(list)
-for v in VisionDataset.__subclasses__():
-    k = v.__qualname__
+for dataset_class in VisionDataset.__subclasses__():
+    k = dataset_class.__qualname__
     print(k)
     try:
-        dataset = v(str(CURRENT_CLUSTER.torchvision_dir))
+        dataset = dataset_class(str(CURRENT_CLUSTER.torchvision_dir))
     except Exception as err:
-        failures[f"{type(err).__name__}('{err}')"].append(v)
+        exception_str = f"{type(err).__name__}('{err}')"
+        failures[exception_str].append(dataset_class)
     else:
         print(f"Success for {k}")
-        successes.append(v)
+        successes.append(dataset_class)
 
 print("Successes:", successes)
 

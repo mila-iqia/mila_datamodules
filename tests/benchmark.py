@@ -15,7 +15,6 @@ from torchvision.models import resnet18
 from typing_extensions import ParamSpec
 
 from mila_datamodules.vision import ImagenetDataModule
-from mila_datamodules.vision.cityscapes import CityscapesDataModule
 
 P = ParamSpec("P")
 MAX_BATCHES = 50
@@ -59,9 +58,9 @@ def _trainer():
 def main():
     num_workers = 6
     batch_size = 128
-    datamodule_torch = CityscapesDataModule(batch_size=batch_size, num_workers=num_workers)
+    # datamodule_torch = CityscapesDataModule(batch_size=batch_size, num_workers=num_workers)
     # datamodule_torch = CIFAR10DataModule(batch_size=batch_size, num_workers=num_workers)
-    # datamodule_torch = ImagenetDataModule(batch_size=batch_size, num_workers=num_workers)
+    datamodule_torch = ImagenetDataModule(batch_size=batch_size, num_workers=num_workers)
     datamodule_torch.prepare_data()
     datamodule_torch.setup()
     # datamodule_ffcv = ImagenetFfcvDataModule(

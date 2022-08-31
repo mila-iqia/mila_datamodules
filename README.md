@@ -2,8 +2,6 @@
 
 Efficient Datamodules customized for the Mila/CC clusters
 
-This currently includes the following datamodules:
-
 - ImagenetDataModule: Efficiently copies the dataset to SLURM_TMPDIR, uses right # of workers
 - ImagenetFfcvDataModule: Same as above, plus uses FFCV to speed up the train dataloader by >10x
 
@@ -12,10 +10,14 @@ particular field, please feel free to submit a PR! :)
 
 ## Installation:
 
-At the time of writing, this currently has ffcv as a core dependency.
+This can be installed as usual with `pip`:
+
+```console
+pip install "mila_datamodules @ git+https://www.github.com/lebrice/mila_datamodules.git"
+```
+
+`ffcv` is also an optional dependency used for the `ImagenetFfcvDataModule`.
 Installing FFCV can be a bit of a pain at the moment. But we're working on it.
-FFCV will probably be made into an optional dependency eventually, unless we can somehow make it
-super easy to install.
 
 For now, your best bet is to use conda with the provided env.yaml:
 
@@ -26,7 +28,7 @@ $ conda activate ffcv
 $ pip install git+https://www.github.com/lebrice/mila_datamodules
 ```
 
-## Benchmarking
+## Benchmarking Imagenet FFCV DataModule
 
 | Pure for loops (200 batches) | time           |
 | ---------------------------- | -------------- |
@@ -38,5 +40,7 @@ $ pip install git+https://www.github.com/lebrice/mila_datamodules
 | Manual loop (FFCV)         | 0:00:47.665201 |
 | Manual loop (Pytorch)      | 0:00:32.682359 |
 | PL + DataLoaders           | 0:00:33.111235 |
-| PL + FFCV                  | 0:03:05.346748 |
+| PL + FFCV\*                | 0:03:05.346748 |
 | PL + Obfuscated DataLoader | 0:00:31.623927 |
+
+\*: [See this GitHub issue](https://github.com/Lightning-AI/lightning/issues/14189)
