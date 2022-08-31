@@ -4,17 +4,11 @@ import functools
 import inspect
 import os
 import shutil
-import socket
-import subprocess
-import tempfile
-from logging import getLogger as get_logger
 from multiprocessing import cpu_count
 from pathlib import Path
 from typing import Callable, Sequence, TypeVar
 
-import torchvision.datasets as tvd
 from torch.utils.data import Dataset
-from torchvision.datasets import VisionDataset
 from typing_extensions import Concatenate, ParamSpec
 
 D = TypeVar("D", bound=Dataset)
@@ -77,6 +71,29 @@ def replace_kwargs(dataset_type: Callable[P, D], **fixed_arguments):
         bound_signature = init_signature.bind_partial(*args, **kwargs)
         for key, value in fixed_arguments.items():
             bound_signature.arguments[key] = value
+        args = bound_signature.args  # type: ignore
+        kwargs = bound_signature.kwargs  # type: ignore
+        return dataset_type(*args, **kwargs)
+
+    return _wrap
+
+
+def replace_arg_defaults(
+    dataset_type: Callable[P, D], *new_default_args: P.args, **new_default_kwargs: P.kwargs
+):
+    """Returns a callable where the given argument have a different default value.
+
+    NOTE: Simply using functools.partial wouldn't work, since passing one of the fixed arguments
+    would raise an error.
+    """
+    init_signature = inspect.signature(dataset_type)
+    new_defaults = init_signature.bind_partial(*new_default_args, **new_default_kwargs)
+
+    @functools.wraps(dataset_type)
+    def _wrap(*args: P.args, **kwargs: P.kwargs) -> D:
+        bound_signature = init_signature.bind_partial(*args, **kwargs)
+        for key, value in new_defaults.arguments.items():
+            bound_signature.arguments.setdefault(key, value)
         args = bound_signature.args  # type: ignore
         kwargs = bound_signature.kwargs  # type: ignore
         return dataset_type(*args, **kwargs)

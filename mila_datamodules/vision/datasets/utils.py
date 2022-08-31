@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import functools
 import inspect
+import warnings
 from logging import getLogger as get_logger
 from pathlib import Path
-from typing import Callable, Optional, TypeVar, cast
+from typing import Callable, TypeVar, cast
 
 import torchvision.datasets as tvd
 from torch.utils.data import Dataset
@@ -14,6 +15,7 @@ from torchvision.datasets import VisionDataset
 from typing_extensions import Concatenate, ParamSpec
 
 from mila_datamodules.clusters import CURRENT_CLUSTER, SCRATCH, SLURM_TMPDIR
+from mila_datamodules.clusters.cluster_enum import ClusterType
 from mila_datamodules.utils import all_files_exist, copy_dataset_files, replace_kwargs
 
 P = ParamSpec("P")
@@ -24,13 +26,32 @@ C = Callable[P, D]
 logger = get_logger(__name__)
 
 
+def dataset_root(dataset_cls: type, cluster: ClusterType | None = None) -> Path:
+    cluster = cluster or ClusterType.current()
+    if issubclass(dataset_cls, tvd.VisionDataset):
+        return cluster.torchvision_dir
+    raise NotImplementedError
+
+
 known_dataset_files = {
     tvd.MNIST: ["MNIST"],
     tvd.CIFAR10: ["cifar-10-batches-py"],
     tvd.CIFAR100: ["cifar-100-python"],
     tvd.FashionMNIST: ["FashionMNIST"],
+    tvd.Caltech101: ["caltech101"],
+    tvd.Caltech256: ["caltech256"],
+    tvd.CelebA: ["celeba"],
+    tvd.Cityscapes: ["cityscapes"],
+    tvd.INaturalist: ["inat"],
+    tvd.Places365: ["places365"],
+    tvd.STL10: ["stl10"],
+    tvd.SVHN: ["SVHN"],
+    tvd.CocoDetection: ["annotations", "test2017", "train2017", "val2017"],
 }
-""" A map of the files for each dataset type, relative to the `torchvision_dir`. """
+""" A map of the folder associated with each dataset type, relative to the `torchvision_dir` of a
+cluster. This is also equivalent to the name of the folder that would be downloaded when using the
+dataset with `download=True`.
+"""
 
 too_large_for_slurm_tmpdir: set[Callable] = set()
 """ Set of datasets which are too large to store in $SLURM_TMPDIR.
@@ -41,57 +62,62 @@ NOTE: Unused atm.
 # TODO: Use types to also indicate that the 'root' argument becomes optional.
 
 
-def adapt_dataset(
-    dataset_type: Callable[Concatenate[str, P], D]
-) -> Callable[Concatenate[str | None, P], D]:
-    """Check if the dataset is already downloaded in $SLURM_TMPDIR.
+def make_dataset_fn(dataset_type: Callable[P, D] | type[D]) -> Callable[P, D]:
+    """Wraps a dataset into a function that constructs it efficiently.
 
-    If so, read and return it. If not, check if the dataset is already stored somewhere in the
-    cluster. If so, try to copy it over to SLURM_TMPDIR. If that works, read the dataset from
-    SLURM_TMPDIR. If not, then download the dataset to the fast directory (if possible), and read
-    it from there.
+    When invoked, the function first checks if the dataset is already downloaded in $SLURM_TMPDIR.
+    If so, it is read and returned. If not, checks if the dataset is already stored somewhere in
+    the cluster ($SCRATCH/data, then /network/datasets directory). If so, try to copy it over to
+    SLURM_TMPDIR. If that works, read the dataset from SLURM_TMPDIR if the dataset isn't too large.
+    If the dataset isn't found anywhere, then it is downloaded to SLURM_TMPDIR and read from there.
     """
 
     if dataset_type not in known_dataset_files:
-        raise NotImplementedError(
-            f"Don't know which files are associated with dataset type {dataset_type}!"
-            f"Consider adding the names of the files to the dataset_files dictionary."
-        )
-    required_files = known_dataset_files[dataset_type]
-
-    fastest_load_fn = replace_kwargs(dataset_type, root=SLURM_TMPDIR / "data")
-    if all_files_exist(required_files, SLURM_TMPDIR / "data"):
-        return fastest_load_fn
-    if all_files_exist(required_files, SCRATCH / "data"):
-
-        @functools.wraps(dataset_type)
-        def _wrap(*args: P.args, **kwargs: P.kwargs) -> D:
-            copy_dataset_files(required_files, SCRATCH / "data", SLURM_TMPDIR / "data")
-            return fastest_load_fn(*args, **kwargs)
-
-        return _wrap
-
-    if all_files_exist(required_files, CURRENT_CLUSTER.torchvision_dir):
-
-        @functools.wraps(dataset_type)
-        def _wrap(*args: P.args, **kwargs: P.kwargs) -> D:
-            copy_dataset_files(
-                required_files, CURRENT_CLUSTER.torchvision_dir, SLURM_TMPDIR / "data"
+        warnings.warn(
+            RuntimeWarning(
+                f"Don't know which files are associated with dataset type {dataset_type}!"
+                f"Consider adding the names of the files to the dataset_files dictionary."
             )
-            return fastest_load_fn(*args, **kwargs)
+        )
+        return dataset_type
+    required_files = known_dataset_files[dataset_type]
+    fast_dir = SLURM_TMPDIR / "data"
+    scratch_dir = SCRATCH / "data"
+    dataset_type = cast(Callable[P, D], dataset_type)
+    load_from_fast_dir = replace_kwargs(dataset_type, root=fast_dir)
 
-        # TODO: Check if this is actually worth doing. (I'm thinking probably not.)
-        # _copy_dataset_files(dataset_type, SLURM_TMPDIR, SCRATCH)
-        return _wrap
+    def copy_and_load(source_dir: Path):
+        """Returns a function that copies the dataset files from `source_dir` to `fast_dir` and
+        then loads the dataset from `fast_dir`."""
 
-    def _wrap(*args: P.args, **kwargs: P.kwargs) -> D:
+        @functools.wraps(dataset_type)
+        def _copy_and_load(*args: P.args, **kwargs: P.kwargs) -> D:
+            copy_dataset_files(required_files, source_dir, fast_dir)
+            return load_from_fast_dir(*args, **kwargs)
+
+        return _copy_and_load
+
+    if all_files_exist(required_files, fast_dir):
+        return load_from_fast_dir
+    if all_files_exist(required_files, scratch_dir):
+        if dataset_type in too_large_for_slurm_tmpdir:
+            return replace_kwargs(dataset_type, root=scratch_dir)
+        else:
+            return copy_and_load(scratch_dir)
+    if all_files_exist(required_files, CURRENT_CLUSTER.torchvision_dir):
+        if dataset_type in too_large_for_slurm_tmpdir:
+            return replace_kwargs(dataset_type, root=CURRENT_CLUSTER.torchvision_dir)
+        else:
+            return copy_and_load(CURRENT_CLUSTER.torchvision_dir)
+
+    def _try_slurm_tmpdir(*args: P.args, **kwargs: P.kwargs) -> D:
         try:
-            return fastest_load_fn(*args, **kwargs)
+            return load_from_fast_dir(*args, **kwargs)
         except OSError:
             # Fallback to the normal callable (the passed in class)
             return dataset_type(*args, **kwargs)
 
-    return _wrap
+    return _try_slurm_tmpdir
 
 
 def adapted_constructor(

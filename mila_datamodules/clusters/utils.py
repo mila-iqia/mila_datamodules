@@ -5,20 +5,14 @@ directory.
 """
 from __future__ import annotations
 
-import functools
-import inspect
 import os
-import shutil
-import socket
 import subprocess
 import tempfile
 from logging import getLogger as get_logger
 from pathlib import Path
 from typing import Callable, Sequence, TypeVar
 
-import torchvision.datasets as tvd
 from torch.utils.data import Dataset
-from torchvision.datasets import VisionDataset
 from typing_extensions import ParamSpec
 
 D = TypeVar("D", bound=Dataset)
@@ -26,11 +20,6 @@ P = ParamSpec("P")
 C = Callable[P, D]
 
 logger = get_logger(__name__)
-
-
-def on_login_node() -> bool:
-    # IDEA: Detect if we're on a login node somehow.
-    return socket.getfqdn().endswith(".server.mila.quebec") and "SLURM_TMPDIR" not in os.environ
 
 
 def setup_slurm_env_variables(vars_to_ignore: Sequence[str] = ()) -> None:
@@ -48,7 +37,7 @@ def setup_slurm_env_variables(vars_to_ignore: Sequence[str] = ()) -> None:
     with tempfile.NamedTemporaryFile() as temp_file:
         try:
             logger.info("Extracting SLURM environment variables... ")
-            command = "srun --pty /bin/bash -c 'env | grep SLURM'"
+            command = "srun env | grep SLURM"
             logger.debug(f"> {command}")
             subprocess.run(
                 command,

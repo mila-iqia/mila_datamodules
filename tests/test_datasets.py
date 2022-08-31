@@ -5,6 +5,7 @@ import pytest
 from torchvision.datasets import VisionDataset
 
 import mila_datamodules.vision.datasets
+from mila_datamodules.clusters import ClusterType
 
 datasets = {
     k: v
@@ -18,4 +19,6 @@ def test_dataset_creation(dataset_cls: type[VisionDataset]):
     p = "fake_path"
     dataset = dataset_cls(root=p)
     assert not Path(p).exists()
-    x, y = dataset[0]
+    _ = dataset[0]
+    assert len(dataset) > 0
+    assert dataset.root == ClusterType.current().slurm_tmpdir / "data"

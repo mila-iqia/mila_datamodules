@@ -53,6 +53,3 @@ class ClusterType(enum.Enum):
         """Returns the writeable directory where checkpoints / code / general data should be
         stored."""
         return Path(os.environ["SCRATCH"])
-
-
-current = ClusterType.current()
