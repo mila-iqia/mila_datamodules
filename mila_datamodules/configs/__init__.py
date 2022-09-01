@@ -84,4 +84,4 @@ def register_configs(group: str = "datamodule") -> None:
 
 
 # NOTE: Could there be cases in which we don't want to register these configs?
-register_configs()
+# register_configs()

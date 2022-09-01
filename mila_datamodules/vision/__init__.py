@@ -1,14 +1,5 @@
 from __future__ import annotations
 
-from typing import Union
-
-from typing_extensions import Literal
-
-try:
-    import cv2  # noqa (Has to be done before any ffcv/torch-related imports).
-except ImportError:
-    pass
-
 from mila_datamodules.clusters import CURRENT_CLUSTER
 
 if CURRENT_CLUSTER is None:

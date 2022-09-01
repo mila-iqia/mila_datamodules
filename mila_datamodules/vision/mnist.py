@@ -1,4 +1,3 @@
-import cv2  # noqa
 from pl_bolts.datamodules import BinaryEMNISTDataModule as _BinaryEMNISTDataModule
 from pl_bolts.datamodules import BinaryMNISTDataModule as _BinaryMNISTDataModule
 from pl_bolts.datamodules import EMNISTDataModule as _EMNISTDataModule

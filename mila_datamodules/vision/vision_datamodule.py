@@ -3,15 +3,10 @@ from __future__ import annotations
 import typing
 from typing import ClassVar
 
-from torchvision.datasets import VisionDataset
-
-try:
-    import cv2  # noqa (Has to be done before any ffcv/torch-related imports).
-except ImportError:
-    pass
 import pl_bolts
 import pytorch_lightning
 from pl_bolts.datamodules.vision_datamodule import VisionDataModule as _VisionDataModule
+from torchvision.datasets import VisionDataset
 
 if typing.TYPE_CHECKING:
     from typing import Callable

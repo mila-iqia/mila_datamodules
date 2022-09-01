@@ -11,10 +11,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Literal, TypedDict, TypeVar
 
-try:
-    import cv2  # noqa (Has to be done before any ffcv-related imports).
-except ImportError:
-    pass
 import numpy as np
 import torch
 from pl_bolts.datasets import UnlabeledImagenet

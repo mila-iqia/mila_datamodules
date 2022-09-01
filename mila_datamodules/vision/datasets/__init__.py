@@ -4,10 +4,6 @@ from __future__ import annotations
 import functools
 from typing import Callable, TypeVar, cast
 
-try:
-    import cv2  # noqa
-except ImportError:
-    pass
 import pl_bolts.datasets
 import torchvision.datasets
 from torch.utils.data import Dataset
