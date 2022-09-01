@@ -1,0 +1,4 @@
+defaults:
+  - mnist
+
+batch_size: 111

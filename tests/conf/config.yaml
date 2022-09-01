@@ -1,1 +1,4 @@
-datamodule: cifar10
+# @package _global_
+defaults:
+- _self_
+- datamodule: cifar10

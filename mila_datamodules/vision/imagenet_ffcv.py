@@ -11,7 +11,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Literal, TypedDict, TypeVar
 
-import cv2  # noqa (Has to be done before any ffcv-related imports).
+try:
+    import cv2  # noqa (Has to be done before any ffcv-related imports).
+except ImportError:
+    pass
 import numpy as np
 import torch
 from pl_bolts.datasets import UnlabeledImagenet
@@ -271,9 +274,8 @@ class ImagenetFfcvDataModule(ImagenetDataModule):
             train_transforms = train_transforms.to(self.device)
         self.train_transforms = train_transforms
 
-        # TODO: Incorporate a hash of the writer config into the name of the ffcv file, so that
-        # we could move the ffcv file to a shared location and re-use it as needed.
-        # However, the validation split would still require the main dataset to be copied over.
+        # TODO: the validation split still requires the main dataset to be copied over,
+        # even if we have a cached copy of the train ffcv dataset on SCRATCH.
         self._train_file = Path(self.data_dir) / "train.ffcv"
         self._val_file = Path(self.data_dir) / "val.ffcv"
 

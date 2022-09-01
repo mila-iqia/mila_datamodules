@@ -12,7 +12,6 @@ datamodules = {
     k: v
     for k, v in vars(mila_datamodules.vision).items()
     if inspect.isclass(v) and issubclass(v, LightningDataModule) and k != "VisionDataModule"
-    if "MNIST" in k
 }
 
 

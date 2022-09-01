@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from typing import Union
+
+from typing_extensions import Literal
+
 try:
     import cv2  # noqa (Has to be done before any ffcv/torch-related imports).
 except ImportError:
@@ -17,6 +21,7 @@ if CURRENT_CLUSTER is None:
         FashionMNISTDataModule,
         ImagenetDataModule,
         MNISTDataModule,
+        STL10DataModule,
     )
     from pl_bolts.datamodules.vision_datamodule import VisionDataModule
 else:
@@ -33,5 +38,6 @@ else:
     )
     from .stl10 import STL10DataModule
     from .vision_datamodule import VisionDataModule
+
 
 # TODO: Re-introduce the CIFAR100DataModule.
