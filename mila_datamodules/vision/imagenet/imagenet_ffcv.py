@@ -278,6 +278,7 @@ class ImagenetFfcvDataModule(ImagenetDataModule):
         self.save_hyperparameters()
         # Note: defined in the LightningDataModule class, gets set when using a Trainer.
         self.trainer: Trainer | None = None
+        self._current_epoch: int | None = None
 
     def prepare_data(self) -> None:
         super().prepare_data()
@@ -400,9 +401,16 @@ class ImagenetFfcvDataModule(ImagenetDataModule):
     @property
     def current_epoch(self) -> int | None:
         """The current training epoch if using a Trainer of PyTorchLightning, else None."""
+        if self._current_epoch is not None:
+            return self._current_epoch
         if self.trainer is not None:
             return self.trainer.current_epoch
         return None
+
+    @current_epoch.setter
+    def current_epoch(self, value: int) -> None:
+        """Manually set the current training epoch if not using a Trainer of PyTorchLightning."""
+        self._current_epoch = value
 
 
 X_in = TypeVar("X_in")

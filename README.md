@@ -60,8 +60,8 @@ test_dataloader = imagenet.test_dataloader()
 | ------ | ------------------------------------- |
 | ✅      | Supported, tested.                    |
 | ✓      | Supported, not tested.                |
-| ?      | Don't know if the cluster has it yet. |
 | TODO   | Cluster has it, not yet added         |
+| ?      | Don't know if the cluster has it yet. |
 | ❌      | Not available in that cluster         |
 
 ### Vision

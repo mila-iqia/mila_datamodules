@@ -16,6 +16,7 @@ from typing_extensions import ParamSpec
 
 from mila_datamodules.vision import ImagenetDataModule
 
+# logging.basicConfig(level=logging.DEBUG)
 P = ParamSpec("P")
 MAX_BATCHES = 50
 
@@ -50,7 +51,7 @@ def _trainer():
         limit_train_batches=MAX_BATCHES,
         max_epochs=1,
         enable_checkpointing=False,
-        log_every_n_steps=0,
+        # log_every_n_steps=0,
         logger=False,
     )
 
@@ -58,28 +59,38 @@ def _trainer():
 def main():
     num_workers = 6
     batch_size = 128
+    # Debugging those:
     # datamodule_torch = CityscapesDataModule(batch_size=batch_size, num_workers=num_workers)
     # datamodule_torch = CIFAR10DataModule(batch_size=batch_size, num_workers=num_workers)
-    datamodule_torch = ImagenetDataModule(batch_size=batch_size, num_workers=num_workers)
-    datamodule_torch.prepare_data()
-    datamodule_torch.setup()
-    # datamodule_ffcv = ImagenetFfcvDataModule(
-    #     batch_size=batch_size, num_workers=num_workers
-    # )
+
+    # datamodule_torch = ImagenetDataModule(batch_size=batch_size, num_workers=num_workers)
+    # datamodule_torch.prepare_data()
+    # datamodule_torch.setup()
+
+    # datamodule_ffcv = ImagenetFfcvDataModule(batch_size=batch_size, num_workers=num_workers)
     # datamodule_ffcv.prepare_data()
 
-    print("Pure for loops over 200 batches:")
-    print("PyTorch:\n", for_loop(datamodule_torch, max_batches=200))
+    # datamodule_ffcv_smaller_res = ImagenetFfcvDataModule(
+    #     batch_size=batch_size,
+    #     num_workers=num_workers,
+    #     img_resolution_config=ImageResolutionConfig(max_res=160),
+    # )
+    # datamodule_ffcv_smaller_res.prepare_data()
+
+    # print("Pure for loops over 200 batches:")
+    # print("PyTorch:\n", for_loop(datamodule_torch, max_batches=200))
     # print("FFCV:\n", for_loop(datamodule_ffcv, max_batches=200))
+    # print("FFCV (smaller res):\n", for_loop(datamodule_ffcv_smaller_res, max_batches=200))
 
     # print(f"Training on {MAX_BATCHES} batches:")
     # TODO: Maybe caching has an impact? Roll everything twice, and only take the second value.
-    # print("Manual train loop (FFCV):", manual_loop(datamodule_ffcv))
     # print("Manual train loop (Pytorch):", manual_loop(datamodule_torch))
-    # print("PL + DataLoaders:", train_time(datamodule_torch))
-    # print("PL + FFCV:", train_time(datamodule_ffcv))
-    # print("PL + DataLoaders (hidden):", train_time(datamodule_torch, obfuscate=True))
-    # print("PL + DataLoaders (no optimizations):", pl_without_dataloader_optimizations())
+    # print("Manual train loop (FFCV):", manual_loop(datamodule_ffcv))
+    # print("Manual train loop (FFCV, smaller res):", manual_loop(datamodule_ffcv_smaller_res))
+    # print("PL + DataLoaders:", pl_train_time(datamodule_torch))
+    # print("PL + FFCV:", pl_train_time(datamodule_ffcv))
+    # print("PL + FFCV (smaller res):", pl_train_time(datamodule_ffcv_smaller_res))
+    # print("PL + DataLoaders (hidden):", pl_train_time(datamodule_torch, obfuscate=True))
 
 
 def for_loop(datamodule: LightningDataModule, max_batches=1000):
@@ -95,7 +106,7 @@ def for_loop(datamodule: LightningDataModule, max_batches=1000):
     return datetime.datetime.now() - start_time
 
 
-def train_time(datamodule: ImagenetDataModule, obfuscate=False):
+def pl_train_time(datamodule: ImagenetDataModule, obfuscate=False):
     loader = datamodule.train_dataloader()
     trainer = _trainer()
     model = Model()
