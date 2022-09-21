@@ -44,25 +44,15 @@ val_dataloader = imagenet.val_dataloader()
 test_dataloader = imagenet.test_dataloader()
 ```
 
-## TODOs:
-
-- [x] Add all the datamodules from pl_bolts for the Mila Cluster
-- [x] Add all the datasets from torchvision for the Mila Cluster
-- [ ] Add datamodules for the existing datasets of the Mila cluster at https://datasets.server.mila.quebec/
-  - [ ] Figure out which datasets to tackle first!
-  - [ ] Figure out how to instantiate each dataset in code (@satyaog ?)
-  - [ ] Implement a datamodule for each dataset
-- [ ] Do the same for the CC clusters, one at a time!
-
 ## Supported Datasets
 
-| Symbol | Meaning                               |
-| ------ | ------------------------------------- |
-| ✅      | Supported, tested.                    |
-| ✓      | Supported, not tested.                |
-| TODO   | Cluster has it, not yet added         |
-| ?      | Don't know if the cluster has it yet. |
-| ❌      | Not available in that cluster         |
+| Symbol | Meaning                                                      |
+| ------ | ------------------------------------------------------------ |
+| ✅      | Supported, tested.                                           |
+| ✓      | Supported, not tested.                                       |
+| TODO   | Dataset is available on the Cluster, but isn't supported yet |
+| ?      | Don't know if the dataset is available on that cluster       |
+| ❌      | Dataset isn't available on that cluster                      |
 
 ### Vision
 
@@ -93,81 +83,89 @@ test_dataloader = imagenet.test_dataloader()
 
 ______________________________________________________________________
 
-(wip) Note: Datasets on the Mila cluster (/network/datasets)
+## TODOs / Roadmap / ideas
 
-- [ ] ami
-- [ ] c4
-- [ ] caltech101
-- [ ] caltech256
-- [ ] celeba
-- [ ] cifar10
-- [ ] cifar100
-- [ ] .cifar100.git.bak
-- [ ] .cifar10.git.bak
-- [x] cityscapes
-- [ ] climatenet
-- [x] coco
-- [ ] commonvoice
-- [ ] conceptualcaptions
-- [ ] convai2
-- [ ] covid-19
-- [ ] cub200
-- [ ] dcase2020
-- [ ] describable-textures
-- [ ] dns-challenge
-- [ ] domainnet
-- [ ] dtd
-- [x] fashionmnist
-- [ ] ffhq
-- [ ] fgvcaircraft
-- [ ] fgvcxfungi
-- [ ] flowers102
-- [ ] gaia
-- [ ] geolifeclef
-- [ ] gtsrb
-- [ ] hotels50K
-- [ ] icentia11k
-- [x] imagenet
-- [ ] inat
-- [ ] kitti
-- [x] kmnist
-- [ ] LDC
-- [ ] librispeech
-- [ ] lincs_l1000
-- [ ] .log
-- [ ] metadataset
-- [ ] mimiciii
-- [ ] mimii
-- [x] mnist
-- [ ] modelnet40
-- [ ] msd
-- [ ] multiobjectdatasets
-- [ ] naturalquestions
-- [ ] nlvr2
-- [ ] nuscenes
-- [ ] nwm
-- [ ] oc20
-- [ ] omniglot
-- [ ] open_images
-- [ ] parlai
-- [ ] partnet
-- [ ] personachat
-- [ ] perturbseq
-- [ ] places365
-- [ ] playing_for_data
-- [ ] qmnist
-- [ ] quickdraw
-- [ ] robotcar
-- [ ] shapenet
-- [ ] songlyrics
-- [x] stl10
-- [ ] svhn
-- [ ] tensorflow
-- [ ] timit
-- [ ] tinyimagenet
-- [x] torchvision
-- [ ] toyadmos
-- [ ] twitter
-- [ ] ubuntu
-- [ ] waymoperception
-- [ ] wikitext
+- [x] Add all the datamodules from pl_bolts for the Mila Cluster
+- [x] Add all the datasets from torchvision for the Mila Cluster
+- [ ] Add datamodules for the existing datasets of the Mila cluster at https://datasets.server.mila.quebec/
+  - [ ] Figure out which datasets to tackle first!
+  - [ ] Figure out how to instantiate each dataset in code (@satyaog ?)
+  - [ ] Implement a datamodule for each dataset
+- [ ] Do the same for the CC clusters, one at a time!
+
+(wip): Listing all the datasets present on every cluster, and check those that are supported.
+
+| Dataset              | Mila | Beluga | Cedar | Graham | Narval |
+| -------------------- | ---- | ------ | ----- | ------ | ------ |
+| ami                  | TODO | ?      | ?     | ?      | ?      |
+| c4                   | TODO | ?      | ?     | ?      | ?      |
+| caltech101           | TODO | ?      | ?     | ?      | ?      |
+| caltech256           | TODO | ?      | ?     | ?      | ?      |
+| celeba               | TODO | ?      | ?     | ?      | ?      |
+| cifar10              | ✅    | ?      | ?     | ?      | ?      |
+| cifar100             | ✅    | ?      | ?     | ?      | ?      |
+| cityscapes           | ✅    | ?      | ?     | ?      | ?      |
+| climatenet           | TODO | ?      | ?     | ?      | ?      |
+| coco                 | TODO | ?      | ?     | ?      | ?      |
+| commonvoice          | TODO | ?      | ?     | ?      | ?      |
+| conceptualcaptions   | TODO | ?      | ?     | ?      | ?      |
+| convai2              | TODO | ?      | ?     | ?      | ?      |
+| covid-19             | TODO | ?      | ?     | ?      | ?      |
+| cub200               | TODO | ?      | ?     | ?      | ?      |
+| dcase2020            | TODO | ?      | ?     | ?      | ?      |
+| describable-textures | TODO | ?      | ?     | ?      | ?      |
+| dns-challenge        | TODO | ?      | ?     | ?      | ?      |
+| domainnet            | TODO | ?      | ?     | ?      | ?      |
+| dtd                  | TODO | ?      | ?     | ?      | ?      |
+| fashionmnist         | ✅    | ?      | ?     | ?      | ?      |
+| ffhq                 | TODO | ?      | ?     | ?      | ?      |
+| fgvcaircraft         | TODO | ?      | ?     | ?      | ?      |
+| fgvcxfungi           | TODO | ?      | ?     | ?      | ?      |
+| flowers102           | TODO | ?      | ?     | ?      | ?      |
+| gaia                 | TODO | ?      | ?     | ?      | ?      |
+| geolifeclef          | TODO | ?      | ?     | ?      | ?      |
+| gtsrb                | TODO | ?      | ?     | ?      | ?      |
+| hotels50K            | TODO | ?      | ?     | ?      | ?      |
+| icentia11k           | TODO | ?      | ?     | ?      | ?      |
+| imagenet             | ✅    | ?      | ?     | ?      | ?      |
+| inat                 | TODO | ?      | ?     | ?      | ?      |
+| kitti                | TODO | ?      | ?     | ?      | ?      |
+| kmnist               | ✅    | ?      | ?     | ?      | ?      |
+| LDC                  | TODO | ?      | ?     | ?      | ?      |
+| librispeech          | TODO | ?      | ?     | ?      | ?      |
+| lincs_l1000          | TODO | ?      | ?     | ?      | ?      |
+| metadataset          | TODO | ?      | ?     | ?      | ?      |
+| mimiciii             | TODO | ?      | ?     | ?      | ?      |
+| mimii                | TODO | ?      | ?     | ?      | ?      |
+| mnist                | ✅    | ?      | ?     | ?      | ?      |
+| modelnet4            | TODO | ?      | ?     | ?      | ?      |
+| msd                  | TODO | ?      | ?     | ?      | ?      |
+| multiobjectdatasets  | TODO | ?      | ?     | ?      | ?      |
+| naturalquestions     | TODO | ?      | ?     | ?      | ?      |
+| nlvr2                | TODO | ?      | ?     | ?      | ?      |
+| nuscenes             | TODO | ?      | ?     | ?      | ?      |
+| nwm                  | TODO | ?      | ?     | ?      | ?      |
+| oc20                 | TODO | ?      | ?     | ?      | ?      |
+| omniglot             | TODO | ?      | ?     | ?      | ?      |
+| open_images          | TODO | ?      | ?     | ?      | ?      |
+| parlai               | TODO | ?      | ?     | ?      | ?      |
+| partnet              | TODO | ?      | ?     | ?      | ?      |
+| personachat          | TODO | ?      | ?     | ?      | ?      |
+| perturbseq           | TODO | ?      | ?     | ?      | ?      |
+| places365            | TODO | ?      | ?     | ?      | ?      |
+| playing_for_data     | TODO | ?      | ?     | ?      | ?      |
+| qmnist               | TODO | ?      | ?     | ?      | ?      |
+| quickdraw            | TODO | ?      | ?     | ?      | ?      |
+| robotcar             | TODO | ?      | ?     | ?      | ?      |
+| shapenet             | TODO | ?      | ?     | ?      | ?      |
+| songlyrics           | TODO | ?      | ?     | ?      | ?      |
+| stl10                | ✅    | ?      | ?     | ?      | ?      |
+| svhn                 | TODO | ?      | ?     | ?      | ?      |
+| tensorflow           | TODO | ?      | ?     | ?      | ?      |
+| timit                | TODO | ?      | ?     | ?      | ?      |
+| tinyimagenet         | TODO | ?      | ?     | ?      | ?      |
+| toyadmos             | TODO | ?      | ?     | ?      | ?      |
+| twitter              | TODO | ?      | ?     | ?      | ?      |
+| ubuntu               | TODO | ?      | ?     | ?      | ?      |
+| waymoperception      | TODO | ?      | ?     | ?      | ?      |
+| wikitext             | TODO | ?      | ?     | ?      | ?      |
