@@ -1,12 +1,6 @@
-# mila_datamodules
+# (WIP) mila_datamodules
 
 Efficient Datamodules customized for the Mila/CC clusters
-
-- ImagenetDataModule: Efficiently copies the dataset to SLURM_TMPDIR, uses right # of workers
-- ImagenetFfcvDataModule: Same as above, plus uses FFCV to speed up the train dataloader by >10x
-
-If you have some recipe for creating train / val / tests dataloaders for some dataset in your
-particular field, please feel free to submit a PR! :)
 
 ## Installation:
 
@@ -16,9 +10,8 @@ This can be installed as usual with `pip`:
 pip install "mila_datamodules @ git+https://www.github.com/lebrice/mila_datamodules.git"
 ```
 
-`ffcv` is also an optional dependency used for the `ImagenetFfcvDataModule`.
+`ffcv` is also an optional dependency used in the `ImagenetFfcvDataModule`.
 Installing FFCV can be a bit of a pain at the moment. But we're working on it.
-
 For now, your best bet is to use conda with the provided env.yaml:
 
 ```console
@@ -28,19 +21,40 @@ $ conda activate ffcv
 $ pip install git+https://www.github.com/lebrice/mila_datamodules
 ```
 
-## Benchmarking Imagenet FFCV DataModule
+## TODOs:
 
-| Pure for loops (200 batches) | time           |
-| ---------------------------- | -------------- |
-| PyTorch                      | 0:00:59.851324 |
-| FFCV                         | 0:00:17.056751 |
+- [x] Add all the datamodules from pl_bolts for the Mila Cluster
+- [x] Add all the datasets from torchvision for the Mila Cluster
+- [ ] Add datamodules for the existing datasets of the Mila cluster at https://datasets.server.mila.quebec/
+  - [ ] Figure out which datasets to tackle first!
+  - [ ] Figure out how to instantiate each dataset in code (@satyaog ?)
+  - [ ] Implement a datamodule for each dataset
 
-| Training on 50 batches     | time           |
-| -------------------------- | -------------- |
-| Manual loop (FFCV)         | 0:00:47.665201 |
-| Manual loop (Pytorch)      | 0:00:32.682359 |
-| PL + DataLoaders           | 0:00:33.111235 |
-| PL + FFCV\*                | 0:03:05.346748 |
-| PL + Obfuscated DataLoader | 0:00:31.623927 |
+## Supported Datasets and clusters
 
-\*: [See this GitHub issue](https://github.com/Lightning-AI/lightning/issues/14189)
+| Symbol | Meaning                               |
+| ------ | ------------------------------------- |
+| ✅      | Supported, tested.                    |
+| ✓      | Supported, not tested.                |
+| ?      | Don't know if the cluster has it yet. |
+| TODO   | Cluster has it, not yet added         |
+| ❌      | Not available in that cluster         |
+
+### Vision
+
+| Dataset         | Type                 | Mila | Beluga | Cedar | Graham | Narval |
+| --------------- | -------------------- | ---- | ------ | ----- | ------ | ------ |
+| Imagenet        | Image Classification | ✅    | ?      | ?     | ?      | ?      |
+| Imagenet (ffcv) | Image Classification | ✅    | ?      | ?     | ?      | ?      |
+| Cityscapes      | Image Segmentation?  | ✅    | ?      | ?     | ?      | ?      |
+| CIFAR10         | Image Classification | ✅    | ?      | ?     | ?      | ?      |
+| CIFAR100        | Image Classification | ✅    | ?      | ?     | ?      | ?      |
+| STL10           | Image Classification | ✅    | ?      | ?     | ?      | ?      |
+| MNIST           | Image Classification | ✅    | ?      | ?     | ?      | ?      |
+| FashionMNIST    | Image Classification | ✅    | ?      | ?     | ?      | ?      |
+| EMNIST          | Image Classification | ✅    | ?      | ?     | ?      | ?      |
+| BinaryMNIST     | Image Classification | ✅    | ?      | ?     | ?      | ?      |
+| BinaryEMNIST    | Image Classification | ✅    | ?      | ?     | ?      | ?      |
+| FFHQ            | Images (faces)       | TODO | ?      | ?     | ?      | ?      |
+| GLUE            | Text                 | ✅    | ✓      | ✓     | ✓      | ✓      |
+| COCO_captions   | Image + Text         | ✓    | ?      | ?     | ?      | ?      |
