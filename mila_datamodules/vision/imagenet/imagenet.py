@@ -16,7 +16,6 @@ import subprocess
 import sys
 import warnings
 from contextlib import contextmanager
-from logging import getLogger as get_logger
 from pathlib import Path
 from typing import Callable, NewType, TypedDict
 
@@ -31,8 +30,6 @@ from typing_extensions import NotRequired
 
 from mila_datamodules.clusters.cluster_enum import ClusterType
 from mila_datamodules.utils import get_cpus_on_node, get_slurm_tmpdir
-
-logger = get_logger(__name__)
 
 C = NewType("C", int)
 H = NewType("H", int)
@@ -214,7 +211,7 @@ def copy_imagenet_to_dest(
     val_done_file = destination_dir / "val_done.txt"
     if not val_done_file.exists():
         if val_folder is not None:
-            logger.info(f"Copying imagenet val dataset to {destination_dir}/val ...")
+            print(f"Copying imagenet val dataset to {destination_dir}/val ...")
             subprocess.run(
                 args=f"cp -r {val_folder} {destination_dir}",
                 shell=True,
@@ -243,8 +240,8 @@ def copy_imagenet_to_dest(
 
     train_done_file = destination_dir / "train_done.txt"
     if not train_done_file.exists():
-        logger.info(f"Copying imagenet train dataset to {train_folder} ...")
-        logger.info("(NOTE: This should take no more than 10 minutes.)")
+        print(f"Copying imagenet train dataset to {train_folder} ...")
+        print("(NOTE: This should take no more than 10 minutes.)")
         with temporarily_chdir(train_folder):
             subprocess.run(
                 args=(
@@ -259,9 +256,9 @@ def copy_imagenet_to_dest(
 
     devkit_dest = destination_dir / "ILSVRC2012_devkit_t12.tar.gz"
     if not devkit_dest.exists():
-        logger.info("Copying the devkit file...")
+        print("Copying the devkit file...")
         shutil.copyfile(devkit, devkit_dest)
-    logger.info("DONE!")
+    print("DONE!")
 
 
 def _generate_meta_bins(data_dir: str | Path) -> None:

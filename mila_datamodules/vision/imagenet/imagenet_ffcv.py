@@ -320,6 +320,7 @@ class ImagenetFfcvDataModule(ImagenetDataModule):
                 f"({ffcv_file_on_scratch} -> {ffcv_file})"
             )
             shutil.copy(ffcv_file_on_scratch, ffcv_file)
+            _done_file(ffcv_file).touch()
             return
         # If done txt file doesn't exist and we don't already have this file on scratch, we need
         # to rewrite the train.ffcv file
