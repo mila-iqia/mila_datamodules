@@ -33,6 +33,20 @@ def _cache(fn: C) -> C:
 
 @_cache
 def _adapt_dataset(dataset_type: type[D]) -> type[D]:
+    """When not running on a cluster, returns the given input.
+
+    When running on a cluster, returns a subclass of the given dataset that has a modified/adapted
+    constructor.
+    This constructor does a few things, but basically works like a three-level caching system.
+    1. /network/datasets/torchvision (read-only "cache")
+    2. $SCRATCH/cache/torch (writeable "cache")
+    3. $SLURM_TMPDIR/data (writeable "cache", fastest storage).
+
+    If the dataset isn't found on the cluster, it will be downloaded in $SCRATCH
+    If the dataset fits in $SLURM_TMPDIR, it will be copied from wherever it is, and placed
+    there.
+    The dataset is then read from SLURM_TMPDIR.
+    """
     if CURRENT_CLUSTER is None:
         return dataset_type  # Do nothing, since we're not on a SLURM cluster.
 
@@ -62,6 +76,4 @@ CocoCaptions = _adapt_dataset(torchvision.datasets.CocoCaptions)
 EMNIST = _adapt_dataset(torchvision.datasets.EMNIST)
 BinaryMNIST = _adapt_dataset(pl_bolts.datasets.BinaryMNIST)
 BinaryEMNIST = _adapt_dataset(pl_bolts.datasets.BinaryEMNIST)
-
-
 # todo: Add the other datasets here.
