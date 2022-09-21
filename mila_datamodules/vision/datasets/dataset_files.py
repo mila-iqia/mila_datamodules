@@ -20,6 +20,7 @@ dataset_files = {
     tvd.STL10: ["stl10"],
     tvd.SVHN: ["SVHN"],
     tvd.CocoDetection: ["annotations", "test2017", "train2017", "val2017"],
+    tvd.CocoCaptions: ["annotations", "test2017", "train2017", "val2017"],
     tvd.EMNIST: ["EMNIST"],
     pl_bolts.datasets.BinaryMNIST: ["MNIST"],
     pl_bolts.datasets.BinaryEMNIST: ["EMNIST"],

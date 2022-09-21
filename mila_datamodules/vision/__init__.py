@@ -29,5 +29,7 @@ else:
     from .stl10 import STL10DataModule
     from .vision_datamodule import VisionDataModule
 
+# New additions:
+from .coco import CocoCaptionsDataModule
 
 # TODO: Re-introduce the CIFAR100DataModule.
