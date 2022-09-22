@@ -115,7 +115,7 @@ ______________________________________________________________________
 | cityscapes                                                          | ✅    | TODO   | ?     | ?      | ?      |
 | cityscapes.var/cityscapes_torchvision                               | TODO | ?      | ?     | ?      | ?      |
 | climatenet                                                          | TODO | ?      | ?     | ?      | ?      |
-| coco                                                                | ✅    | TODO   | ?     | ?      | ?      |
+| coco                                                                | ✓    | TODO   | ?     | ?      | ?      |
 | coco.var/coco_bcachefs                                              | TODO | ?      | ?     | ?      | ?      |
 | coco.var/coco_torchvision                                           | TODO | ?      | ?     | ?      | ?      |
 | commonvoice                                                         | TODO | ?      | ?     | ?      | ?      |

@@ -18,16 +18,6 @@ clusters: list[ClusterName] = [
 
 supported_untested_datasets: dict[ClusterName, list[str]] = defaultdict(list)
 supported_untested_datasets["mila"] = [
-    "imagenet",
-    "cifar10",
-    "cifar100",
-    "stl10",
-    "mnist",
-    "fashionmnist",
-    "emnist",
-    "binaryemnist",
-    "binarymnist",
-    "cityscapes",
     "coco",
 ]
 
@@ -44,7 +34,6 @@ supported_tested_datasets["mila"] = [
     "binaryemnist",
     "binarymnist",
     "cityscapes",
-    "coco",
 ]
 
 unavailable_datasets: dict[ClusterName, list[str]] = defaultdict(list)
