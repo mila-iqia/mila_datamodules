@@ -88,9 +88,9 @@ ______________________________________________________________________
 - [x] Add all the datamodules from pl_bolts for the Mila Cluster
 - [x] Add all the datasets from torchvision for the Mila Cluster
 - [ ] Add datamodules for the existing datasets of the Mila cluster at https://datasets.server.mila.quebec/
-- [ ] Figure out which datasets to tackle first!
-- [ ] Figure out how to instantiate each dataset in code (@satyaog ?)
-- [ ] Implement a datamodule for each dataset
+  - [ ] Figure out which datasets to tackle first!
+  - [ ] Figure out how to instantiate each dataset in code (@satyaog ?)
+  - [ ] Implement a datamodule for each dataset
 - [ ] Do the same for the CC clusters, one at a time!
 
 <!-- DATASET SUPPORT TABLE START -->

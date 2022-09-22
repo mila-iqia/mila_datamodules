@@ -102,7 +102,7 @@ def update_support_table_in_readme():
     readme_path = this_folder.parent / "README.md"
     with open(readme_path) as f:
         lines = f.readlines()
-        lines = [line.strip() for line in lines]
+        lines = [line.removesuffix("\n") for line in lines]
 
         start_line = lines.index(table_start_flag)
         end_line = lines.index(table_end_flag)
