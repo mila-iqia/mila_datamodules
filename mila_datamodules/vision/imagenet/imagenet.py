@@ -55,13 +55,13 @@ class ImageNetFiles(TypedDict):
 
 
 imagenet_file_locations: dict[Cluster, ImageNetFiles] = {
-    Cluster.MILA: {
+    Cluster.Mila: {
         "train_archive": "/network/datasets/imagenet/ILSVRC2012_img_train.tar",
         "val_folder": "/network/datasets/imagenet.var/imagenet_torchvision/val",
         "devkit": "/network/datasets/imagenet/ILSVRC2012_devkit_t12.tar.gz",
     },
     # TODO: Need help with filling these:
-    Cluster.BELUGA: {
+    Cluster.Beluga: {
         "train_archive": "/project/rpp-bengioy/data/curated/imagenet/ILSVRC2012_img_train.tar",
         "val_archive": "/project/rpp-bengioy/data/curated/imagenet/ILSVRC2012_img_val.tar",
         "devkit": "/project/rpp-bengioy/data/curated/imagenet/ILSVRC2012_devkit_t12.tar.gz",

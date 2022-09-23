@@ -12,14 +12,6 @@ from torch.utils.data import Dataset
 from typing_extensions import ParamSpec
 
 from mila_datamodules.clusters import CURRENT_CLUSTER
-from mila_datamodules.clusters.cluster import Cluster
-from mila_datamodules.registry import (
-    dataset_files,
-    dataset_roots_per_cluster,
-    get_dataset_root,
-    too_large_for_slurm_tmpdir,
-)
-from mila_datamodules.utils import replace_arg_defaults
 from mila_datamodules.vision.datasets.utils import adapted_constructor
 
 T = TypeVar("T", bound=type)

@@ -13,27 +13,27 @@ logger = get_logger(__name__)
 class Cluster(enum.Enum):
     """Enum of the different clusters available."""
 
-    MILA = enum.auto()
-    CEDAR = enum.auto()
-    BELUGA = enum.auto()
-    GRAHAM = enum.auto()
-    NARVAL = enum.auto()
+    Mila = enum.auto()
+    Cedar = enum.auto()
+    Beluga = enum.auto()
+    Graham = enum.auto()
+    Narval = enum.auto()
 
     @classmethod
     def current(cls) -> Cluster:
         setup_slurm_env_variables()
         cluster_name = os.environ["SLURM_CLUSTER_NAME"]
         if cluster_name == "mila":
-            return cls.MILA
-        # TODO: Double-check the value in other clusters:
+            return cls.Mila
+        # TODO: Double-check the value of this environment variable in other clusters:
         if cluster_name == "beluga":
-            return cls.BELUGA
+            return cls.Beluga
         if cluster_name == "graham":
-            return cls.GRAHAM
+            return cls.Graham
         if cluster_name == "cedar":
-            return cls.CEDAR
+            return cls.Cedar
         if cluster_name == "narval":
-            return cls.NARVAL
+            return cls.Narval
 
         raise NotImplementedError(f"Unknown cluster: {cluster_name}")
 
@@ -47,3 +47,8 @@ class Cluster(enum.Enum):
         """Returns the writeable directory where checkpoints / code / general data should be
         stored."""
         return Path(os.environ["SCRATCH"])
+
+    @property
+    def normal_name(self) -> str:
+        """Returns the normal name of the cluster."""
+        return self.name.lower().capitalize()

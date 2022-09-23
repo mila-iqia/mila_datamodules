@@ -1,12 +1,11 @@
 import torchvision.datasets as tvd
 from pl_bolts.datamodules import STL10DataModule as _STL10DataModule
 
-from mila_datamodules.clusters import CURRENT_CLUSTER
-from mila_datamodules.registry import dataset_roots_per_cluster
+from mila_datamodules.registry import get_dataset_root
 from mila_datamodules.utils import replace_arg_defaults
 
 # Get the data directory, if possible.
-default_data_dir = dataset_roots_per_cluster.get(CURRENT_CLUSTER, {}).get(tvd.STL10)
+default_data_dir = get_dataset_root(tvd.STL10)
 
 
 # NOTE: This prevents a useless download by setting the `data_dir` to a good default value.

@@ -7,13 +7,13 @@ from mila_datamodules.clusters import SLURM_TMPDIR, Cluster
 from .datasets import CocoCaptions
 
 captions_train_annFile_location = {
-    Cluster.MILA: "/network/datasets/torchvision/annotations/captions_train2017.json",
+    Cluster.Mila: "/network/datasets/torchvision/annotations/captions_train2017.json",
     # TODO:
     # ClusterType.BELUGA: "?",
 }
 
 captions_test_annFile_location = {
-    Cluster.MILA: "/network/datasets/torchvision/annotations/captions_val2017.json",
+    Cluster.Mila: "/network/datasets/torchvision/annotations/captions_val2017.json",
     # TODO:
     # ClusterType.BELUGA: "?",
 }
