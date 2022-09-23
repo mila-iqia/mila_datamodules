@@ -109,11 +109,11 @@ ______________________________________________________________________
 | celeba                                                              | TODO | ?      | ?     | ?      | ?      |
 | celeba.var/celeba_torchvision                                       | TODO | ?      | ?     | ?      | ?      |
 | cifar10                                                             | ✅    | TODO   | ?     | ?      | ?      |
-| cifar10.var/cifar10_torchvision                                     | TODO | ?      | ?     | ?      | ?      |
+| cifar10.var/cifar10_torchvision                                     | ✅    | ?      | ?     | ?      | ?      |
 | cifar100                                                            | ✅    | TODO   | ?     | ?      | ?      |
-| cifar100.var/cifar100_torchvision                                   | TODO | ?      | ?     | ?      | ?      |
+| cifar100.var/cifar100_torchvision                                   | ✅    | ?      | ?     | ?      | ?      |
 | cityscapes                                                          | ✅    | TODO   | ?     | ?      | ?      |
-| cityscapes.var/cityscapes_torchvision                               | TODO | ?      | ?     | ?      | ?      |
+| cityscapes.var/cityscapes_torchvision                               | ✅    | ?      | ?     | ?      | ?      |
 | climatenet                                                          | TODO | ?      | ?     | ?      | ?      |
 | coco                                                                | ✓    | TODO   | ?     | ?      | ?      |
 | coco.var/coco_bcachefs                                              | TODO | ?      | ?     | ?      | ?      |
@@ -134,7 +134,7 @@ ______________________________________________________________________
 | domainnet                                                           | TODO | ?      | ?     | ?      | ?      |
 | dtd                                                                 | TODO | ?      | ?     | ?      | ?      |
 | fashionmnist                                                        | ✅    | ?      | ?     | ?      | ?      |
-| fashionmnist.var/fashionmnist_torchvision                           | TODO | ?      | ?     | ?      | ?      |
+| fashionmnist.var/fashionmnist_torchvision                           | ✅    | ?      | ?     | ?      | ?      |
 | ffhq                                                                | TODO | ?      | ?     | ?      | ?      |
 | fgvcaircraft                                                        | TODO | ?      | ?     | ?      | ?      |
 | fgvcxfungi                                                          | TODO | ?      | ?     | ?      | ?      |
@@ -149,7 +149,7 @@ ______________________________________________________________________
 | imagenet.var/imagenet_benzina                                       | TODO | ?      | ?     | ?      | ?      |
 | imagenet.var/imagenet_hdf5                                          | TODO | ?      | ?     | ?      | ?      |
 | imagenet.var/imagenet_tensorflow                                    | TODO | ?      | ?     | ?      | ?      |
-| imagenet.var/imagenet_torchvision                                   | TODO | ?      | ?     | ?      | ?      |
+| imagenet.var/imagenet_torchvision                                   | ✅    | ?      | ?     | ?      | ?      |
 | inat                                                                | TODO | ?      | ?     | ?      | ?      |
 | inat.var/inat_torchvision                                           | TODO | ?      | ?     | ?      | ?      |
 | kitti                                                               | TODO | ?      | ?     | ?      | ?      |
@@ -165,7 +165,7 @@ ______________________________________________________________________
 | mimii                                                               | TODO | TODO   | ?     | ?      | ?      |
 | mimii.var/mimii_extract                                             | TODO | ?      | ?     | ?      | ?      |
 | mnist                                                               | ✅    | TODO   | ?     | ?      | ?      |
-| mnist.var/mnist_torchvision                                         | TODO | ?      | ?     | ?      | ?      |
+| mnist.var/mnist_torchvision                                         | ✅    | ?      | ?     | ?      | ?      |
 | modelnet40                                                          | TODO | ?      | ?     | ?      | ?      |
 | msd                                                                 | TODO | ?      | ?     | ?      | ?      |
 | msd.var/msd_top50tags                                               | TODO | ?      | ?     | ?      | ?      |
@@ -214,7 +214,7 @@ ______________________________________________________________________
 | songlyrics/songlyrics_gyani95                                       | TODO | TODO   | ?     | ?      | ?      |
 | songlyrics/songlyrics_mousehead                                     | TODO | TODO   | ?     | ?      | ?      |
 | stl10                                                               | ✅    | ?      | ?     | ?      | ?      |
-| stl10.var/stl10_torchvision                                         | TODO | ?      | ?     | ?      | ?      |
+| stl10.var/stl10_torchvision                                         | ✅    | ?      | ?     | ?      | ?      |
 | svhn                                                                | TODO | ?      | ?     | ?      | ?      |
 | svhn.var/svhn_torchvision                                           | TODO | ?      | ?     | ?      | ?      |
 | timit                                                               | TODO | TODO   | ?     | ?      | ?      |

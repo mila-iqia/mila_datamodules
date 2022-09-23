@@ -35,6 +35,10 @@ supported_tested_datasets["mila"] = [
     "binarymnist",
     "cityscapes",
 ]
+# NOTE: Just to get rid of some 'duplicates' in the table.
+supported_tested_datasets["mila"].extend(
+    [f"{dataset}.var/{dataset}_torchvision" for dataset in supported_tested_datasets["mila"]]
+)
 
 unavailable_datasets: dict[ClusterName, list[str]] = defaultdict(list)
 
@@ -47,7 +51,8 @@ def create_dataset_support_table() -> str:
         if not file.exists():
             continue
         with open(file) as f:
-            cluster_datasets = {line.strip() for line in f.readlines()}
+            cluster_datasets = sorted({line.strip() for line in f.readlines()})
+
         for dataset in cluster_datasets:
             dataset_to_clusters[dataset].append(cluster)
 
