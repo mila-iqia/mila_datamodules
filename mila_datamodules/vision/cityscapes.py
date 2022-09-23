@@ -9,7 +9,7 @@ from torch import nn
 from torchvision.datasets import Cityscapes
 
 from mila_datamodules.clusters import SCRATCH
-from mila_datamodules.clusters.cluster_enum import ClusterType
+from mila_datamodules.clusters.cluster import Cluster
 from mila_datamodules.vision.datasets.utils import get_dataset_root
 
 from .vision_datamodule import _TransformsFix
@@ -54,7 +54,7 @@ class CityscapesDataModule(_CityscapesDataModule, _TransformsFix):
         cityscapes_dir_location = get_dataset_root(Cityscapes)
         if cityscapes_dir_location is None:
             raise NotImplementedError(
-                f"Don't know where cityscapes data is located in cluster {ClusterType.current()}"
+                f"Don't know where cityscapes data is located in cluster {Cluster.current()}"
             )
 
         done_file = Path(self.data_dir) / "done.txt"

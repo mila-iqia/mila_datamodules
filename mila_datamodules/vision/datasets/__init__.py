@@ -12,7 +12,7 @@ from torch.utils.data import Dataset
 from typing_extensions import ParamSpec
 
 from mila_datamodules.clusters import CURRENT_CLUSTER
-from mila_datamodules.clusters.cluster_enum import ClusterType
+from mila_datamodules.clusters.cluster import Cluster
 from mila_datamodules.utils import replace_arg_defaults
 from mila_datamodules.vision.datasets.dataset_files import (
     dataset_files,

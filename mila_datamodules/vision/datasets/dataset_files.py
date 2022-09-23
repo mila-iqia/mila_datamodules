@@ -4,7 +4,7 @@ from typing import Callable
 import pl_bolts.datasets
 import torchvision.datasets as tvd
 
-from mila_datamodules.clusters.cluster_enum import ClusterType
+from mila_datamodules.clusters.cluster import Cluster
 
 dataset_files = {
     tvd.MNIST: ["MNIST"],
@@ -33,8 +33,8 @@ This is simply a list of the files that are expected to be present in the `root`
 dataset type in order for it to work.
 """
 
-dataset_roots_per_cluster: dict[ClusterType, dict[type, Path]] = {
-    ClusterType.MILA: {
+dataset_roots_per_cluster: dict[Cluster, dict[type, Path]] = {
+    Cluster.MILA: {
         k: Path("/network/datasets/torchvision")
         for k in [
             tvd.MNIST,
@@ -54,9 +54,9 @@ dataset_roots_per_cluster: dict[ClusterType, dict[type, Path]] = {
         ]
     },
     # TODO: Fill these in!
-    ClusterType.BELUGA: {},
-    ClusterType.GRAHAM: {},
-    ClusterType.CEDAR: {},
+    Cluster.BELUGA: {},
+    Cluster.GRAHAM: {},
+    Cluster.CEDAR: {},
 }
 """ The path to the `root` path to use to read each dataset type, for each cluster.
 

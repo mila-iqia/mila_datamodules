@@ -28,7 +28,7 @@ from torch import nn
 from torch.utils.data import DataLoader
 from typing_extensions import NotRequired
 
-from mila_datamodules.clusters.cluster_enum import ClusterType
+from mila_datamodules.clusters.cluster import Cluster
 from mila_datamodules.utils import get_cpus_on_node, get_slurm_tmpdir
 
 C = NewType("C", int)
@@ -54,14 +54,14 @@ class ImageNetFiles(TypedDict):
     """ Path to the ILSVRC2012_devkit_t12.tar.gz file. """
 
 
-imagenet_file_locations: dict[ClusterType, ImageNetFiles] = {
-    ClusterType.MILA: {
+imagenet_file_locations: dict[Cluster, ImageNetFiles] = {
+    Cluster.MILA: {
         "train_archive": "/network/datasets/imagenet/ILSVRC2012_img_train.tar",
         "val_folder": "/network/datasets/imagenet.var/imagenet_torchvision/val",
         "devkit": "/network/datasets/imagenet/ILSVRC2012_devkit_t12.tar.gz",
     },
     # TODO: Need help with filling these:
-    ClusterType.BELUGA: {
+    Cluster.BELUGA: {
         "train_archive": "/project/rpp-bengioy/data/curated/imagenet/ILSVRC2012_img_train.tar",
         "val_archive": "/project/rpp-bengioy/data/curated/imagenet/ILSVRC2012_img_val.tar",
         "devkit": "/project/rpp-bengioy/data/curated/imagenet/ILSVRC2012_devkit_t12.tar.gz",
@@ -187,7 +187,7 @@ def copy_imagenet_to_dest(
     See [this Slack thread](https://mila-umontreal.slack.com/archives/CFAS8455H/p1652168938773169?thread_ts=1652126891.083229&cid=CFAS8455H)
     for more info.
     """
-    paths = imagenet_file_locations[ClusterType.current()]
+    paths = imagenet_file_locations[Cluster.current()]
     train_archive = paths["train_archive"]
     devkit = paths["devkit"]
     if "val_folder" in paths:
@@ -197,7 +197,7 @@ def copy_imagenet_to_dest(
         val_folder = None
         val_archive = paths["val_archive"]
     else:
-        cluster = ClusterType.current()
+        cluster = Cluster.current()
         raise RuntimeError(
             f"One of 'val_folder' or 'val_archive' must be set for cluster {cluster}!"
         )

@@ -14,7 +14,7 @@ from torchvision.datasets import VisionDataset
 from typing_extensions import Concatenate, ParamSpec
 
 from mila_datamodules.clusters import CURRENT_CLUSTER, SCRATCH, SLURM_TMPDIR
-from mila_datamodules.clusters.cluster_enum import ClusterType
+from mila_datamodules.clusters.cluster import Cluster
 from mila_datamodules.utils import all_files_exist, copy_dataset_files, replace_kwargs
 from mila_datamodules.vision.datasets.dataset_files import (
     dataset_files,
@@ -30,12 +30,12 @@ C = Callable[P, D]
 logger = get_logger(__name__)
 
 
-def get_dataset_root(dataset_cls: type, cluster: ClusterType | None = None) -> str:
+def get_dataset_root(dataset_cls: type, cluster: Cluster | None = None) -> str:
     """Gets the root directory to use to read the given dataset on the given cluster.
 
     Raises a NotImplementedError if the dataset location isn't known for that cluster.
     """
-    cluster = cluster or ClusterType.current()
+    cluster = cluster or Cluster.current()
     dataset_roots = dataset_roots_per_cluster[cluster]
     if dataset_cls not in dataset_roots:
         raise NotImplementedError(

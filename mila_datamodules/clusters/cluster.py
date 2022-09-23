@@ -10,7 +10,7 @@ from mila_datamodules.clusters.utils import setup_slurm_env_variables
 logger = get_logger(__name__)
 
 
-class ClusterType(enum.Enum):
+class Cluster(enum.Enum):
     """Enum of the different clusters available."""
 
     MILA = enum.auto()
@@ -20,7 +20,7 @@ class ClusterType(enum.Enum):
     NARVAL = enum.auto()
 
     @classmethod
-    def current(cls) -> ClusterType:
+    def current(cls) -> Cluster:
         setup_slurm_env_variables()
         cluster_name = os.environ["SLURM_CLUSTER_NAME"]
         if cluster_name == "mila":

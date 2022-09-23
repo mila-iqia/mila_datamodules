@@ -2,18 +2,18 @@ import torch
 from pl_bolts.datamodules.sr_datamodule import TVTDataModule
 from torch.utils.data import random_split
 
-from mila_datamodules.clusters import SLURM_TMPDIR, ClusterType
+from mila_datamodules.clusters import SLURM_TMPDIR, Cluster
 
 from .datasets import CocoCaptions
 
 captions_train_annFile_location = {
-    ClusterType.MILA: "/network/datasets/torchvision/annotations/captions_train2017.json",
+    Cluster.MILA: "/network/datasets/torchvision/annotations/captions_train2017.json",
     # TODO:
     # ClusterType.BELUGA: "?",
 }
 
 captions_test_annFile_location = {
-    ClusterType.MILA: "/network/datasets/torchvision/annotations/captions_val2017.json",
+    Cluster.MILA: "/network/datasets/torchvision/annotations/captions_val2017.json",
     # TODO:
     # ClusterType.BELUGA: "?",
 }
@@ -33,8 +33,8 @@ class CocoCaptionsDataModule(TVTDataModule):
         self.val_split = val_split
         self.val_split_seed = val_split_seed
 
-        train_annFile = captions_train_annFile_location[ClusterType.current()]
-        test_annFile = captions_test_annFile_location[ClusterType.current()]
+        train_annFile = captions_train_annFile_location[Cluster.current()]
+        test_annFile = captions_test_annFile_location[Cluster.current()]
 
         # NOTE: Root gets ignored anyway.
         dataset_trainval = CocoCaptions(root=str(SLURM_TMPDIR), annFile=train_annFile)
