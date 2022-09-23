@@ -102,7 +102,11 @@ def replace_arg_defaults(
     return _wrap
 
 
-def copy_dataset_files(files_to_copy: Sequence[str], source_dir: Path, dest_dir: Path) -> None:
+def copy_dataset_files(
+    files_to_copy: Sequence[str], source_dir: str | Path, dest_dir: str | Path
+) -> None:
+    source_dir = Path(source_dir)
+    dest_dir = Path(dest_dir)
     assert all_files_exist(files_to_copy, base_dir=source_dir)
     for source_file in files_to_copy:
         source_path = source_dir / source_file

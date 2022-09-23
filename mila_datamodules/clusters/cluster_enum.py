@@ -38,12 +38,6 @@ class ClusterType(enum.Enum):
         raise NotImplementedError(f"Unknown cluster: {cluster_name}")
 
     @property
-    def torchvision_dir(self) -> Path:
-        if self is ClusterType.MILA:
-            return Path("/network/datasets/torchvision")
-        raise NotImplementedError(f"TODO: Return the torchvision directory for cluster {self}")
-
-    @property
     def slurm_tmpdir(self) -> Path:
         """Returns the 'fast' directory where files should be stored for quick read/writtes."""
         return Path(os.environ["SLURM_TMPDIR"])

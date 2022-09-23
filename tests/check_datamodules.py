@@ -4,19 +4,20 @@ from collections import defaultdict
 
 import cv2  # noqa
 from pl_bolts.datamodules import *  # noqa
-from pytorch_lightning import LightningDataModule
+from pl_bolts.datamodules.vision_datamodule import VisionDataModule
 
-from mila_datamodules.clusters import CURRENT_CLUSTER
+from mila_datamodules.vision.datasets.utils import get_dataset_root
 
 successes = []
 failures = []
 successes = []
 failures = defaultdict(list)
-for datamodule_class in LightningDataModule.__subclasses__():
+for datamodule_class in VisionDataModule.__subclasses__():
     k = datamodule_class.__qualname__
     print(k)
     try:
-        datamodule = datamodule_class(str(CURRENT_CLUSTER.torchvision_dir))
+        dataset_root = get_dataset_root(datamodule_class.dataset_cls)
+        datamodule = datamodule_class(str(dataset_root))
         datamodule.prepare_data()
         datamodule.setup()
         loader = datamodule.train_dataloader()

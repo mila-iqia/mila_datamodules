@@ -100,11 +100,13 @@ def make_dataset_fn(dataset_type: Callable[P, D]) -> Callable[P, D]:
         if dataset_type in too_large_for_slurm_tmpdir:
             return replace_kwargs(dataset_type, root=scratch_dir)
         return copy_and_load_from(scratch_dir)
-    if all_files_exist(required_files, CURRENT_CLUSTER.torchvision_dir):
+
+    dataset_root = get_dataset_root(dataset_type, cluster=CURRENT_CLUSTER)
+    if all_files_exist(required_files, dataset_root):
         if dataset_type in too_large_for_slurm_tmpdir:
-            return replace_kwargs(dataset_type, root=CURRENT_CLUSTER.torchvision_dir)
+            return replace_kwargs(dataset_type, root=dataset_root)
         else:
-            return copy_and_load_from(CURRENT_CLUSTER.torchvision_dir)
+            return copy_and_load_from(dataset_root)
 
     # TODO: For datasets that can be downloaded but that we don't have, we could try to download it
     # into SCRATCH for later use, before copying it to SLURM_TMPDIR.
@@ -144,6 +146,7 @@ def adapted_constructor(
         # The original passed value for the 'root' argument (if any).
         original_root: str | None = bound_args.arguments.get("root")
         new_root: str | Path | None = None
+        dataset_root = get_dataset_root(dataset_cls, cluster=CURRENT_CLUSTER)
 
         if all_files_exist(required_files, fast_tmp_dir):
             logger.info("Dataset is already stored in SLURM_TMPDIR")
@@ -156,10 +159,10 @@ def adapted_constructor(
             else:
                 logger.info("Dataset is large, files will be read from SCRATCH.")
                 new_root = scratch_dir
-        elif all_files_exist(required_files, CURRENT_CLUSTER.torchvision_dir):
+        elif all_files_exist(required_files, dataset_root):
             logger.info("Copying files from the torchvision dir to SLURM_TMPDIR")
-            copy_dataset_files(required_files, CURRENT_CLUSTER.torchvision_dir, fast_tmp_dir)
-            new_root = CURRENT_CLUSTER.torchvision_dir
+            copy_dataset_files(required_files, dataset_root, fast_tmp_dir)
+            new_root = dataset_root
         # TODO: Double-check these cases here, they are a more difficult to handle.
         elif original_root and all_files_exist(required_files, original_root):
             # If all files exist in the originally passed root_dir, then we just load it from

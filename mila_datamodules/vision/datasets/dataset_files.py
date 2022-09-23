@@ -35,7 +35,7 @@ dataset type in order for it to work.
 
 dataset_roots_per_cluster: dict[ClusterType, dict[type, Path]] = {
     ClusterType.MILA: {
-        k: ClusterType.MILA.torchvision_dir
+        k: Path("/network/datasets/torchvision")
         for k in [
             tvd.MNIST,
             tvd.CIFAR10,
