@@ -10,7 +10,7 @@ from hydra.utils import instantiate
 from omegaconf import DictConfig, OmegaConf
 
 TEST_DIR = Path(__file__).parent
-config_path = str(TEST_DIR / "conf")
+config_path = "dummy_conf"
 
 
 def test_discovery() -> None:
@@ -23,14 +23,14 @@ def test_discovery() -> None:
 
 
 def test_configs_from_plugin_are_available() -> None:
-    with initialize(version_base=None, config_path="conf"):
+    with initialize(version_base=None, config_path=config_path):
         config_loader = GlobalHydra.instance().config_loader()
         available_datamodules = config_loader.get_group_options("datamodule")
         assert "imagenet" in available_datamodules
 
 
 def test_user_configs_also_available() -> None:
-    with initialize(version_base=None, config_path="conf"):
+    with initialize(version_base=None, config_path=config_path):
         config_loader = GlobalHydra.instance().config_loader()
         available_datamodules = config_loader.get_group_options("datamodule")
         assert "becky" in available_datamodules
@@ -42,7 +42,7 @@ def test_use_plugin_config_in_defaults() -> None:
     NOTE: This assumes that `datamodule=cifar10` is set in the defaults list of conf/config.yaml.
     """
 
-    with initialize(version_base=None, config_path="conf"):
+    with initialize(version_base=None, config_path=config_path):
         config = compose(config_name="config")
         datamodule_config = OmegaConf.to_object(config.datamodule)
 
@@ -54,7 +54,7 @@ def test_use_plugin_config_in_defaults() -> None:
 
 def test_customizing_config_from_plugin() -> None:
     """Test that user code can use a .yaml file to overwrite values of the datamodule arguments."""
-    with initialize(version_base=None, config_path="conf"):
+    with initialize(version_base=None, config_path=config_path):
         config = compose(config_name="config", overrides=["datamodule=custom_mnist"])
         config = OmegaConf.to_object(config.datamodule)
         from mila_datamodules.configs import MNISTDataModuleConfig
@@ -63,7 +63,7 @@ def test_customizing_config_from_plugin() -> None:
 
 
 def test_instantiate() -> None:
-    with initialize(version_base=None, config_path="conf"):
+    with initialize(version_base=None, config_path=config_path):
         # config is relative to a module
         config = compose(config_name="config", overrides=["datamodule=cifar10"])
         # TODO: Test that this `cifar10` isn't just a string!
