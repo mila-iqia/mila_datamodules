@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Callable, TypeVar
 
 import pytest
+from torch.utils.data import Dataset
+from typing_extensions import ParamSpec
 
 from mila_datamodules.clusters import Cluster
 
@@ -44,9 +47,9 @@ def _unsupported_variant(version: str, cluster: Cluster):
 def test_cityscapes(mode: str, target_type: str):
     from torchvision.datasets import Cityscapes
 
-    dataset = Cityscapes("/network/datasets/torchvision", mode=mode, target_type=target_type)
-    assert len(dataset) > 0
-    thing = dataset[0]
+    check_dataset_creation_works(
+        Cityscapes, root=get_dataset_root(Cityscapes), mode=mode, target_type=target_type
+    )
 
 
 @pytest.mark.parametrize(
@@ -63,9 +66,7 @@ def test_cityscapes(mode: str, target_type: str):
 def test_inaturalist(version: str):
     from torchvision.datasets import INaturalist
 
-    dataset = INaturalist(root=get_dataset_root(INaturalist), version=version)
-    assert len(dataset) > 0
-    thing = dataset[0]
+    check_dataset_creation_works(INaturalist, root=get_dataset_root(INaturalist), version=version)
 
 
 @pytest.mark.parametrize(
@@ -79,6 +80,17 @@ def test_inaturalist(version: str):
 def test_places365(split: str, root: str):
     from torchvision.datasets import Places365
 
-    dataset = Places365(root=get_dataset_root(Places365), split=split)
-    assert len(dataset) > 0
-    thing = dataset[0]
+    check_dataset_creation_works(Places365, root=get_dataset_root(Places365), split=split)
+
+
+P = ParamSpec("P")
+D = TypeVar("D", bound=Dataset)
+
+
+def check_dataset_creation_works(
+    dataset_type: Callable[P, D], *args: P.args, **kwargs: P.kwargs
+) -> D:
+    dataset = dataset_type(*args, **kwargs)
+    assert len(dataset) > 0  # type: ignore
+    _ = dataset[0]
+    return dataset
