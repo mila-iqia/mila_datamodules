@@ -39,6 +39,13 @@ too_large_for_slurm_tmpdir: set[Callable] = set()
 """ Set of datasets which are too large to store in $SLURM_TMPDIR."""
 
 
+def is_stored_on_cluster(dataset_cls: type, cluster: Cluster | None = Cluster.current()) -> bool:
+    """Returns whether we know where to find the given dataset on the given cluster."""
+    return dataset_cls in dataset_roots_per_cluster and bool(
+        dataset_roots_per_cluster.get(dataset_cls)
+    )
+
+
 def get_dataset_root(
     dataset_cls: type, cluster: Cluster | None = None, default: str | Path | None = None
 ) -> str:

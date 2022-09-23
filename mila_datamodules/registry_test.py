@@ -1,3 +1,8 @@
+"""Tests that ensure that the information in the registry is correct.
+
+1. Make sure that the files for each dataset are available in the clusters.
+2. Checks that these files are sufficient to instantiate the datasets.
+"""
 from __future__ import annotations
 
 from pathlib import Path
@@ -9,15 +14,23 @@ from typing_extensions import ParamSpec
 
 from mila_datamodules.clusters import Cluster
 
-from .registry import dataset_files, dataset_roots_per_cluster, get_dataset_root
+from .registry import (
+    dataset_files,
+    dataset_roots_per_cluster,
+    get_dataset_root,
+    is_stored_on_cluster,
+)
 
 
-@pytest.mark.parametrize("dataset", dataset_roots_per_cluster)
+@pytest.mark.parametrize("dataset", dataset_roots_per_cluster.keys())
 def test_datasets_in_registry_are_actually_there(dataset: type):
-    """Test that all files associated with the dataset class are actually present in the `root`
-    associated with them in the registry's dictionary."""
+    """Test that the files associated with the dataset class are actually present in the `root` of
+    that dataset, if supported on the current cluster."""
+    if not is_stored_on_cluster(dataset):
+        pytest.skip(f"Dataset isn't stored on cluster {Cluster.current().normal_name}")
+
+    # Cluster has this dataset (or so it says). Check that all the required files are there.
     root = get_dataset_root(dataset)
-    assert dataset in dataset_files
     required_files = dataset_files[dataset]  # type: ignore
     for file in (Path(root) / file for file in required_files):
         assert file.exists()
@@ -81,6 +94,13 @@ def test_places365(split: str, root: str):
     from torchvision.datasets import Places365
 
     check_dataset_creation_works(Places365, root=get_dataset_root(Places365), split=split)
+
+
+@pytest.mark.parametrize("split", ["train", "test", "unlabeled", "train+unlabeled"])
+def test_stl10(split: str):
+    from torchvision.datasets import STL10
+
+    check_dataset_creation_works(STL10, root=get_dataset_root(STL10), split=split)
 
 
 P = ParamSpec("P")

@@ -34,6 +34,8 @@ supported_tested_datasets["mila"] = [
     "binaryemnist",
     "binarymnist",
     "cityscapes",
+    # "svhn",  # todo: Missing datamodules for these.
+    # "stl10", # todo: Missing datamodules for these.
 ]
 # NOTE: Just to get rid of some 'duplicates' in the table.
 supported_tested_datasets["mila"].extend(
