@@ -41,14 +41,16 @@ def _cache(fn: C) -> C:
 
 @_cache
 def _builds(datamodule_class: Callable[P, T]) -> type[BuildsWithSig[type[T], P]]:
-    """creates a Config dataclass for the given datamodule type using hydra-zen, and registers it
-    in the config store."""
+    """creates a Config dataclass for the given datamodule type using hydra-zen.
+
+    NOTE: Could also register it in the config store here.
+    """
     name = datamodule_class.__qualname__ + "Config"
     config_class = hydra_zen.builds(
         datamodule_class, populate_full_signature=True, dataclass_name=name
     )
     name = datamodule_class.__qualname__.replace("DataModule", "").lower()
-    _cs.store(group="datamodule", provider="mila_datamodules", name=name, node=config_class)
+    # _cs.store(group="datamodule", provider="mila_datamodules", name=name, node=config_class)
     return config_class
 
 
@@ -83,5 +85,6 @@ def register_configs(group: str = "datamodule") -> None:
     _cs.store(**kwargs, name="stl10", node=STL10DataModuleConfig)
 
 
-# NOTE: Could there be cases in which we don't want to register these configs?
-# register_configs()
+# NOTE: Perhaps we shouldn't register these configs by default? e.g. if users already have their
+# own configs for `cifar10`, etc?
+register_configs()
