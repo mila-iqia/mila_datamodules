@@ -37,47 +37,52 @@ def setup_slurm_env_variables(vars_to_ignore: Sequence[str] = ()) -> None:
     # TODO: Having issues when running this with multiple processes, e.g. when using `pytest -n 4`.
     # Perhaps we could store a simple job_{SLURM_JOBID}.txt file with the environment variables,
     # and reuse it between workers?
-    with tempfile.NamedTemporaryFile() as temp_file:
+
+    temp_dir = tempfile.gettempdir()
+    if "SLURM_JOBID" in os.environ:
+        SLURM_JOBID = os.environ["SLURM_JOBID"]
+        temp_file = Path(temp_dir) / f"env_vars_{SLURM_JOBID}.txt"
+    else:
+        SLURM_JOBID = None
+        temp_file = Path(temp_dir) / "env_vars_temp.txt"
+
+    if temp_file.exists():
+        lines = temp_file.read_text().splitlines()
+        if SLURM_JOBID is None:
+            # Set the SLURM_JOBID, and rename this file to the proper name.
+            for line in lines:
+                if line.startswith("SLURM_JOBID="):
+                    _, _, SLURM_JOBID_str = line.strip().partition("=")
+                    SLURM_JOBID = int(SLURM_JOBID_str)
+                    temp_file.rename(Path(temp_dir) / f"env_vars_{SLURM_JOBID}.txt")
+                    break
+    else:
+        command = "srun env | grep SLURM"
+        logger.info("Extracting SLURM environment variables... ")
         try:
-            logger.info("Extracting SLURM environment variables... ")
-            command = "srun env | grep SLURM"
-            logger.debug(f"> {command}")
-            subprocess.run(
-                command,
-                shell=True,
-                check=True,
-                timeout=5,  # max 5 seconds (this is plenty as far as I can tell).
-                stdout=temp_file,
-            )
-            lines = Path(temp_file.name).read_text().split()
-            logger.info("done!")
+            with temp_file.open("w") as f:
+                logger.debug(f"> {command}")
+                subprocess.run(
+                    command,
+                    shell=True,
+                    check=True,
+                    timeout=5,  # max 5 seconds (this is plenty as far as I can tell).
+                    stdout=f,
+                )
+                lines = temp_file.read_text().split()
+                logger.info("done!")
 
         except subprocess.TimeoutExpired:
             raise RuntimeError(
                 "Unable to extract SLURM environment variables. Check that there isn't already a "
                 "`srun --pty /bin/bash` command running (there can only be one at any given time)."
             )
-        else:
-            # Read and copy the environment variables from the output of that command.
-            for line in lines:
-                key, _, value = line.partition("=")
-                if key in vars_to_ignore:
-                    continue
-                logger.debug(f"Setting {line}")
-                os.environ.setdefault(key, value)
 
-            # TODO: Using `export` above + `source` here worked at some point, and had the benefit
-            # of actually modifying the running shell's env (if I recall correctly).
-            # However that might actually have been a fluke or an error on my part, because it
-            # seems impossible for Python process to change the env variables in a persistent way.
-            # Therefore it doesn't currently work, and I opted for just reading a dump of the env
-            # vars instead.
-            # temp_file_name.chmod(mode=0o755)
-            # command = f"{temp_file_name}"
-            # print(f"> {command}")
-            # subprocess.run(
-            #     command,
-            #     shell=True,
-            #     executable="/bin/bash",
-            #     check=True,
-            # )
+    assert lines
+    # Read and copy the environment variables.
+    for line in lines:
+        key, _, value = line.partition("=")
+        if key in vars_to_ignore:
+            continue
+        logger.debug(f"Setting {line}")
+        os.environ.setdefault(key, value)
