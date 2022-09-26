@@ -33,7 +33,6 @@ for dataset in [
     tvd.STL10,
     tvd.SVHN,
     pl_bolts.datasets.BinaryMNIST,
-    tvd.EMNIST,
 ]:
     dataset_roots_per_cluster[dataset][Cluster.Mila] = Path("/network/datasets/torchvision")
 
