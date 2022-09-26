@@ -137,6 +137,6 @@ def test_coco_captions(split: str):
         CocoCaptions,
         root=f"{get_dataset_root(CocoCaptions)}/{split}2017",
         annFile=str(
-            Path(get_dataset_root(CocoCaptions)) / f"annotations/instances_{split}2017.json"
+            Path(get_dataset_root(CocoCaptions)) / f"annotations/captions_{split}2017.json"
         ),
     )
