@@ -21,6 +21,19 @@ from .registry import (
     is_stored_on_cluster,
 )
 
+P = ParamSpec("P")
+D = TypeVar("D", bound=Dataset)
+
+
+def check_dataset_creation_works(
+    dataset_type: Callable[P, D], *args: P.args, **kwargs: P.kwargs
+) -> D:
+    """Utility function that creates the dataset with the given args and checks that it 'works'."""
+    dataset = dataset_type(*args, **kwargs)
+    assert len(dataset) > 0  # type: ignore
+    _ = dataset[0]
+    return dataset
+
 
 @pytest.mark.parametrize("dataset", dataset_roots_per_cluster.keys())
 def test_datasets_in_registry_are_actually_there(dataset: type):
@@ -90,7 +103,7 @@ def test_inaturalist(version: str):
         "val",
     ],
 )
-def test_places365(split: str, root: str):
+def test_places365(split: str):
     from torchvision.datasets import Places365
 
     check_dataset_creation_works(Places365, root=get_dataset_root(Places365), split=split)
@@ -103,14 +116,27 @@ def test_stl10(split: str):
     check_dataset_creation_works(STL10, root=get_dataset_root(STL10), split=split)
 
 
-P = ParamSpec("P")
-D = TypeVar("D", bound=Dataset)
+@pytest.mark.parametrize("split", ["train", "val"])
+def test_coco_detection(split: str):
+    from torchvision.datasets import CocoDetection
+
+    check_dataset_creation_works(
+        CocoDetection,
+        root=f"{get_dataset_root(CocoDetection)}/{split}2017",
+        annFile=str(
+            Path(get_dataset_root(CocoDetection)) / f"annotations/instances_{split}2017.json"
+        ),
+    )
 
 
-def check_dataset_creation_works(
-    dataset_type: Callable[P, D], *args: P.args, **kwargs: P.kwargs
-) -> D:
-    dataset = dataset_type(*args, **kwargs)
-    assert len(dataset) > 0  # type: ignore
-    _ = dataset[0]
-    return dataset
+@pytest.mark.parametrize("split", ["train", "val"])
+def test_coco_captions(split: str):
+    from torchvision.datasets import CocoCaptions
+
+    check_dataset_creation_works(
+        CocoCaptions,
+        root=f"{get_dataset_root(CocoCaptions)}/{split}2017",
+        annFile=str(
+            Path(get_dataset_root(CocoCaptions)) / f"annotations/instances_{split}2017.json"
+        ),
+    )

@@ -19,17 +19,18 @@ dataset_roots_per_cluster: dict[type, dict[Cluster, Path]] = defaultdict(dict)
 for dataset in [
     tvd.MNIST,
     tvd.CIFAR10,
-    tvd.CIFAR100,
-    tvd.FashionMNIST,
     tvd.Caltech101,
     tvd.Caltech256,
     tvd.CelebA,
     tvd.Cityscapes,
+    tvd.CocoCaptions,
+    tvd.CocoDetection,
+    tvd.CIFAR100,
+    tvd.FashionMNIST,
     tvd.INaturalist,
     tvd.Places365,
     tvd.STL10,
     tvd.SVHN,
-    tvd.CocoDetection,
     pl_bolts.datasets.BinaryMNIST,
 ]:
     dataset_roots_per_cluster[dataset][Cluster.Mila] = Path("/network/datasets/torchvision")
@@ -105,6 +106,9 @@ dataset_files = {
     ],
     tvd.STL10: ["stl10_binary"],
     tvd.SVHN: ["train_32x32.mat", "test_32x32.mat", "extra_32x32.mat"],
+    # NOTE: We're not currently using the `test` folder for the coco datasets, since there isn't
+    # an annotation file with it. (this makes sense, you probably have to submit predictions to the
+    # website or something).
     tvd.CocoDetection: ["annotations", "test2017", "train2017", "val2017"],
     tvd.CocoCaptions: ["annotations", "test2017", "train2017", "val2017"],
     tvd.EMNIST: ["EMNIST"],

@@ -4,6 +4,7 @@ import itertools
 import cv2  # noqa
 import pytest
 from pytorch_lightning import LightningDataModule
+from torch import Tensor
 from torch.utils.data import DataLoader
 
 import mila_datamodules.vision
@@ -29,18 +30,23 @@ def test_datamodule_creation(datamodule_cls: type[LightningDataModule]):
     assert isinstance(train_dataloader, DataLoader)
     for x, y in itertools.islice(train_dataloader, 2):
         assert x.shape[0] == train_dataloader.batch_size
-        assert x.shape[1:] == datamodule.dims
-        assert y.shape[0] == train_dataloader.batch_size
+        if hasattr(datamodule, "dims"):
+            assert x.shape[1:] == datamodule.dims  # type: ignore
+        if isinstance(y, Tensor):
+            assert y.shape[0] == train_dataloader.batch_size
 
     val_dataloader = datamodule.val_dataloader()
     assert isinstance(val_dataloader, DataLoader)
     for x, y in itertools.islice(val_dataloader, 2):
         assert x.shape[0] == val_dataloader.batch_size
-        assert x.shape[1:] == datamodule.dims
-        assert y.shape[0] == val_dataloader.batch_size
+        if hasattr(datamodule, "dims"):
+            assert x.shape[1:] == datamodule.dims  # type: ignore
+        if isinstance(y, Tensor):
+            assert y.shape[0] == val_dataloader.batch_size
 
     test_dataloader = datamodule.test_dataloader()
     assert isinstance(test_dataloader, DataLoader)
     for x, y in itertools.islice(test_dataloader, 2):
         assert x.shape[0] == test_dataloader.batch_size
-        assert x.shape[1:] == datamodule.dims
+        if isinstance(y, Tensor):
+            assert x.shape[1:] == datamodule.dims

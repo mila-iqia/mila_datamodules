@@ -63,6 +63,7 @@ INaturalist = _adapt_dataset(torchvision.datasets.INaturalist)
 Places365 = _adapt_dataset(torchvision.datasets.Places365)
 STL10 = _adapt_dataset(torchvision.datasets.STL10)
 SVHN = _adapt_dataset(torchvision.datasets.SVHN)
+
 CocoDetection = _adapt_dataset(torchvision.datasets.CocoDetection)
 CocoCaptions = _adapt_dataset(torchvision.datasets.CocoCaptions)
 
