@@ -21,4 +21,4 @@ def test_dataset_creation(dataset_cls: type[VisionDataset]):
     assert not Path(p).exists()
     _ = dataset[0]
     assert len(dataset) > 0
-    assert dataset.root == Cluster.current().slurm_tmpdir / "data"
+    assert dataset.root == str(Cluster.current().slurm_tmpdir / "data")

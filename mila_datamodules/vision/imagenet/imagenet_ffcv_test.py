@@ -31,6 +31,7 @@ class Model(LightningModule):
         return Adam(self.parameters(), lr=0.001)
 
 
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="test requires GPU machine")
 @pytest.mark.parametrize("accelerator", ["gpu", "auto"])
 @pytest.mark.parametrize("devices", [1, "auto"])
 @pytest.mark.parametrize("strategy", [None, "dp", "ddp", "fsdp"])
