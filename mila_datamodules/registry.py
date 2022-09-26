@@ -1,9 +1,10 @@
 """A registry of where each dataset is stored on each cluster."""
 from __future__ import annotations
 
+import warnings
 from collections import defaultdict
 from pathlib import Path
-from typing import Callable
+from typing import Callable, TypeVar, overload
 
 import pl_bolts.datasets
 import torchvision.datasets as tvd
@@ -32,6 +33,7 @@ for dataset in [
     tvd.STL10,
     tvd.SVHN,
     pl_bolts.datasets.BinaryMNIST,
+    tvd.EMNIST,
 ]:
     dataset_roots_per_cluster[dataset][Cluster.Mila] = Path("/network/datasets/torchvision")
 
@@ -47,9 +49,32 @@ def is_stored_on_cluster(dataset_cls: type, cluster: Cluster | None = Cluster.cu
     )
 
 
+class _MissingType:
+    pass
+
+
+_missing = _MissingType()
+T = TypeVar("T")
+
+
+@overload
+def get_dataset_root(dataset_cls: type) -> str:
+    ...
+
+
+@overload
+def get_dataset_root(dataset_cls: type, cluster: Cluster | None = None) -> str:
+    ...
+
+
+@overload
+def get_dataset_root(dataset_cls: type, cluster: Cluster | None, default: T) -> str | T:
+    ...
+
+
 def get_dataset_root(
-    dataset_cls: type, cluster: Cluster | None = None, default: str | Path | None = None
-) -> str:
+    dataset_cls: type, cluster: Cluster | None = None, default: T = _missing
+) -> str | T:
     """Gets the root directory to use to read the given dataset on the given cluster.
 
     If the dataset is not available on the cluster and `default` is set, then the default value is
@@ -64,9 +89,18 @@ def get_dataset_root(
     )
 
     if dataset_cls not in dataset_roots_per_cluster:
+        for dataset in dataset_roots_per_cluster:
+            if dataset.__name__ == dataset_cls.__name__:
+                warnings.warn(
+                    RuntimeWarning(f"Using dataset class {dataset} instead of {dataset_cls}")
+                )
+                dataset_cls = dataset
+                break
+
+    if dataset_cls not in dataset_roots_per_cluster:
         # Unsupported dataset.
-        if default is not None:
-            return str(default)
+        if default is not _missing:
+            return default
         raise NotImplementedError(
             f"No known location for dataset {dataset_cls.__name__} on any of the clusters!\n"
             f"If you do know where it can be found on {cluster.normal_name}, or on any other "
@@ -76,8 +110,8 @@ def get_dataset_root(
     dataset_root = dataset_roots_per_cluster[dataset_cls].get(cluster)
     if dataset_root is None:
         # We don't know where this dataset is in this cluster.
-        if default is not None:
-            return str(default)
+        if default is not _missing:
+            return default
         raise NotImplementedError(
             f"No known location for dataset {dataset_cls.__name__} on {cluster.normal_name} "
             f"cluster!\n If you do know where it can be found on {cluster.normal_name}, "

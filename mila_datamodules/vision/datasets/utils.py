@@ -131,7 +131,11 @@ def adapted_constructor(
         # The original passed value for the 'root' argument (if any).
         original_root: str | None = bound_args.arguments.get("root")
         new_root: str | Path | None = None
-        dataset_root = get_dataset_root(dataset_cls, cluster=CURRENT_CLUSTER)
+
+        # TODO: In the case of EMNIST or other datasets which we don't have stored, this can cause
+        # an issue. We should probably try to download the dataset into $SCRATCH/data first,
+        # then copy it to SLURM_TMPDIR.
+        dataset_root = get_dataset_root(dataset_cls, cluster=CURRENT_CLUSTER, default=None)
 
         if all_files_exist(required_files, fast_tmp_dir):
             logger.info("Dataset is already stored in SLURM_TMPDIR")
@@ -144,18 +148,18 @@ def adapted_constructor(
             else:
                 logger.info("Dataset is large, files will be read from SCRATCH.")
                 new_root = scratch_dir
-        elif all_files_exist(required_files, dataset_root):
+        elif dataset_root is not None and all_files_exist(required_files, dataset_root):
             logger.info("Copying files from the torchvision dir to SLURM_TMPDIR")
             copy_dataset_files(required_files, dataset_root, fast_tmp_dir)
             new_root = dataset_root
-        # TODO: Double-check these cases here, they are a more difficult to handle.
+        # TODO: Double-check these cases here, they are more difficult to handle.
         elif original_root and all_files_exist(required_files, original_root):
             # If all files exist in the originally passed root_dir, then we just load it from
             # there.
             new_root = original_root
         elif original_root is None and all_files_exist(required_files, Path.cwd()):
             # TODO: The dataset would be loaded from the current directory, most probably.
-            # Do we do anythin special in this case?
+            # Do we do anything special in this case?
             pass
         else:
             # NOTE: For datasets that can be downloaded but that we don't have, we could try to download it
