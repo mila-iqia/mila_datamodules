@@ -47,30 +47,35 @@ def setup_slurm_env_variables(vars_to_ignore: Sequence[str] = ()) -> None:
         temp_file = Path(temp_dir) / "env_vars_temp.txt"
 
     # todo: Use a filelock.
+    from filelock import FileLock
 
-    if temp_file.exists():
-        lines = temp_file.read_text().splitlines()
-    else:
-        command = "srun env | grep SLURM"
-        logger.info("Extracting SLURM environment variables... ")
-        try:
-            with temp_file.open("w") as f:
-                logger.debug(f"> {command}")
-                subprocess.run(
-                    command,
-                    shell=True,
-                    check=True,
-                    timeout=5,  # max 5 seconds (this is plenty as far as I can tell).
-                    stdout=f,
+    with FileLock(temp_file.with_suffix(".lock")):
+        if temp_file.exists():
+            # We are not the first process to run this function. We can just read the file that was
+            # created by another process.
+            lines = temp_file.read_text().splitlines()
+        else:
+            command = "srun env | grep SLURM"
+            logger.info("Extracting SLURM environment variables... ")
+            try:
+                with temp_file.open("w") as f:
+                    logger.debug(f"> {command}")
+                    subprocess.run(
+                        command,
+                        shell=True,
+                        check=True,
+                        timeout=5,  # max 5 seconds (this is plenty as far as I can tell).
+                        stdout=f,
+                    )
+                    lines = temp_file.read_text().split()
+                    logger.info("done!")
+
+            except subprocess.TimeoutExpired:
+                raise RuntimeError(
+                    "Unable to extract SLURM environment variables. Check that there isn't "
+                    "already a `srun --pty /bin/bash` command running (there can only be one at "
+                    "any given time)."
                 )
-                lines = temp_file.read_text().split()
-                logger.info("done!")
-
-        except subprocess.TimeoutExpired:
-            raise RuntimeError(
-                "Unable to extract SLURM environment variables. Check that there isn't already a "
-                "`srun --pty /bin/bash` command running (there can only be one at any given time)."
-            )
 
     assert lines
 
