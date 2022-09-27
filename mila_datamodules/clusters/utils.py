@@ -46,16 +46,10 @@ def setup_slurm_env_variables(vars_to_ignore: Sequence[str] = ()) -> None:
         SLURM_JOBID = None
         temp_file = Path(temp_dir) / "env_vars_temp.txt"
 
+    # todo: Use a filelock.
+
     if temp_file.exists():
         lines = temp_file.read_text().splitlines()
-        if SLURM_JOBID is None:
-            # Set the SLURM_JOBID, and rename this file to the proper name.
-            for line in lines:
-                if line.startswith("SLURM_JOBID="):
-                    _, _, SLURM_JOBID_str = line.strip().partition("=")
-                    SLURM_JOBID = int(SLURM_JOBID_str)
-                    temp_file.rename(Path(temp_dir) / f"env_vars_{SLURM_JOBID}.txt")
-                    break
     else:
         command = "srun env | grep SLURM"
         logger.info("Extracting SLURM environment variables... ")
@@ -79,6 +73,16 @@ def setup_slurm_env_variables(vars_to_ignore: Sequence[str] = ()) -> None:
             )
 
     assert lines
+
+    if SLURM_JOBID is None:
+        # Set the SLURM_JOBID, and rename this file to the proper name.
+        for line in lines:
+            if line.startswith("SLURM_JOBID="):
+                _, _, SLURM_JOBID_str = line.strip().partition("=")
+                SLURM_JOBID = int(SLURM_JOBID_str)
+                temp_file.rename(Path(temp_dir) / f"env_vars_{SLURM_JOBID}.txt")
+                break
+
     # Read and copy the environment variables.
     for line in lines:
         key, _, value = line.partition("=")
