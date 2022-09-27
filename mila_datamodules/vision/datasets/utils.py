@@ -17,6 +17,7 @@ from mila_datamodules.clusters import CURRENT_CLUSTER, SCRATCH, SLURM_TMPDIR
 from mila_datamodules.registry import (
     dataset_files,
     get_dataset_root,
+    is_stored_on_cluster,
     too_large_for_slurm_tmpdir,
 )
 from mila_datamodules.utils import all_files_exist, copy_dataset_files, replace_kwargs
@@ -135,7 +136,10 @@ def adapted_constructor(
         # TODO: In the case of EMNIST or other datasets which we don't have stored, this can cause
         # an issue. We should probably try to download the dataset into $SCRATCH/data first,
         # then copy it to SLURM_TMPDIR.
-        dataset_root = get_dataset_root(dataset_cls, cluster=CURRENT_CLUSTER, default=None)
+        if is_stored_on_cluster(dataset_cls):
+            dataset_root = get_dataset_root(dataset_cls, cluster=CURRENT_CLUSTER)
+        else:
+            dataset_root = None
 
         if all_files_exist(required_files, fast_tmp_dir):
             logger.info("Dataset is already stored in SLURM_TMPDIR")
@@ -148,7 +152,7 @@ def adapted_constructor(
             else:
                 logger.info("Dataset is large, files will be read from SCRATCH.")
                 new_root = scratch_dir
-        elif dataset_root is not None and all_files_exist(required_files, dataset_root):
+        elif dataset_root and all_files_exist(required_files, dataset_root):
             logger.info("Copying files from the torchvision dir to SLURM_TMPDIR")
             copy_dataset_files(required_files, dataset_root, fast_tmp_dir)
             new_root = dataset_root

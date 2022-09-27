@@ -5,10 +5,12 @@
 """
 from __future__ import annotations
 
+import inspect
 from pathlib import Path
 from typing import Callable, TypeVar
 
 import pytest
+import torchvision.datasets
 from torch.utils.data import Dataset
 from typing_extensions import ParamSpec
 
@@ -30,8 +32,11 @@ def check_dataset_creation_works(
 ) -> D:
     """Utility function that creates the dataset with the given args and checks that it 'works'."""
     dataset = dataset_type(*args, **kwargs)
-    assert len(dataset) > 0  # type: ignore
+    length = len(dataset)  # type: ignore
+    assert length > 0
     _ = dataset[0]
+    _ = dataset[length // 2]
+    _ = dataset[length - 1]
     return dataset
 
 
@@ -58,6 +63,37 @@ def unsupported_param(
         return pytest.param(param, marks=pytest.mark.xfail(reason=reason))
     # Not supposed to fail in the current cluster.
     return param
+
+
+# Datasets that only have `root` as a required parameter.
+easy_to_use_datasets = [
+    dataset
+    for dataset in vars(torchvision.datasets).values()
+    if inspect.isclass(dataset)
+    and dataset is not torchvision.datasets.VisionDataset
+    and not any(
+        n != "root" and p.default is p.empty
+        for n, p in inspect.signature(dataset).parameters.items()
+    )
+]
+
+easy_to_use_datasets = [
+    dataset
+    if is_stored_on_cluster(dataset)
+    else unsupported_param(
+        dataset, reason=f"Dataset isn't stored on {CURRENT_CLUSTER.name} cluster"
+    )
+    for dataset in easy_to_use_datasets
+]
+
+
+@pytest.mark.parametrize("dataset", easy_to_use_datasets)
+def test_dataset_creation(dataset: type[Dataset]):
+    """Test creating the torchvision datasets that don't have any other required arguments besides
+    'root', using the root that we get from `get_dataset_root`."""
+    check_dataset_creation_works(
+        dataset, root=get_dataset_root(dataset, default="/network/datasets/torchvision")
+    )
 
 
 def _unsupported_variant(version: str, cluster: Cluster):
@@ -139,4 +175,18 @@ def test_coco_captions(split: str):
         annFile=str(
             Path(get_dataset_root(CocoCaptions)) / f"annotations/captions_{split}2017.json"
         ),
+    )
+
+
+def test_caltech():
+    from torchvision.datasets import Caltech101, Caltech256
+
+    check_dataset_creation_works(
+        Caltech101,
+        root=get_dataset_root(Caltech101),
+    )
+
+    check_dataset_creation_works(
+        Caltech256,
+        root=get_dataset_root(Caltech256),
     )
