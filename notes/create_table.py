@@ -57,6 +57,10 @@ def create_dataset_support_table() -> str:
         for dataset in cluster_datasets:
             dataset_to_clusters[dataset].append(cluster)
 
+    for dataset in list(dataset_to_clusters.keys()):
+        if ".var/" in dataset or dataset.startswith("restricted/"):
+            dataset_to_clusters.pop(dataset)
+
     def _box_content(
         cluster: ClusterName, dataset: str, clusters_with_this_dataset: list[str]
     ) -> str:
