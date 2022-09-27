@@ -19,6 +19,9 @@ class VisionDataModuleTests:
 
     def test_datamodule_creation(self):
         datamodule = self.DataModule()
+        # TODO: If we don't know where the dataset is stored, but it's simple to download, then
+        # maybe we should just let it download itself into SCRATCH first, then copy to slurm
+        # tmpdir, right?
         datamodule.prepare_data()
         datamodule.setup()
 

@@ -9,6 +9,7 @@ from typing import Callable
 import pl_bolts.datasets
 import torchvision.datasets as tvd
 
+from mila_datamodules.clusters import CURRENT_CLUSTER
 from mila_datamodules.clusters.cluster import Cluster
 
 # TODO: Fill these in!
@@ -83,7 +84,7 @@ the type of dataset.
 """
 
 
-def is_stored_on_cluster(dataset_cls: type, cluster: Cluster | None = Cluster.current()) -> bool:
+def is_stored_on_cluster(dataset_cls: type, cluster: Cluster | None = CURRENT_CLUSTER) -> bool:
     """Returns whether we know where to find the given dataset on the given cluster."""
     return (
         dataset_cls in dataset_roots_per_cluster
@@ -126,6 +127,7 @@ def get_dataset_root(
                 break
 
     if not is_stored_on_cluster(dataset_cls, cluster) and default is not _missing:
+        assert isinstance(default, str)
         return default
 
     if dataset_cls not in dataset_roots_per_cluster:

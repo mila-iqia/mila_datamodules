@@ -16,7 +16,7 @@ class BinaryMNISTDataModule(_BinaryMNISTDataModule, VisionDataModule):
     dataset_cls = BinaryMNIST
 
 
-# NOTE: These two aren't stored on the Mila cluster atm. Therefore, they should be downloaded to
+# TODO: These two aren't stored on the Mila cluster atm. Therefore, they should be downloaded to
 # $SCRATCH/data the first time they are used.
 
 

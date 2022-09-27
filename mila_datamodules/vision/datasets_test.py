@@ -21,7 +21,7 @@ datasets = {
     if inspect.isclass(v) and issubclass(v, VisionDataset)
 }
 # TODO: Need to stop doing this kind of hard-coded fixing and listing of stuff.
-datasets[mila_datamodules.vision.datasets.EMNIST] = partial(
+datasets[mila_datamodules.vision.datasets.EMNIST] = partial(  # type: ignore
     mila_datamodules.vision.datasets.EMNIST, split="mnist"
 )
 small_ish_datasets = (
