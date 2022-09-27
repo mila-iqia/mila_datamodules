@@ -12,7 +12,7 @@ import pytest
 from torch.utils.data import Dataset
 from typing_extensions import ParamSpec
 
-from mila_datamodules.clusters import Cluster
+from mila_datamodules.clusters import CURRENT_CLUSTER, Cluster
 
 from .registry import (
     dataset_files,
@@ -40,7 +40,7 @@ def test_datasets_in_registry_are_actually_there(dataset: type):
     """Test that the files associated with the dataset class are actually present in the `root` of
     that dataset, if supported on the current cluster."""
     if not is_stored_on_cluster(dataset):
-        pytest.skip(f"Dataset isn't stored on cluster {Cluster.current().normal_name}")
+        pytest.skip(f"Dataset isn't stored on cluster {CURRENT_CLUSTER.name}")
 
     # Cluster has this dataset (or so it says). Check that all the required files are there.
     root = get_dataset_root(dataset)
@@ -52,9 +52,9 @@ def test_datasets_in_registry_are_actually_there(dataset: type):
 def unsupported_param(
     param,
     cluster: Cluster | None = None,
-    reason: str = f"Unsupported on cluster {Cluster.current().normal_name}",
+    reason: str = f"Unsupported on cluster {CURRENT_CLUSTER.name}",
 ):
-    if cluster is None or cluster is Cluster.current():
+    if cluster is None or cluster is CURRENT_CLUSTER:
         return pytest.param(param, marks=pytest.mark.xfail(reason=reason))
     # Not supposed to fail in the current cluster.
     return param
@@ -64,7 +64,7 @@ def _unsupported_variant(version: str, cluster: Cluster):
     return unsupported_param(
         version,
         cluster,
-        reason=f"This variant isn't stored on the {cluster.normal_name} cluster.",
+        reason=f"This variant isn't stored on the {cluster.name} cluster.",
     )
 
 

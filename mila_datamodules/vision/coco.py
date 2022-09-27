@@ -96,8 +96,8 @@ class CocoCaptionsDataModule(VisionDataModule):
         if cluster not in coco_archives_root:
             github_issue_url = (
                 f"https://github.com/lebrice/mila_datamodules/issues/new?"
-                f"labels={cluster.normal_name}&template=feature_request.md&"
-                f"title=Feature%20request:%20COCO%20on%20{cluster.normal_name}%20cluster"
+                f"labels={cluster.name}&template=feature_request.md&"
+                f"title=Feature%20request:%20COCO%20on%20{cluster.name}%20cluster"
             )
             raise NotImplementedError(
                 f"Don't know in which directory to get the '[train,val,test]2017.zip' archives "

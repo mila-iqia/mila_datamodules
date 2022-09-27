@@ -47,8 +47,3 @@ class Cluster(enum.Enum):
         """Returns the writeable directory where checkpoints / code / general data should be
         stored."""
         return Path(os.environ["SCRATCH"])
-
-    @property
-    def normal_name(self) -> str:
-        """Returns the normal name of the cluster."""
-        return self.name.lower().capitalize()

@@ -125,8 +125,8 @@ def get_dataset_root(
 
     github_issue_url = (
         f"https://github.com/lebrice/mila_datamodules/issues/new?"
-        f"labels={cluster.normal_name}&template=feature_request.md&"
-        f"title=Feature%20request:%20{dataset_cls.__name__}%20on%20{cluster.normal_name}"
+        f"labels={cluster.name}&template=feature_request.md&"
+        f"title=Feature%20request:%20{dataset_cls.__name__}%20on%20{cluster.name}"
     )
 
     if dataset_cls not in dataset_roots_per_cluster:
@@ -144,7 +144,7 @@ def get_dataset_root(
             return default
         raise NotImplementedError(
             f"No known location for dataset {dataset_cls.__name__} on any of the clusters!\n"
-            f"If you do know where it can be found on {cluster.normal_name}, or on any other "
+            f"If you do know where it can be found on {cluster.name}, or on any other "
             f"cluster, please make an issue at {github_issue_url} to add it to the registry."
             f""
         )
@@ -154,8 +154,8 @@ def get_dataset_root(
         if default is not _missing:
             return default
         raise NotImplementedError(
-            f"No known location for dataset {dataset_cls.__name__} on {cluster.normal_name} "
-            f"cluster!\n If you do know where it can be found on {cluster.normal_name}, "
+            f"No known location for dataset {dataset_cls.__name__} on {cluster.name} "
+            f"cluster!\n If you do know where it can be found on {cluster.name}, "
             f"please make an issue at {github_issue_url} so the registry can be updated."
         )
     return str(dataset_root)
