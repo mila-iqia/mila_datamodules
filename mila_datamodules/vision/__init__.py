@@ -30,6 +30,5 @@ else:
     from .vision_datamodule import VisionDataModule
 
 # New additions:
+from .cifar100 import CIFAR100DataModule
 from .coco import CocoCaptionsDataModule
-
-# TODO: Re-introduce the CIFAR100DataModule.

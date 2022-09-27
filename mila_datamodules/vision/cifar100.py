@@ -5,6 +5,7 @@ from mila_datamodules.vision.vision_datamodule import VisionDataModule
 
 
 class CIFAR100DataModule(CIFAR10DataModule, VisionDataModule):
+    # TODO: Does it make sense to use the same normalization as cifar10?
     name = "cifar100"
     dataset_cls = CIFAR100
     dims = (3, 32, 32)
