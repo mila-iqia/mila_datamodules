@@ -6,7 +6,7 @@ import cv2  # noqa
 from pl_bolts.datamodules import *  # noqa
 from pl_bolts.datamodules.vision_datamodule import VisionDataModule
 
-from mila_datamodules.vision.datasets.utils import get_dataset_root
+from mila_datamodules.registry import get_dataset_root
 
 successes = []
 failures = []

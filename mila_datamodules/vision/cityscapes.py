@@ -10,7 +10,7 @@ from torchvision.datasets import Cityscapes
 
 from mila_datamodules.clusters import SCRATCH
 from mila_datamodules.clusters.cluster import Cluster
-from mila_datamodules.vision.datasets.utils import get_dataset_root
+from mila_datamodules.registry import get_dataset_root
 
 from .vision_datamodule import _TransformsFix
 

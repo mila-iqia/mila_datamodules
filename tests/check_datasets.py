@@ -6,7 +6,7 @@ from collections import defaultdict
 import cv2  # noqa
 from torchvision.datasets import VisionDataset
 
-from mila_datamodules.vision.datasets.utils import get_dataset_root
+from mila_datamodules.registry import get_dataset_root
 
 successes = []
 failures = defaultdict(list)
