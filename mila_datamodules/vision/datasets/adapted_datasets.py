@@ -68,18 +68,26 @@ def adapted_constructor(
 ) -> Callable[Concatenate[str | None, P], None]:
     """Creates a constructor for the given dataset class that does the required preprocessing steps
     before instantiating the dataset."""
+
     if dataset_cls not in dataset_files:
-        github_issue_url = (
-            f"https://github.com/lebrice/mila_datamodules/issues/new?"
-            f"template=feature_request.md&"
-            f"title=Feature%20request:%20{dataset_cls.__name__}%20files"
-        )
-        raise NotImplementedError(
-            f"Don't know which files are associated with dataset type {dataset_cls}!"
-            f"Consider adding the names of the files to the dataset_files dictionary, or creating "
-            f"an issue for this at {github_issue_url}"
-        )
-    required_files = dataset_files[dataset_cls]
+        for dataset in dataset_files:
+            if dataset.__name__ == dataset_cls.__name__:
+                files = dataset_files[dataset]
+                break
+        else:
+            github_issue_url = (
+                f"https://github.com/lebrice/mila_datamodules/issues/new?"
+                f"template=feature_request.md&"
+                f"title=Feature%20request:%20{dataset_cls.__name__}%20files"
+            )
+            raise NotImplementedError(
+                f"Don't know which files are associated with dataset type {dataset_cls}!"
+                f"Consider adding the names of the files to the dataset_files dictionary, or creating "
+                f"an issue for this at {github_issue_url}"
+            )
+        required_files = files
+    else:
+        required_files = dataset_files[dataset_cls]
 
     @functools.wraps(dataset_cls.__init__)
     def _custom_init(self, *args: P.args, **kwargs: P.kwargs):
