@@ -85,8 +85,9 @@ the type of dataset.
 
 def is_stored_on_cluster(dataset_cls: type, cluster: Cluster | None = Cluster.current()) -> bool:
     """Returns whether we know where to find the given dataset on the given cluster."""
-    return dataset_cls in dataset_roots_per_cluster and bool(
-        dataset_roots_per_cluster.get(dataset_cls)
+    return (
+        dataset_cls in dataset_roots_per_cluster
+        and cluster in dataset_roots_per_cluster[dataset_cls]
     )
 
 
