@@ -3,7 +3,6 @@ from hydra.core.config_search_path import ConfigSearchPath
 from hydra.plugins.search_path_plugin import SearchPathPlugin
 
 # NOTE: We need to get these configs in the scope here for the plugin to work, apparently.
-from mila_datamodules.configs import register_configs
 
 
 class MilaDatamodulesSearchPathPlugin(SearchPathPlugin):
@@ -14,5 +13,6 @@ class MilaDatamodulesSearchPathPlugin(SearchPathPlugin):
         # be available in a package.
         # Remember to verify the config is packaged properly (build sdist and look inside,
         # and verify MANIFEST.in is correct).
-        register_configs()
+        import mila_datamodules.configs  # noqa
+
         search_path.append(provider="mila_datamodules", path="pkg://mila_datamodules.configs")

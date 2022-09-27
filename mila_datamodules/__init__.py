@@ -3,4 +3,4 @@ try:
 except ImportError:
     pass
 from .utils import get_cpus_on_node, get_slurm_tmpdir
-from .vision import ImagenetDataModule, ImagenetFfcvDataModule
+from .vision import *  # noqa: F403
