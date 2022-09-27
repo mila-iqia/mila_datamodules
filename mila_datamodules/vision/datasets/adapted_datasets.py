@@ -112,6 +112,7 @@ def adapted_constructor(
             dataset_root = None
 
         # TODO: Double-check / review this logic here. It's a bit messy.
+        # TODO: Make this `all_files_exist` also check for empty directories.
 
         if all_files_exist(required_files, fast_tmp_dir):
             logger.info("Dataset is already stored in SLURM_TMPDIR")
