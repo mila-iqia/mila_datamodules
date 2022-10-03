@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import functools
 import inspect
-import warnings
 from logging import getLogger as get_logger
 from pathlib import Path
 from typing import Callable, TypeVar, cast
@@ -19,7 +18,7 @@ from mila_datamodules.registry import (
     is_stored_on_cluster,
     too_large_for_slurm_tmpdir,
 )
-from mila_datamodules.utils import all_files_exist, copy_dataset_files, replace_kwargs
+from mila_datamodules.utils import all_files_exist, copy_dataset_files
 
 T = TypeVar("T", bound=type)
 D = TypeVar("D", bound=Dataset)
@@ -35,11 +34,12 @@ def _cache(fn: C) -> C:
 
 
 @_cache
-def adapt_dataset(dataset_type: type[D]) -> type[D]:
-    """When not running on a cluster, returns the given input.
+def adapt_dataset(dataset_type: type[VD]) -> type[VD]:
+    """When not running on a SLURM cluster, returns the given input.
 
-    When running on a cluster, returns a subclass of the given dataset that has a modified/adapted
-    constructor.
+    When running on a SLURM cluster, returns a subclass of the given dataset that has a
+    modified/adapted constructor.
+
     This constructor does a few things, but basically works like a three-level caching system.
     1. /network/datasets/torchvision (read-only "cache")
     2. $SCRATCH/cache/torch (writeable "cache")
@@ -56,7 +56,7 @@ def adapt_dataset(dataset_type: type[D]) -> type[D]:
     dataset_subclass = type(
         dataset_type.__name__, (dataset_type,), {"__init__": adapted_constructor(dataset_type)}
     )
-    dataset_subclass = cast("type[D]", dataset_subclass)
+    dataset_subclass = cast("type[VD]", dataset_subclass)
     return dataset_subclass
 
 
@@ -64,7 +64,7 @@ def adapt_dataset(dataset_type: type[D]) -> type[D]:
 
 
 def adapted_constructor(
-    dataset_cls: Callable[Concatenate[str, P], D]
+    dataset_cls: Callable[Concatenate[str, P], VD]
 ) -> Callable[Concatenate[str | None, P], None]:
     """Creates a constructor for the given dataset class that does the required preprocessing steps
     before instantiating the dataset."""
@@ -82,8 +82,8 @@ def adapted_constructor(
             )
             raise NotImplementedError(
                 f"Don't know which files are associated with dataset type {dataset_cls}!"
-                f"Consider adding the names of the files to the dataset_files dictionary, or creating "
-                f"an issue for this at {github_issue_url}"
+                f"Consider adding the names of the files to the dataset_files dictionary, or "
+                f"creating an issue for this at {github_issue_url}"
             )
         required_files = files
     else:
@@ -158,79 +158,3 @@ def adapted_constructor(
         base_init(*args, **kwargs)
 
     return _custom_init
-
-
-def _make_dataset_fn(dataset_type: Callable[P, D]) -> Callable[P, D]:
-    """Wraps a dataset into a function that constructs it efficiently.
-
-    When invoked, the function first checks if the dataset is already downloaded in $SLURM_TMPDIR.
-    If so, it is read and returned. If not, checks if the dataset is already stored somewhere in
-    the cluster ($SCRATCH/data, then /network/datasets directory). If so, try to copy it over to
-    SLURM_TMPDIR. If that works, read the dataset from SLURM_TMPDIR if the dataset isn't too large.
-    If the dataset isn't found anywhere, then it is downloaded to SLURM_TMPDIR and read from there.
-
-    NOTE: This is currently unused, as it was replaced with `adapted_constructor`. However it's
-    cleaner, in a sense, since it's a stateless function. The only issue is that it returns a
-    function rather than a class, and so it isn't 100% compatible with the original behaviour of
-    the class it is wrapping.
-    """
-
-    if dataset_type not in dataset_files:
-        warnings.warn(
-            RuntimeWarning(
-                f"Don't know which files are associated with dataset type {dataset_type}!"
-                f"Consider adding the names of the files to the dataset_files dictionary."
-            )
-        )
-        # NOTE: Perhaps we could also check the files in $SCRATCH/data, then attempt to download it
-        # into $SCRATCH/data, get the list of newly created files in $SCRATCH/data, and if we
-        # detect any new files, we then copy those into SLURM_TMPDIR, and then re-read the dataset
-        # from SLURM_TMPDIR instead!
-        return dataset_type
-
-    required_files = dataset_files[dataset_type]
-    fast_dir = SLURM_TMPDIR / "data"
-    scratch_dir = SCRATCH / "data"
-    dataset_type = cast(Callable[P, D], dataset_type)
-    create_in_fast_dir = replace_kwargs(dataset_type, root=fast_dir)
-
-    def copy_and_load_from(source_dir: str | Path):
-        """Returns a function that copies the dataset files from `source_dir` to `fast_dir` and
-        then loads the dataset from `fast_dir`."""
-        source_dir = Path(source_dir)
-
-        @functools.wraps(dataset_type)
-        def _copy_and_load(*args: P.args, **kwargs: P.kwargs) -> D:
-            copy_dataset_files(required_files, source_dir, fast_dir)
-            return create_in_fast_dir(*args, **kwargs)
-
-        return _copy_and_load
-
-    if all_files_exist(required_files, fast_dir):
-        # The dataset is in $SLURM_TMPDIR/data.
-        return create_in_fast_dir
-    if all_files_exist(required_files, scratch_dir):
-        # The dataset is stored in $SCRATCH/data.
-        if dataset_type in too_large_for_slurm_tmpdir:
-            return replace_kwargs(dataset_type, root=scratch_dir)
-        return copy_and_load_from(scratch_dir)
-
-    dataset_root = get_dataset_root(dataset_type, cluster=CURRENT_CLUSTER)  # type: ignore
-
-    if all_files_exist(required_files, dataset_root):
-        if dataset_type in too_large_for_slurm_tmpdir:
-            return replace_kwargs(dataset_type, root=dataset_root)
-        else:
-            return copy_and_load_from(dataset_root)
-
-    # TODO: For datasets that can be downloaded but that we don't have, we could try to download it
-    # into SCRATCH for later use, before copying it to SLURM_TMPDIR.
-
-    def _try_slurm_tmpdir(*args: P.args, **kwargs: P.kwargs) -> D:
-        try:
-            return create_in_fast_dir(*args, **kwargs)
-        except OSError:
-            # Fallback to the normal callable (the passed in class)
-            return dataset_type(*args, **kwargs)
-
-    return _try_slurm_tmpdir
