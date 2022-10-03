@@ -21,9 +21,10 @@ MNIST = adapt_dataset(torchvision.datasets.MNIST)
 CIFAR10 = adapt_dataset(torchvision.datasets.CIFAR10)
 CIFAR100 = adapt_dataset(torchvision.datasets.CIFAR100)
 FashionMNIST = adapt_dataset(torchvision.datasets.FashionMNIST)
-# Caltech101 = adapt_dataset(torchvision.datasets.Caltech101)
 
 Caltech101 = adapt_dataset(Caltech101)
+# Caltech101 = adapt_dataset(torchvision.datasets.Caltech101)
+
 Caltech256 = adapt_dataset(torchvision.datasets.Caltech256)
 CelebA = adapt_dataset(torchvision.datasets.CelebA)
 Cityscapes = adapt_dataset(torchvision.datasets.Cityscapes)

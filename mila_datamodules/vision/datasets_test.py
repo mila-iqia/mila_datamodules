@@ -19,16 +19,18 @@ datasets = {
     for k, v in vars(mila_datamodules.vision.datasets).items()
     if inspect.isclass(v) and issubclass(v, VisionDataset)
 }
+
 # TODO: Need to stop doing this kind of hard-coded fixing and listing of stuff.
 datasets["EMNIST"] = partial(datasets.pop("EMNIST"), split="mnist")
 datasets["BinaryEMNIST"] = partial(datasets.pop("BinaryEMNIST"), split="mnist")
 
-# Takes a bit longer to copy.
-datasets["CelebA"] = pytest.param(datasets.pop("CelebA"), marks=pytest.mark.timeout(120))
+# Dataset takes a bit longer to copy.
+dataset_names = list(datasets.keys())
+dataset_names.remove("CelebA")
+dataset_names.append(pytest.param("CelebA", marks=pytest.mark.timeout(120)))
 
 
-# TODO: Adapt this test for datasets like EMNIST that require more arguments
-@pytest.mark.parametrize("dataset_name", datasets.keys())
+@pytest.mark.parametrize("dataset_name", dataset_names)
 def test_optimized_dataset_creation(dataset_name: str, tmp_path: Path):
     """Test that the dataset can be created, with the optimizations (copies/etc)."""
     dataset_cls = datasets[dataset_name]
