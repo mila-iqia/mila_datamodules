@@ -7,7 +7,6 @@ from __future__ import annotations
 import inspect
 from functools import partial
 from pathlib import Path
-from typing import Callable
 
 import pytest
 from torchvision.datasets import VisionDataset
@@ -21,17 +20,18 @@ datasets = {
     if inspect.isclass(v) and issubclass(v, VisionDataset)
 }
 # TODO: Need to stop doing this kind of hard-coded fixing and listing of stuff.
-datasets[mila_datamodules.vision.datasets.EMNIST] = partial(  # type: ignore
-    mila_datamodules.vision.datasets.EMNIST, split="mnist"
-)
+datasets["EMNIST"] = partial(datasets.pop("EMNIST"), split="mnist")
+datasets["BinaryEMNIST"] = partial(datasets.pop("BinaryEMNIST"), split="mnist")
+
+# Takes a bit longer to copy.
+datasets["CelebA"] = pytest.param(datasets.pop("CelebA"), marks=pytest.mark.timeout(120))
 
 
 # TODO: Adapt this test for datasets like EMNIST that require more arguments
-@pytest.mark.parametrize("dataset_cls", datasets.values())
-def test_dataset_creation(
-    dataset_cls: type[VisionDataset] | Callable[..., VisionDataset], tmp_path: Path
-):
+@pytest.mark.parametrize("dataset_name", datasets.keys())
+def test_optimized_dataset_creation(dataset_name: str, tmp_path: Path):
     """Test that the dataset can be created, with the optimizations (copies/etc)."""
+    dataset_cls = datasets[dataset_name]
     bad_root = str(tmp_path / "fake_path")
     dataset = check_dataset_creation_works(dataset_cls, root=bad_root)
     assert dataset.root != bad_root
