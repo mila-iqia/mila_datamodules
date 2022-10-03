@@ -92,17 +92,10 @@ def is_stored_on_cluster(dataset_cls: type, cluster: Cluster | None = CURRENT_CL
     )
 
 
-class _MissingType:
-    pass
-
-
-_missing = _MissingType()
-
-
 def get_dataset_root(
     dataset_cls: type,
     cluster: Cluster | None = None,
-    default: str | _MissingType = _missing,
+    default: str | None = None,
 ) -> str:
     """Gets the root directory to use to read the given dataset on the given cluster.
 
@@ -126,7 +119,7 @@ def get_dataset_root(
                 dataset_cls = dataset
                 break
 
-    if not is_stored_on_cluster(dataset_cls, cluster) and default is not _missing:
+    if not is_stored_on_cluster(dataset_cls, cluster) and default is not None:
         assert isinstance(default, str)
         return default
 
