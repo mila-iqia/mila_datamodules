@@ -102,18 +102,50 @@ def replace_arg_defaults(
     return _wrap
 
 
+def copy_fn(src: str | Path, dest: str | Path):
+    """Copies a file/dir from `src` to `dest` and sets the mode of the copy to 644."""
+    src_path = Path(src).resolve()
+    if src_path.is_dir():
+        os.mkdir(dest, mode=0o644)
+    else:
+        shutil.copyfile(src_path, dest, follow_symlinks=False)
+        os.chmod(dest, 0o644)
+
+
+def chmod_recursive(path: str | Path, mode: int):
+    """Sets the mode of a file/dir and all its subdirectories and files to `mode`."""
+    path = Path(path).resolve()
+    for root, dirs, files in os.walk(path):
+        for d in dirs:
+            os.chmod(os.path.join(root, d), mode)
+        for f in files:
+            os.chmod(os.path.join(root, f), mode)
+
+
+def extract_archive(archive_path: str | Path, dest: str | Path):
+    """Extracts an archive to `dest` and sets the mode of all extracted files to 644."""
+    shutil.unpack_archive(archive_path, dest)
+    chmod_recursive(dest, 0o644)
+
+
 def copy_dataset_files(
     files_to_copy: Sequence[str], source_dir: str | Path, dest_dir: str | Path
 ) -> None:
+    """TODO: If the file is an archive, extract it into the destination directory, rather than
+    copy the files? (see https://github.com/lebrice/mila_datamodules/issues/4).
+    """
     source_dir = Path(source_dir)
     dest_dir = Path(dest_dir)
+
     assert all_files_exist(files_to_copy, base_dir=source_dir)
+
     for source_file in files_to_copy:
         source_path = source_dir / source_file
         destination_path = dest_dir / source_file
         destination_path.parent.mkdir(parents=True, exist_ok=True)
-        print(f"Copying {source_path} -> {destination_path}")
+
         if source_path.is_dir():
+            print(f"Copying {source_path} -> {destination_path}")
             # Copy the folder over.
             # TODO: Check that this doesn't overwrite existing files.
             # TODO: Test this out with symlinks?
@@ -122,7 +154,19 @@ def copy_dataset_files(
                 dst=destination_path,
                 symlinks=False,
                 dirs_exist_ok=True,
+                copy_function=copy_fn,
             )
+        elif source_path.suffix in [".tar", ".zip", ".gz"]:
+            print(f"Extracting {source_path} -> {destination_path}")
+            # Extract the archive.
+            extract_archive(source_path, destination_path)
+
         elif not destination_path.exists():
+            print(f"Copying {source_path} -> {destination_path}")
             # Copy the file over.
-            shutil.copy(src=source_path, dst=destination_path, follow_symlinks=False)
+            try:
+                copy_fn(source_path, destination_path)
+            except FileExistsError:
+                # Weird. Getting a FileExistsError for SVHN, even though we checked that the
+                # destination path didn't already exist...
+                pass
