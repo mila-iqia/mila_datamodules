@@ -176,17 +176,3 @@ def test_coco_captions(split: str):
             Path(get_dataset_root(CocoCaptions)) / f"annotations/captions_{split}2017.json"
         ),
     )
-
-
-def test_caltech():
-    from torchvision.datasets import Caltech101, Caltech256
-
-    check_dataset_creation_works(
-        Caltech101,
-        root=get_dataset_root(Caltech101),
-    )
-
-    check_dataset_creation_works(
-        Caltech256,
-        root=get_dataset_root(Caltech256),
-    )

@@ -14,16 +14,17 @@ import pl_bolts.datasets
 import torchvision.datasets
 
 from .adapted_datasets import adapt_dataset
-from .caltech import Caltech101
+from .binary_mnist import BinaryMNIST
+from .caltech101 import Caltech101
 
 MNIST = adapt_dataset(torchvision.datasets.MNIST)
 CIFAR10 = adapt_dataset(torchvision.datasets.CIFAR10)
 CIFAR100 = adapt_dataset(torchvision.datasets.CIFAR100)
 FashionMNIST = adapt_dataset(torchvision.datasets.FashionMNIST)
 # Caltech101 = adapt_dataset(torchvision.datasets.Caltech101)
-Caltech256 = adapt_dataset(torchvision.datasets.Caltech256)
+
 Caltech101 = adapt_dataset(Caltech101)
-# Caltech256 = adapt_dataset(Caltech256)
+Caltech256 = adapt_dataset(torchvision.datasets.Caltech256)
 CelebA = adapt_dataset(torchvision.datasets.CelebA)
 Cityscapes = adapt_dataset(torchvision.datasets.Cityscapes)
 INaturalist = adapt_dataset(torchvision.datasets.INaturalist)
@@ -38,6 +39,8 @@ CocoDetection = adapt_dataset(torchvision.datasets.CocoDetection)
 CocoCaptions = adapt_dataset(torchvision.datasets.CocoCaptions)
 
 EMNIST = adapt_dataset(torchvision.datasets.EMNIST)
-BinaryMNIST = adapt_dataset(pl_bolts.datasets.BinaryMNIST)
+
+# BinaryMNIST = adapt_dataset(pl_bolts.datasets.BinaryMNIST)
+BinaryMNIST = adapt_dataset(BinaryMNIST)
 BinaryEMNIST = adapt_dataset(pl_bolts.datasets.BinaryEMNIST)
 # todo: Add the other datasets here.

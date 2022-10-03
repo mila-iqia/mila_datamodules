@@ -11,36 +11,7 @@ import torchvision.datasets as tvd
 
 from mila_datamodules.clusters import CURRENT_CLUSTER
 from mila_datamodules.clusters.cluster import Cluster
-
-# TODO: Fill these in!
-
-dataset_roots_per_cluster: dict[type, dict[Cluster, Path]] = defaultdict(dict)
-""" The path to the `root` directory to use for each dataset type, for each cluster."""
-
-# Add the known dataset locations on the mila cluster.
-for dataset in [
-    tvd.MNIST,
-    tvd.CIFAR10,
-    tvd.Caltech101,
-    tvd.Caltech256,
-    tvd.CelebA,
-    tvd.Cityscapes,
-    tvd.CocoCaptions,
-    tvd.CocoDetection,
-    tvd.CIFAR100,
-    tvd.FashionMNIST,
-    tvd.INaturalist,
-    tvd.Places365,
-    tvd.STL10,
-    tvd.SVHN,
-    pl_bolts.datasets.BinaryMNIST,
-]:
-    dataset_roots_per_cluster[dataset][Cluster.Mila] = Path("/network/datasets/torchvision")
-
-
-too_large_for_slurm_tmpdir: set[Callable] = set()
-""" Set of datasets which are too large to store in $SLURM_TMPDIR."""
-
+from mila_datamodules.vision.datasets.binary_mnist import BinaryMNIST
 
 dataset_files = {
     tvd.MNIST: ["MNIST"],
@@ -68,6 +39,9 @@ dataset_files = {
     tvd.CocoDetection: ["annotations", "test2017", "train2017", "val2017"],
     tvd.CocoCaptions: ["annotations", "test2017", "train2017", "val2017"],
     tvd.EMNIST: ["EMNIST"],
+    # NOTE: This isn't quite true for the original class.
+    # pl_bolts.datasets.BinaryMNIST: ["MNIST"],
+    BinaryMNIST: ["MNIST"],
     pl_bolts.datasets.BinaryMNIST: ["MNIST"],
     pl_bolts.datasets.BinaryEMNIST: ["EMNIST"],
 }
@@ -84,11 +58,66 @@ the type of dataset.
 """
 
 
+# TODO: Fill these in!
+
+dataset_roots_per_cluster: dict[type, dict[Cluster, Path]] = defaultdict(dict)
+""" The path to the `root` directory to use for each dataset type, for each cluster."""
+
+# Add the known dataset locations on the mila cluster.
+for dataset in [
+    tvd.MNIST,
+    tvd.CIFAR10,
+    tvd.Caltech101,
+    tvd.Caltech256,
+    tvd.CelebA,
+    tvd.Cityscapes,
+    tvd.CocoCaptions,
+    tvd.CocoDetection,
+    tvd.CIFAR100,
+    tvd.FashionMNIST,
+    tvd.INaturalist,
+    tvd.Places365,
+    tvd.STL10,
+    tvd.SVHN,
+    # NOTE: BinaryMNIST from pl_bolts.datasets is buggy, and doesn't work out-of-the-box.
+    # Our adapted version works though.
+    # pl_bolts.datasets.BinaryMNIST,
+    BinaryMNIST,
+]:
+    dataset_roots_per_cluster[dataset][Cluster.Mila] = Path("/network/datasets/torchvision")
+
+
+too_large_for_slurm_tmpdir: set[Callable] = set()
+""" Set of datasets which are too large to store in $SLURM_TMPDIR."""
+
+# TODO: How about we adopt a de-centralized kind of registry, a bit like gym?
+# In each dataset module, we could have a `mila_datamodules.register(name, locations={Mila: ...})`?
+
+
+# TODO: Create a registry of the archives for each dataset, so that we can use these instead of
+# copying the files individually.
+dataset_archives_per_cluster: dict[type, dict[Cluster, list[str]]] = {
+    tvd.Places365: {
+        # TODO: Unclear if/how these archives should be used to construct the torchvision
+        # Places365 dataset. (train_256(...).tar gets extracted to a `data_256` folder.. the
+        # structure doesn't match what torchvision expects)
+        # Cluster.Mila: [
+        #     "/network/datasets/places365/256/train_256_places365standard.tar",
+        #     "/network/datasets/places365/256/val_256.tar",
+        #     "/network/datasets/places365/256/test_256.tar",
+        # ]
+    },
+}
+
+
 def is_stored_on_cluster(dataset_cls: type, cluster: Cluster | None = CURRENT_CLUSTER) -> bool:
     """Returns whether we know where to find the given dataset on the given cluster."""
     return (
         dataset_cls in dataset_roots_per_cluster
         and cluster in dataset_roots_per_cluster[dataset_cls]
+    ) or (
+        dataset_cls in dataset_archives_per_cluster
+        and cluster in dataset_archives_per_cluster[dataset_cls]
     )
 
 
