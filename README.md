@@ -1,6 +1,8 @@
 # (WIP) Cluster-Aware Datamodules
 
-Efficient Datamodules customized for the Mila/ComputeCanada clusters
+Efficient Datamodules customized for the Mila/ComputeCanada clusters.
+
+NOTE: This is a work in progress. Please let us know what you think, what features you'd like to see, what datasets we're forgetting, etc, using the issues tab.
 
 ## Installation:
 
