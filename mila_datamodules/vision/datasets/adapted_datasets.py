@@ -33,6 +33,17 @@ def _cache(fn: C) -> C:
     return functools.cache(fn)  # type: ignore
 
 
+def __getattr__(name: str) -> type[VD]:
+    import torchvision.datasets as tvd
+
+    if hasattr(tvd, name):
+        attribute = getattr(tvd, name)
+
+        if inspect.isclass(attribute) and issubclass(attribute, VisionDataset):
+            return adapt_dataset(attribute)
+    raise AttributeError(name)
+
+
 @_cache
 def adapt_dataset(dataset_type: type[VD]) -> type[VD]:
     """When not running on a SLURM cluster, returns the given input.
