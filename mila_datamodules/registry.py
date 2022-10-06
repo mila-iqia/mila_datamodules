@@ -141,6 +141,7 @@ def get_dataset_root(
 
     if dataset_cls not in dataset_roots_per_cluster:
         for dataset in dataset_roots_per_cluster:
+            # A class with the same name (e.g. our adapted datasets) was passed.
             if dataset.__name__ == dataset_cls.__name__:
                 warnings.warn(
                     RuntimeWarning(f"Using dataset class {dataset} instead of {dataset_cls}")
@@ -148,9 +149,17 @@ def get_dataset_root(
                 dataset_cls = dataset
                 break
 
-    if not is_stored_on_cluster(dataset_cls, cluster) and default is not None:
-        assert isinstance(default, str)
-        return default
+    if not is_stored_on_cluster(dataset_cls, cluster):
+        if default is not None:
+            assert isinstance(default, str)
+            return default
+
+        # We don't know where this dataset is in this cluster.
+        raise NotImplementedError(
+            f"No known location for dataset {dataset_cls.__name__} on {cluster.name} "
+            f"cluster!\n If you do know where it can be found on {cluster.name}, "
+            f"please make an issue at {github_issue_url} so the registry can be updated."
+        )
 
     if dataset_cls not in dataset_roots_per_cluster:
         # Unsupported dataset.
@@ -158,14 +167,6 @@ def get_dataset_root(
             f"No known location for dataset {dataset_cls.__name__} on any of the clusters!\n"
             f"If you do know where it can be found on {cluster.name}, or on any other "
             f"cluster, please make an issue at {github_issue_url} to add it to the registry."
-            f""
         )
-    dataset_root = dataset_roots_per_cluster[dataset_cls].get(cluster)
-    if dataset_root is None:
-        # We don't know where this dataset is in this cluster.
-        raise NotImplementedError(
-            f"No known location for dataset {dataset_cls.__name__} on {cluster.name} "
-            f"cluster!\n If you do know where it can be found on {cluster.name}, "
-            f"please make an issue at {github_issue_url} so the registry can be updated."
-        )
+    dataset_root = dataset_roots_per_cluster[dataset_cls][cluster]
     return str(dataset_root)
