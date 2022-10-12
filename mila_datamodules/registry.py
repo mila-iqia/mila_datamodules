@@ -84,7 +84,24 @@ for dataset in [
     # pl_bolts.datasets.BinaryMNIST,
     BinaryMNIST,
 ]:
-    dataset_roots_per_cluster[dataset][Cluster.Mila] = Path("/network/datasets/torchvision")
+    dataset_roots_per_cluster[dataset][Cluster.Mila] = Path(
+        "/network/datasets/torchvision"
+    )
+
+
+# Add the known dataset locations on the mila cluster.
+for dataset in [
+    tvd.MNIST,
+    tvd.CIFAR10,
+    tvd.CIFAR100,
+    tvd.Cityscapes,
+    tvd.CocoCaptions,
+    tvd.CocoDetection,
+    BinaryMNIST,
+]:
+    dataset_roots_per_cluster[dataset][Cluster.Beluga] = Path(
+        "/project/rpp-bengioy/data/curated"
+    )
 
 
 too_large_for_slurm_tmpdir: set[Callable] = set()

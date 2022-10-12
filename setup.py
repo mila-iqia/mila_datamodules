@@ -1,8 +1,9 @@
 from setuptools import find_namespace_packages, setup
 
-packages = find_namespace_packages(include=["mila_datamodules*"]) + find_namespace_packages(
-    include=["hydra_plugins.*"]
-)
+packages = find_namespace_packages(include=["mila_datamodules*"])
+packages += find_namespace_packages(include=["hydra_plugins.*"])
+
+
 setup(
     name="mila_datamodules",
     version="0.0.1",
@@ -16,11 +17,13 @@ setup(
         "pytorch-lightning",
         "torchvision",
         "lightning-bolts",
+        "filelock",
     ],
     extras_require={
         "ffcv": "ffcv",
         "hydra": ["hydra-core", "hydra-zen"],
         "coco": "pycocotools",
+        "test": ["pytest-xdist", "pytest-timeout"],
     },
     include_package_data=True,
 )

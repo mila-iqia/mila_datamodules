@@ -4,11 +4,12 @@ import torchvision.datasets as tvd
 from pl_bolts.datamodules import STL10DataModule as _STL10DataModule
 
 from mila_datamodules.registry import get_dataset_root
+from mila_datamodules.clusters import SCRATCH
 
 from .vision_datamodule import _TransformsFix
 
 # Get the data directory, if possible.
-default_data_dir = get_dataset_root(tvd.STL10)
+default_data_dir = get_dataset_root(tvd.STL10, default=str(SCRATCH / "data"))
 
 
 # NOTE: This prevents a useless download by setting the `data_dir` to a good default value.

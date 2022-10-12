@@ -1,6 +1,9 @@
 # Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved
 import inspect
 from pathlib import Path
+import pytest
+
+pytest.importorskip("hydra")
 
 import hydra
 import pytest
