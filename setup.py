@@ -14,6 +14,7 @@ setup(
     # External packages as dependencies
     install_requires=[
         "pytorch-lightning",
+        "torchvision",
         "lightning-bolts",
     ],
     extras_require={
