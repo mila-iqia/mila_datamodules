@@ -9,7 +9,7 @@ from mila_datamodules.clusters import CURRENT_CLUSTER, SLURM_TMPDIR
 
 @pytest.fixture(autouse=True, scope="session")
 def clear_slurm_tmpdir():
-    """Clears the SLURM_TMPDIR before running any tests.
+    """Clears the SLURM_TMPDIR/data before running any tests.
 
     This is unfortunately necessary so that each test run is unaffected by other runs. I was having
     weird errors because the datasets were half-moved to SLURM_TMPDIR, so reading them on the next

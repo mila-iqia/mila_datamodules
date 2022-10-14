@@ -26,8 +26,14 @@ datasets["BinaryEMNIST"] = partial(datasets.pop("BinaryEMNIST"), split="mnist")
 
 # Dataset takes a bit longer to copy.
 dataset_names = list(datasets.keys())
-dataset_names.remove("CelebA")
-dataset_names.append(pytest.param("CelebA", marks=pytest.mark.timeout(120)))
+dataset_names = [
+    pytest.param(
+        dataset_name,
+        marks=[pytest.mark.xdist_group(name=dataset_name)]
+        + ([pytest.mark.timeout(120)] if dataset_name == "CelebA" else []),
+    )
+    for dataset_name in dataset_names
+]
 
 
 @pytest.mark.parametrize("dataset_name", dataset_names)

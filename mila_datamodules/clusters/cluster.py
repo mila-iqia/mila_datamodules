@@ -18,6 +18,7 @@ class Cluster(enum.Enum):
     Beluga = enum.auto()
     Graham = enum.auto()
     Narval = enum.auto()
+    _local = enum.auto()
 
     @classmethod
     def current(cls) -> Cluster:
@@ -34,7 +35,8 @@ class Cluster(enum.Enum):
             return cls.Cedar
         if cluster_name == "narval":
             return cls.Narval
-
+        if cluster_name == "local":
+            return cls._local
         raise NotImplementedError(f"Unknown cluster: {cluster_name}")
 
     @property
