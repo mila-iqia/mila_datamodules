@@ -84,12 +84,11 @@ for dataset in [
     # pl_bolts.datasets.BinaryMNIST,
     BinaryMNIST,
 ]:
-    dataset_roots_per_cluster[dataset][Cluster.Mila] = Path(
-        "/network/datasets/torchvision"
-    )
+    dataset_roots_per_cluster[dataset][Cluster.Mila] = Path("/network/datasets/torchvision")
 
 
 # Add the known dataset locations on the mila cluster.
+# TODO: On `Beluga`, the MNIST files are in a folder called 'mnist' instead of 'MNIST'.
 for dataset in [
     tvd.MNIST,
     tvd.CIFAR10,
@@ -99,9 +98,7 @@ for dataset in [
     tvd.CocoDetection,
     BinaryMNIST,
 ]:
-    dataset_roots_per_cluster[dataset][Cluster.Beluga] = Path(
-        "/project/rpp-bengioy/data/curated"
-    )
+    dataset_roots_per_cluster[dataset][Cluster.Beluga] = Path("/project/rpp-bengioy/data/curated")
 
 
 too_large_for_slurm_tmpdir: set[Callable] = set()

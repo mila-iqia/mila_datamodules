@@ -16,8 +16,9 @@ import torchvision.datasets
 from .adapted_datasets import adapt_dataset
 from .binary_mnist import BinaryEMNIST, BinaryMNIST
 from .caltech101 import Caltech101
+from .mnist import MNIST
 
-MNIST = adapt_dataset(torchvision.datasets.MNIST)
+MNIST = adapt_dataset(MNIST)
 CIFAR10 = adapt_dataset(torchvision.datasets.CIFAR10)
 CIFAR100 = adapt_dataset(torchvision.datasets.CIFAR100)
 FashionMNIST = adapt_dataset(torchvision.datasets.FashionMNIST)

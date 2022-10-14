@@ -4,7 +4,7 @@ import shutil
 import pytest
 from filelock import FileLock
 
-from mila_datamodules.clusters import SLURM_TMPDIR
+from mila_datamodules.clusters import CURRENT_CLUSTER, SLURM_TMPDIR
 
 
 @pytest.fixture(autouse=True, scope="session")
@@ -23,3 +23,12 @@ def clear_slurm_tmpdir():
             os.system(f"chmod --recursive +rwx {SLURM_TMPDIR}/data")
             shutil.rmtree(SLURM_TMPDIR / "data")
     yield
+
+
+@pytest.fixture(autouse=True, scope="session", params=["mila", "beluga"])
+def cluster(request):
+    """A fixture that makes all the tests run on all the clusters!"""
+    host: str = request.param
+    if host != CURRENT_CLUSTER.name.lower():
+        pytest.skip(f"Runs on {CURRENT_CLUSTER.name} cluster (we're on {host})")
+    yield host

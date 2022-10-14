@@ -90,6 +90,7 @@ class ImagenetDataModule(_ImagenetDataModule):
         batch_size: int = 32,
         shuffle: bool = True,
         pin_memory: bool = True,
+        persistent_workers: bool = False,
         drop_last: bool = False,
         train_transforms: Callable | nn.Module | None = None,
         val_transforms: Callable | nn.Module | None = None,
@@ -117,6 +118,7 @@ class ImagenetDataModule(_ImagenetDataModule):
             pin_memory=pin_memory,
             drop_last=drop_last,
         )
+        self.persistent_workers = persistent_workers
         self._train_transforms = train_transforms
         self._val_transforms = val_transforms
         self._test_transforms = test_transforms
@@ -133,9 +135,63 @@ class ImagenetDataModule(_ImagenetDataModule):
         super().prepare_data()
 
     def train_dataloader(self) -> DataLoader:
+        # TODO: Use persistent_workers = True kwarg to DataLoader when num_workers > 0 and when
+        # in ddp_spawn mode.
+        from pytorch_lightning.strategies.ddp_spawn import DDPSpawnStrategy
+
+        if self.trainer and isinstance(self.trainer.strategy, DDPSpawnStrategy):
+            # Use `persistent_workers=True`
+            # NOTE: Unfortunate that we have to copy all this code from the base class ;(
+            transforms = (
+                self.train_transform() if self.train_transforms is None else self.train_transforms
+            )
+            dataset = UnlabeledImagenet(
+                self.data_dir,
+                num_imgs_per_class=-1,
+                num_imgs_per_class_val_split=self.num_imgs_per_val_class,
+                meta_dir=self.meta_dir,
+                split="train",
+                transform=transforms,
+            )
+            loader: DataLoader = DataLoader(
+                dataset,
+                batch_size=self.batch_size,
+                shuffle=self.shuffle,
+                num_workers=self.num_workers,
+                drop_last=self.drop_last,
+                pin_memory=self.pin_memory,
+                persistent_workers=self.persistent_workers,
+            )
+            return loader
         return super().train_dataloader()
 
     def val_dataloader(self) -> DataLoader:
+        # # Unfortunate that we have to copy all of that, just to change the `persistent_workers`
+        # # argument..
+        # NOTE: Not actually sure if it's alright to use this `persistent_workers=True` for
+        # validation.
+        # transforms = (
+        #     self.val_transform() if self.val_transforms is None else self.val_transforms
+        # )
+
+        # dataset = UnlabeledImagenet(
+        #     self.data_dir,
+        #     num_imgs_per_class_val_split=self.num_imgs_per_val_class,
+        #     meta_dir=self.meta_dir,
+        #     split="val",
+        #     transform=transforms,
+        # )
+        # loader: DataLoader = DataLoader(
+        #     dataset,
+        #     batch_size=self.batch_size,
+        #     shuffle=False,
+        #     num_workers=self.num_workers,
+        #     drop_last=self.drop_last,
+        #     pin_memory=self.pin_memory,
+        #     persistent_workers=self.persistent_workers,
+        # )
+        # return loader
+
         return super().val_dataloader()
 
     def test_dataloader(self) -> DataLoader:
