@@ -19,7 +19,7 @@ else:
     from .cifar10 import CIFAR10DataModule
     from .cityscapes import CityscapesDataModule
     from .fashion_mnist import FashionMNISTDataModule
-    from .imagenet import ImagenetDataModule, ImagenetBchDataModule, ImagenetFfcvDataModule
+    from .imagenet import ImagenetDataModule, ImagenetBchDataModule, ImagenetBenzinaDataModule, ImagenetFfcvDataModule
     from .mnist import (
         BinaryEMNISTDataModule,
         BinaryMNISTDataModule,

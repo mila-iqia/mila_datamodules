@@ -16,6 +16,8 @@ import torchvision.datasets
 from .adapted_datasets import adapt_dataset
 from .bch_coco import BchCocoCaptions, BchCocoDetection
 from .bch_imagenet import BchImageNet, BchUnlabeledImagenet
+from .benzina_coco import BenzinaCocoCaptions, BenzinaCocoDetection
+from .benzina_imagenet import BenzinaImageNet
 from .binary_mnist import BinaryEMNIST, BinaryMNIST
 from .caltech101 import Caltech101
 
@@ -52,5 +54,8 @@ BchCocoCaptions
 BchCocoDetection
 BchImageNet
 BchUnlabeledImagenet
+BenzinaCocoCaptions
+BenzinaCocoDetection
+BenzinaImageNet
 
 # todo: Add the other datasets here.
