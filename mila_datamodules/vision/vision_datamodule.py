@@ -37,8 +37,14 @@ class _TransformsFix(pytorch_lightning.LightningDataModule):
         self.test_transforms = test_transforms
 
 
-_pl_version = tuple(map(int, pytorch_lightning.__version__.split(".")))
-_bolts_version = tuple(map(int, pl_bolts.__version__.split(".")))
+# Return None for special version attributes like 'post1'
+def _try_int(s):
+    try:
+        return int(s)
+    except ValueError:
+        return None
+_pl_version = tuple(map(_try_int, pytorch_lightning.__version__.split(".")))[:3]
+_bolts_version = tuple(map(_try_int, pl_bolts.__version__.split(".")))[:3]
 
 
 class VisionDataModule(
