@@ -14,6 +14,8 @@ import pl_bolts.datasets
 import torchvision.datasets
 
 from .adapted_datasets import adapt_dataset
+from .bch_coco import BchCocoCaptions, BchCocoDetection
+from .bch_imagenet import BchImageNet, BchUnlabeledImagenet
 from .binary_mnist import BinaryEMNIST, BinaryMNIST
 from .caltech101 import Caltech101
 
@@ -45,5 +47,10 @@ BinaryMNIST = adapt_dataset(BinaryMNIST)
 BinaryEMNIST = adapt_dataset(BinaryEMNIST)
 # BinaryMNIST = adapt_dataset(pl_bolts.datasets.BinaryMNIST)
 # BinaryEMNIST = adapt_dataset(pl_bolts.datasets.BinaryEMNIST)
+
+BchCocoCaptions
+BchCocoDetection
+BchImageNet
+BchUnlabeledImagenet
 
 # todo: Add the other datasets here.
