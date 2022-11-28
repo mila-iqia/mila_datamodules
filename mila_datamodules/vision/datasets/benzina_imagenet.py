@@ -1,0 +1,1 @@
+from benzina.torch.dataset import ImageNet as BenzinaImageNet
