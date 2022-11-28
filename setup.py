@@ -23,6 +23,7 @@ setup(
         "ffcv": "ffcv",
         "hydra": ["hydra-core", "hydra-zen"],
         "coco": "pycocotools",
+        "bcachefs": "benzina",
         "test": ["pytest-xdist", "pytest-timeout"],
     },
     include_package_data=True,
