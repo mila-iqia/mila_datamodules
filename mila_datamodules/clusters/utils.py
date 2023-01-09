@@ -3,45 +3,100 @@
 IDEA: later on, we could also add some functions for loading torchvision models from a cached
 directory.
 """
-from __future__ import annotations
-from dataclasses import dataclass, fields
-
+import ipaddress
 import os
+import subprocess
+import tempfile
+from dataclasses import dataclass
 from logging import getLogger as get_logger
 from pathlib import Path
-from typing import Callable, Sequence, TypeVar
-import subprocess
+from typing import Callable, Optional, Sequence, TypeVar
+
+from filelock import FileLock
+from pydantic import BaseSettings, Field
 from torch.utils.data import Dataset
 from typing_extensions import ParamSpec
-import tempfile
-from filelock import FileLock
 
 D = TypeVar("D", bound=Dataset)
 P = ParamSpec("P")
 C = Callable[P, D]
-
 logger = get_logger(__name__)
 
 
-@dataclass(frozen=True)
-class SlurmEnvVariables:
+@dataclass(frozen=False, init=False)
+class SlurmEnvVariables(BaseSettings):
     """Slurm environment variables that this package cares about.
 
     TODO: To use the package outside a SLURM cluster, the users should only have to set these
     variables locally.
     """
 
-    SCRATCH: Path = Path(os.environ.get("SCRATCH", Path.cwd() / "scratch"))
-
-    SLURM_JOBID: int = int(os.environ.get("SLURM_JOBID", 0))
-
-    SLURM_TMPDIR: Path = Path(
-        os.environ["SLURM_TMPDIR"]
-        if "SLURM_TMPDIR" in os.environ
-        else tempfile.gettempdir()
+    # TODO: Figure out a good default value to use for these variables when not on a SLURM cluster.
+    SCRATCH: Path
+    SLURM_TMPDIR: Path
+    SLURM_JOBID: int
+    SLURM_CLUSTER_NAME: str = Field(
+        default_factory=lambda: os.environ.get(
+            "SLURM_CLUSTER_NAME", os.environ.get("SLURM_WORKING_CLUSTER", "local:").split(":")[0]
+        )
     )
 
-    SLURM_CLUSTER_NAME: str = os.environ.get("SLURM_CLUSTER_NAME", "local")
+    # ------------
+    # Other environment variables that we don't currently use, but are set on SLURM clusters:
+    # ------------
+
+    SLURM_CONF: Path
+    SLURM_PRIO_PROCESS: int
+    SLURM_UMASK: str
+    SLURM_JOB_NAME: str
+    SLURM_JOB_CPUS_PER_NODE: int = 1  # NOTE: Appears to be missing when in a second `srun` step.
+    SLURM_NTASKS: int
+    SLURM_NPROCS: int
+    SLURM_JOB_ID: int
+    SLURM_JOBID: int
+    SLURM_STEP_ID: int
+    SLURM_STEPID: int
+    SLURM_NNODES: int
+    SLURM_NODELIST: str
+    # NOTE: The Literal would work, but the partitions keep changing over time, so it's probably
+    # best to just keep it as a string.
+    SLURM_JOB_PARTITION: str  # Literal["unkillable-cpu", "main", "unkillable", "long"]
+    SLURM_TASKS_PER_NODE: int  # = 1
+    SLURM_SRUN_COMM_PORT: int
+    SLURM_JOB_UID: int
+    SLURM_JOB_USER: str
+    SLURM_WORKING_CLUSTER: str
+    SLURM_JOB_NODELIST: str
+    SLURM_STEP_NODELIST: str
+    SLURM_STEP_NUM_NODES: int
+    SLURM_STEP_NUM_TASKS: int
+    SLURM_STEP_TASKS_PER_NODE: int
+    SLURM_STEP_LAUNCHER_PORT: int
+    SLURM_SRUN_COMM_HOST: ipaddress.IPv4Address
+    SLURM_TOPOLOGY_ADDR: str
+    SLURM_TOPOLOGY_ADDR_PATTERN: str
+    SLURM_CPUS_ON_NODE: int
+    SLURM_CPU_BIND: str
+    SLURM_CPU_BIND_LIST: str
+    SLURM_CPU_BIND_TYPE: str
+    SLURM_CPU_BIND_VERBOSE: str
+    SLURM_TASK_PID: int
+    SLURM_NODEID: int
+    SLURM_PROCID: int
+    SLURM_LOCALID: int
+    SLURM_LAUNCH_NODE_IPADDR: ipaddress.IPv4Address
+    SLURM_GTIDS: int
+    SLURM_JOB_GID: int
+    SLURMD_NODENAME: str
+
+    # NOTE: These variables appear to be missing when in a second `srun` step (e.g. in the console)
+    # of a VSCode window create with the `mila code` command.
+    SLURM_SUBMIT_DIR: Optional[Path] = None
+    SLURM_SUBMIT_HOST: Optional[str] = None
+    SRUN_DEBUG: int = 3
+    SLURM_JOB_NUM_NODES: int = 1
+    SLURM_JOB_ACCOUNT: Optional[str] = None
+    SLURM_JOB_QOS: str = "normal"
 
 
 def setup_slurm_env_variables(vars_to_ignore: Sequence[str] = ()) -> SlurmEnvVariables:
@@ -55,13 +110,14 @@ def setup_slurm_env_variables(vars_to_ignore: Sequence[str] = ()) -> SlurmEnvVar
 
     Returns a `SlurmEnvVariables` object with the variables that were set.
     """
-    if "SLURM_CLUSTER_NAME" in os.environ:
-        # SLURM-related environment variables have already been set. Ignoring.
+    if "SLURM_CLUSTER_NAME" in os.environ or "SLURM_WORKING_CLUSTER" in os.environ:
+        # SLURM-related environment variables have already been set.
         return SlurmEnvVariables()
 
     temp_dir = tempfile.gettempdir()
     if "SLURM_JOBID" in os.environ:
-        # Only the SLURM_JOBID is set when running this with `mila code`, for example.
+        # Only the SLURM_JOBID is set when running this in the VsCode console window created with
+        # `mila code`, for example.
         SLURM_JOBID = os.environ["SLURM_JOBID"]
         temp_file = Path(temp_dir) / f"env_vars_{SLURM_JOBID}.txt"
     else:
@@ -79,10 +135,11 @@ def setup_slurm_env_variables(vars_to_ignore: Sequence[str] = ()) -> SlurmEnvVar
             # Extract only the slurm-related environment variables.
             # TODO: Extracting all env variables, not just the slurm-related ones could be useful,
             # for example when running multi-node or multi-gpu jobs.
-            command = "srun env | grep SLURM"
             logger.info("Extracting SLURM environment variables... ")
+            command = "srun env | grep SLURM"
             try:
                 with temp_file.open("w") as f:
+                    logger.debug(f"Using temp file: {temp_file}")
                     logger.debug(f"> {command}")
                     subprocess.run(
                         command,
@@ -128,4 +185,5 @@ def setup_slurm_env_variables(vars_to_ignore: Sequence[str] = ()) -> SlurmEnvVar
         logger.debug(f"Setting {line}")
         os.environ.setdefault(key, value)
 
+    # Use the values in `os.environ` to populate this object.
     return SlurmEnvVariables()

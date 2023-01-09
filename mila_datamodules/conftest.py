@@ -30,5 +30,5 @@ def cluster(request):
     """A fixture that makes all the tests run on all the clusters!"""
     host: str = request.param
     if host != CURRENT_CLUSTER.name.lower():
-        pytest.skip(f"Runs on {CURRENT_CLUSTER.name} cluster (we're on {host})")
+        pytest.skip(f"Runs on the {host} cluster (we're on {CURRENT_CLUSTER.name})")
     yield host

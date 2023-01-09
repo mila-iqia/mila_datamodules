@@ -22,8 +22,8 @@ class Cluster(enum.Enum):
 
     @classmethod
     def current(cls) -> Cluster:
-        setup_slurm_env_variables()
-        cluster_name = os.environ["SLURM_CLUSTER_NAME"]
+        slurm_env_vars = setup_slurm_env_variables()
+        cluster_name = slurm_env_vars.SLURM_CLUSTER_NAME
         if cluster_name == "mila":
             return cls.Mila
         # TODO: Double-check the value of this environment variable in other clusters:
