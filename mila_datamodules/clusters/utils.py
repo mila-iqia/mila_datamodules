@@ -7,13 +7,14 @@ import ipaddress
 import os
 import subprocess
 import tempfile
-from dataclasses import dataclass
 from logging import getLogger as get_logger
 from pathlib import Path
 from typing import Callable, Optional, Sequence, TypeVar
 
+import pydantic
 from filelock import FileLock
 from pydantic import BaseSettings, Field
+from pydantic.dataclasses import dataclass
 from torch.utils.data import Dataset
 from typing_extensions import ParamSpec
 
@@ -23,7 +24,7 @@ C = Callable[P, D]
 logger = get_logger(__name__)
 
 
-@dataclass(frozen=False, init=False)
+@dataclass(frozen=True, init=False)
 class SlurmEnvVariables(BaseSettings):
     """Slurm environment variables that this package cares about.
 
@@ -37,12 +38,15 @@ class SlurmEnvVariables(BaseSettings):
     SLURM_JOBID: int
     SLURM_CLUSTER_NAME: str = Field(
         default_factory=lambda: os.environ.get(
-            "SLURM_CLUSTER_NAME", os.environ.get("SLURM_WORKING_CLUSTER", "local:").split(":")[0]
+            "SLURM_CLUSTER_NAME", os.environ.get("SLURM_WORKING_CLUSTER", ":").split(":")[0]
         )
     )
 
     # ------------
-    # Other environment variables that we don't currently use, but are set on SLURM clusters:
+    # Other environment variables that we don't currently use, but are set on SLURM clusters.
+    # NOTE: Having all these variables isn't really useful at the moment, and it will make it more
+    # difficult to "mock" this when running on a local machine. There again, it might be fine to
+    # only use this class when in a SLURM cluster.
     # ------------
 
     SLURM_CONF: Path
@@ -53,7 +57,6 @@ class SlurmEnvVariables(BaseSettings):
     SLURM_NTASKS: int
     SLURM_NPROCS: int
     SLURM_JOB_ID: int
-    SLURM_JOBID: int
     SLURM_STEP_ID: int
     SLURM_STEPID: int
     SLURM_NNODES: int
@@ -97,6 +100,23 @@ class SlurmEnvVariables(BaseSettings):
     SLURM_JOB_NUM_NODES: int = 1
     SLURM_JOB_ACCOUNT: Optional[str] = None
     SLURM_JOB_QOS: str = "normal"
+
+
+@dataclass(frozen=True, init=False)
+class DdpEnvVariables(BaseSettings):
+    RANK: int
+    LOCAL_RANK: int
+    WORLD_SIZE: int
+    MASTER_ADDR: ipaddress.IPv4Address
+    MASTER_PORT: int
+
+
+def in_ddp_context() -> bool:
+    try:
+        DdpEnvVariables()
+        return True
+    except pydantic.ValidationError:
+        return False
 
 
 def setup_slurm_env_variables(vars_to_ignore: Sequence[str] = ()) -> SlurmEnvVariables:

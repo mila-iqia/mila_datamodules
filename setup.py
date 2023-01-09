@@ -32,7 +32,8 @@ setup(
         "torchvision",
         "lightning-bolts",
         "filelock",
-        "pydantic",
+        "pydantic",  # used in the cluster utils to populate the SlurmEnvVariables object.
+        "scipy",  # required for Caltech datasets.
     ],
     extras_require=extras_require,
     include_package_data=True,

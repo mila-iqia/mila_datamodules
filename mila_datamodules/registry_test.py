@@ -22,6 +22,7 @@ from .registry import (
     get_dataset_root,
     is_stored_on_cluster,
 )
+from .vision.coco_test import coco_required
 
 P = ParamSpec("P")
 D = TypeVar("D", bound=Dataset)
@@ -152,6 +153,7 @@ def test_stl10(split: str):
     check_dataset_creation_works(STL10, root=get_dataset_root(STL10), split=split)
 
 
+@coco_required
 @pytest.mark.parametrize("split", ["train", "val"])
 def test_coco_detection(split: str):
     from torchvision.datasets import CocoDetection
@@ -165,6 +167,7 @@ def test_coco_detection(split: str):
     )
 
 
+@coco_required
 @pytest.mark.parametrize("split", ["train", "val"])
 def test_coco_captions(split: str):
     from torchvision.datasets import CocoCaptions

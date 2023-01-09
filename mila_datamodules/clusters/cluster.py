@@ -18,12 +18,15 @@ class Cluster(enum.Enum):
     Beluga = enum.auto()
     Graham = enum.auto()
     Narval = enum.auto()
-    _local = enum.auto()
 
     @classmethod
-    def current(cls) -> Cluster:
+    def current(cls) -> Cluster | None:
+        """Returns the current cluster when called on a SLURM cluster and `None` otherwise."""
         slurm_env_vars = setup_slurm_env_variables()
         cluster_name = slurm_env_vars.SLURM_CLUSTER_NAME
+        if not cluster_name:
+            # Not on a SLURM cluster.
+            return None
         if cluster_name == "mila":
             return cls.Mila
         # TODO: Double-check the value of this environment variable in other clusters:
@@ -35,8 +38,6 @@ class Cluster(enum.Enum):
             return cls.Cedar
         if cluster_name == "narval":
             return cls.Narval
-        if cluster_name == "local":
-            return cls._local
         raise NotImplementedError(f"Unknown cluster: {cluster_name}")
 
     @property
