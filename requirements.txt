@@ -1,0 +1,6 @@
+pytorch-lightning
+torchvision
+lightning-bolts
+filelock
+pydantic
+scipy

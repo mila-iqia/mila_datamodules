@@ -132,6 +132,7 @@ def setup_slurm_env_variables(vars_to_ignore: Sequence[str] = ()) -> SlurmEnvVar
     """
     if "SLURM_CLUSTER_NAME" in os.environ or "SLURM_WORKING_CLUSTER" in os.environ:
         # SLURM-related environment variables have already been set.
+        # Extract them from `os.environ` using the BaseSettings class of pydantic.
         return SlurmEnvVariables()
 
     temp_dir = tempfile.gettempdir()
@@ -156,6 +157,7 @@ def setup_slurm_env_variables(vars_to_ignore: Sequence[str] = ()) -> SlurmEnvVar
             # TODO: Extracting all env variables, not just the slurm-related ones could be useful,
             # for example when running multi-node or multi-gpu jobs.
             logger.info("Extracting SLURM environment variables... ")
+            # NOTE: Need to pass --account for DRAC cluster!
             command = "srun env | grep SLURM"
             try:
                 with temp_file.open("w") as f:

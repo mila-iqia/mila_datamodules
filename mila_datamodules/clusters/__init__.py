@@ -1,3 +1,4 @@
+import os
 from .cluster import Cluster
 
 # TODO: Make this CURRENT_CLUSTER equal to `None`` in the case where we aren't on a SLURM cluster,
@@ -5,5 +6,5 @@ from .cluster import Cluster
 # from the source package.
 CURRENT_CLUSTER = Cluster.current()
 
-SLURM_TMPDIR = CURRENT_CLUSTER.slurm_tmpdir
-SCRATCH = CURRENT_CLUSTER.scratch
+SLURM_TMPDIR = CURRENT_CLUSTER.slurm_tmpdir if CURRENT_CLUSTER else os.environ["FAKE_SLURM_TMPDIR"]
+SCRATCH = CURRENT_CLUSTER.scratch if CURRENT_CLUSTER else os.environ["FAKE_SCRATCH"]
