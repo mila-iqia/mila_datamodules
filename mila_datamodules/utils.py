@@ -1,5 +1,14 @@
 from __future__ import annotations
 
+
+import os
+from logging import getLogger as get_logger
+from pathlib import Path
+from typing import TypeVar
+
+from mila_datamodules.clusters.cluster import on_compute_node, on_slurm_cluster
+from mila_datamodules.clusters.env_variables import SlurmEnvVariables, setup_slurm_env_variables
+
 import functools
 import inspect
 import os
@@ -12,35 +21,28 @@ from torch.utils.data import Dataset
 from typing_extensions import Concatenate, ParamSpec
 
 T = TypeVar("T")
+
+logger = get_logger(__name__)
+
+T = TypeVar("T")
 D = TypeVar("D", bound=Dataset)
 P = ParamSpec("P")
 C = Callable[P, D]
 
 
-def get_slurm_tmpdir() -> Path:
-    """Returns the SLURM temporary directory.
-
-    Also works when using `mila code`.
+def in_job_process_without_slurm_env_vars() -> bool:
+    """Returns `True` if this process is being executed inside another shell of the job (e.g. when
+    using `mila code`, the vscode shell doesn't have the SLURM environment variables set).
     """
-    if "SLURM_TMPDIR" in os.environ:
-        return Path(os.environ["SLURM_TMPDIR"])
-    if "SLURM_JOB_ID" in os.environ:
-        # Running with `mila code`, so we don't have all the SLURM environment variables.
-        # However, we're lucky, because we can reliably predict the SLURM_TMPDIR given the job id.
-        job_id = os.environ["SLURM_JOB_ID"]
-        return Path(f"/Tmp/slurm.{job_id}.0")
-    raise RuntimeError(
-        "None of SLURM_TMPDIR or SLURM_JOB_ID are set! "
-        "Cannot locate the SLURM temporary directory."
-    )
+    if not on_slurm_cluster():
+        return False
+    return "SLURM_JOB_ID" in os.environ and "SLURM_TMPDIR" not in os.environ
 
 
-def get_cpus_on_node() -> int:
-    if "SLURM_CPUS_PER_TASK" in os.environ:
-        return int(os.environ["SLURM_CPUS_PER_TASK"])
-    if "SLURM_CPUS_ON_NODE" in os.environ:
-        return int(os.environ["SLURM_CPUS_ON_NODE"])
-    return cpu_count()
+# Load the SLURM environment variables into the current environment, if we're running inside a job
+# but don't have the SLURM variables set.
+if in_job_process_without_slurm_env_vars():
+    setup_slurm_env_variables()
 
 
 def all_files_exist(

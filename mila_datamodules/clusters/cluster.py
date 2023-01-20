@@ -1,25 +1,36 @@
 from __future__ import annotations
 
 import enum
+import functools
 import os
 from logging import getLogger as get_logger
 from pathlib import Path
+from shutil import which
 
-from mila_datamodules.clusters.utils import setup_slurm_env_variables
 
 logger = get_logger(__name__)
 
 
+@functools.cache
+def on_slurm_cluster() -> bool:
+    """Return `True` if the current process is running on a SLURM cluster."""
+    return which("srun") is not None
+
+
 def current_cluster_name() -> str | None:
-    if "cc_cluster" in os.environ:
-        return os.environ["cc_cluster"]
+    if "CC_CLUSTER" in os.environ:
+        return os.environ["CC_CLUSTER"]
     if "/home/mila" in str(Path.home()):
         return "mila"
-    try:
-        slurm_env_vars = setup_slurm_env_variables()
-        return slurm_env_vars.SLURM_CLUSTER_NAME
-    except NotImplementedError:
-        return None
+    return None
+
+
+def on_compute_node() -> bool:
+    return on_slurm_cluster() and ("SLURM_JOB_ID" in os.environ or "SLURM_JOBID" in os.environ)
+
+
+def on_login_node() -> bool:
+    return on_slurm_cluster() and not on_compute_node()
 
 
 class Cluster(enum.Enum):
@@ -32,33 +43,23 @@ class Cluster(enum.Enum):
     Narval = enum.auto()
 
     # _local_debug = enum.auto()
-    """ Fake SLURM cluster for local debugging.
-    
-    Uses the values of the `FAKE_SCRATCH` and `FAKE_SLURM_TMPDIR` environment variables.    
-    """
+    # """ IDEA: Fake SLURM cluster for local debugging.
+    # Uses the values of the `FAKE_SCRATCH` and `FAKE_SLURM_TMPDIR` environment variables.
+    # """
 
     @classmethod
     def current(cls) -> Cluster | None:
         """Returns the current cluster when called on a SLURM cluster and `None` otherwise."""
         # TODO: Find a more reliable way of determining if we are on a SLURM cluster.
-
-        cluster_name = current_cluster_name()
-
-        if not cluster_name:
-            # Not on a SLURM cluster.
+        if not on_slurm_cluster():
             return None
-        if cluster_name == "mila":
-            return cls.Mila
-        # TODO: Double-check the value of this environment variable in other clusters:
-        if cluster_name == "beluga":
-            return cls.Beluga
-        if cluster_name == "graham":
-            return cls.Graham
-        if cluster_name == "cedar":
-            return cls.Cedar
-        if cluster_name == "narval":
-            return cls.Narval
-        raise NotImplementedError(f"Unknown cluster: {cluster_name}")
+        cluster_name = current_cluster_name()
+        if cluster_name is None:
+            raise RuntimeError(
+                "On a SLURM cluster, but could not determine the cluster name! "
+                "Please make an issue on the `mila-datamodules` repository."
+            )
+        return cls[cluster_name.capitalize()]
 
     @property
     def slurm_tmpdir(self) -> Path:

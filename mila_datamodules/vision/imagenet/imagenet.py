@@ -27,9 +27,9 @@ from pytorch_lightning import Trainer
 from torch import nn
 from torch.utils.data import DataLoader
 from typing_extensions import NotRequired
-
 from mila_datamodules.clusters.cluster import Cluster
-from mila_datamodules.utils import get_cpus_on_node, get_slurm_tmpdir
+from multiprocessing import cpu_count
+from mila_datamodules.clusters.utils import get_slurm_tmpdir
 
 C = NewType("C", int)
 H = NewType("H", int)
@@ -112,7 +112,7 @@ class ImagenetDataModule(_ImagenetDataModule):
             meta_dir=meta_dir,
             num_imgs_per_val_class=num_imgs_per_val_class,
             image_size=image_size,
-            num_workers=num_workers or get_cpus_on_node(),
+            num_workers=num_workers or num_cpus_to_use(),
             batch_size=batch_size,
             shuffle=shuffle,
             pin_memory=pin_memory,
@@ -341,3 +341,11 @@ def temporarily_chdir(new_dir: Path):
         raise
     finally:
         os.chdir(start_dir)
+
+
+def num_cpus_to_use() -> int:
+    if "SLURM_CPUS_PER_TASK" in os.environ:
+        return int(os.environ["SLURM_CPUS_PER_TASK"])
+    if "SLURM_CPUS_ON_NODE" in os.environ:
+        return int(os.environ["SLURM_CPUS_ON_NODE"])
+    return cpu_count()

@@ -11,7 +11,7 @@ from torch.utils.data import Dataset
 from torchvision.datasets import VisionDataset
 from typing_extensions import Concatenate, ParamSpec
 
-from mila_datamodules.clusters import CURRENT_CLUSTER, SCRATCH, SLURM_TMPDIR
+from mila_datamodules.clusters import CURRENT_CLUSTER, get_scratch_dir, get_slurm_tmpdir
 from mila_datamodules.registry import (
     dataset_files,
     get_dataset_root,
@@ -107,8 +107,8 @@ def adapted_constructor(
         assert isinstance(dataset_cls, type)
         base_init = dataset_cls.__init__
         bound_args = inspect.signature(base_init).bind_partial(self, *args, **kwargs)
-        fast_tmp_dir = SLURM_TMPDIR / "data"
-        scratch_dir = SCRATCH / "data"
+        fast_tmp_dir = get_slurm_tmpdir() / "data"
+        scratch_dir = get_scratch_dir() / "data"
 
         # The original passed value for the 'root' argument (if any).
         original_root: str | None = bound_args.arguments.get("root")

@@ -46,7 +46,7 @@ def test_datasets_in_registry_are_actually_there(dataset: type):
     """Test that the files associated with the dataset class are actually present in the `root` of
     that dataset, if supported on the current cluster."""
     if not is_stored_on_cluster(dataset):
-        pytest.skip(f"Dataset isn't stored on cluster {CURRENT_CLUSTER.name}")
+        pytest.skip(f"Dataset isn't stored on cluster {CURRENT_CLUSTER}")
 
     # Cluster has this dataset (or so it says). Check that all the required files are there.
     root = get_dataset_root(dataset)
@@ -58,7 +58,7 @@ def test_datasets_in_registry_are_actually_there(dataset: type):
 def unsupported_param(
     param,
     cluster: Cluster | None = None,
-    reason: str = f"Unsupported on cluster {CURRENT_CLUSTER.name}",
+    reason: str = f"Unsupported on cluster {CURRENT_CLUSTER}",
 ):
     if cluster is None or cluster is CURRENT_CLUSTER:
         return pytest.param(param, marks=pytest.mark.xfail(reason=reason))
@@ -81,9 +81,7 @@ easy_to_use_datasets = [
 easy_to_use_datasets = [
     dataset
     if is_stored_on_cluster(dataset)
-    else unsupported_param(
-        dataset, reason=f"Dataset isn't stored on {CURRENT_CLUSTER.name} cluster"
-    )
+    else unsupported_param(dataset, reason=f"Dataset isn't stored on {CURRENT_CLUSTER} cluster")
     for dataset in easy_to_use_datasets
 ]
 

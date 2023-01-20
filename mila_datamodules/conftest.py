@@ -4,7 +4,8 @@ import shutil
 import pytest
 from filelock import FileLock
 
-from mila_datamodules.clusters import CURRENT_CLUSTER, SLURM_TMPDIR
+from mila_datamodules.clusters import CURRENT_CLUSTER
+from mila_datamodules.clusters.utils import get_slurm_tmpdir
 
 
 @pytest.fixture(autouse=True, scope="session")
@@ -15,13 +16,15 @@ def clear_slurm_tmpdir():
     weird errors because the datasets were half-moved to SLURM_TMPDIR, so reading them on the next
     run would fail.
     """
-    with FileLock(SLURM_TMPDIR / "data.lock"):
-        if (SLURM_TMPDIR / "data").exists():
-            # NOTE: The `chmod_recursive` doesn't seem to work atm. It's safe to assume we're on Linux,
-            # so this is fine for now.
-            # chmod_recursive(SLURM_TMPDIR / "data", 0o644)
-            os.system(f"chmod --recursive +rwx {SLURM_TMPDIR}/data")
-            shutil.rmtree(SLURM_TMPDIR / "data")
+    slurm_tmpdir = get_slurm_tmpdir(default="")
+    if slurm_tmpdir.exists() and slurm_tmpdir.is_dir() and len(list(slurm_tmpdir.iterdir())):
+        with FileLock(slurm_tmpdir / "data.lock"):
+            if (slurm_tmpdir / "data").exists():
+                # NOTE: The `chmod_recursive` doesn't seem to work atm. It's safe to assume we're on Linux,
+                # so this is fine for now.
+                # chmod_recursive(SLURM_TMPDIR / "data", 0o644)
+                os.system(f"chmod --recursive +rwx {slurm_tmpdir}/data")
+                shutil.rmtree(slurm_tmpdir / "data")
     yield
 
 

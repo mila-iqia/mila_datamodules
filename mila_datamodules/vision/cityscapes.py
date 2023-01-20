@@ -8,7 +8,7 @@ from pl_bolts.datamodules import CityscapesDataModule as _CityscapesDataModule
 from torch import nn
 from torchvision.datasets import Cityscapes
 
-from mila_datamodules.clusters import SCRATCH
+from mila_datamodules.clusters import CURRENT_CLUSTER
 from mila_datamodules.clusters.cluster import Cluster
 from mila_datamodules.registry import get_dataset_root
 
@@ -34,7 +34,7 @@ class CityscapesDataModule(_CityscapesDataModule, _TransformsFix):
         val_transforms: Callable | nn.Module | None = None,
         test_transforms: Callable | nn.Module | None = None,
     ) -> None:
-        data_dir = data_dir or str(SCRATCH / "data")
+        data_dir = data_dir or str(CURRENT_CLUSTER.scratch / "data")
         super().__init__(
             data_dir=data_dir,
             quality_mode=quality_mode,

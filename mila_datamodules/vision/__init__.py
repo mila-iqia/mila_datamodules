@@ -32,3 +32,4 @@ else:
 # New additions:
 from .cifar100 import CIFAR100DataModule
 from .coco import CocoCaptionsDataModule
+from .imagenet import ImagenetFfcvDataModule
