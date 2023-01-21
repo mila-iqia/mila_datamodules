@@ -16,7 +16,7 @@ from mila_datamodules.clusters import Cluster, get_slurm_tmpdir
 from mila_datamodules.vision import VisionDataModule
 
 coco_archives_root = {Cluster.Mila: "/network/datasets/coco/2017"}
-""" Path on each cluster where the 'train2017.zip' and 'val2017.zip' archives are stored. """
+"""Path on each cluster where the 'train2017.zip' and 'val2017.zip' archives are stored."""
 
 
 captions_train_annFile_location = {

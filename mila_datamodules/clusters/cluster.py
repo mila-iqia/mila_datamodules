@@ -24,7 +24,10 @@ class Cluster(enum.Enum):
     @classmethod
     def current(cls) -> Cluster | None:
         """Returns the current cluster when called on a SLURM cluster and `None` otherwise."""
-        from mila_datamodules.clusters.utils import on_slurm_cluster, current_cluster_name
+        from mila_datamodules.clusters.utils import (
+            current_cluster_name,
+            on_slurm_cluster,
+        )
 
         if not on_slurm_cluster():
             if "FAKE_SCRATCH" in os.environ and "FAKE_SLURM_TMPDIR" in os.environ:

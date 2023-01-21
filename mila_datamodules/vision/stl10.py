@@ -3,8 +3,8 @@ from __future__ import annotations
 import torchvision.datasets as tvd
 from pl_bolts.datamodules import STL10DataModule as _STL10DataModule
 
-from mila_datamodules.registry import locate_dataset_root_on_cluster
 from mila_datamodules.clusters import get_scratch_dir
+from mila_datamodules.registry import locate_dataset_root_on_cluster
 
 from .vision_datamodule import _TransformsFix
 

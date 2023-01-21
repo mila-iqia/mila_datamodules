@@ -4,19 +4,15 @@ IDEA: later on, we could also add some functions for loading torchvision models 
 directory.
 """
 from __future__ import annotations
-import os
-from logging import getLogger as get_logger
-from pathlib import Path
-from typing import TypeVar
-
-from mila_datamodules.clusters.env_variables import setup_slurm_env_variables
 
 import functools
 import os
 from logging import getLogger as get_logger
 from pathlib import Path
 from shutil import which
+from typing import TypeVar
 
+from mila_datamodules.clusters.env_variables import setup_slurm_env_variables
 
 T = TypeVar("T")
 
@@ -47,8 +43,7 @@ def on_login_node() -> bool:
 
 def in_job_process_without_slurm_env_vars() -> bool:
     """Returns `True` if this process is being executed inside another shell of the job (e.g. when
-    using `mila code`, the vscode shell doesn't have the SLURM environment variables set).
-    """
+    using `mila code`, the vscode shell doesn't have the SLURM environment variables set)."""
     if not on_slurm_cluster():
         return False
     return "SLURM_JOB_ID" in os.environ and "SLURM_TMPDIR" not in os.environ
@@ -56,6 +51,7 @@ def in_job_process_without_slurm_env_vars() -> bool:
 
 def get_scratch_dir(default: str | Path | None = None) -> Path:
     """Returns the path to the scratch directory on the current cluster, or `default` otherwise.
+
     If the current machine is not on the Mila cluster, returns `default`.
     """
     if in_job_process_without_slurm_env_vars():
@@ -65,8 +61,7 @@ def get_scratch_dir(default: str | Path | None = None) -> Path:
 
 def get_slurm_tmpdir(default: str | Path | None = None) -> Path:
     """Returns the path to the SLURM_TMPDIR directory on the current cluster, or `default` when not
-    on a cluster.
-    """
+    on a cluster."""
     # NOTE: This variable is a little bit different.
     if in_job_process_without_slurm_env_vars():
         setup_slurm_env_variables()

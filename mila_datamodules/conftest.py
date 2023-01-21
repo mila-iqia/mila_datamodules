@@ -1,16 +1,16 @@
 from __future__ import annotations
+
 import os
-import re
 import shutil
 
 import pytest
 from filelock import FileLock
+from torch.utils.data import Dataset
 
 from mila_datamodules.clusters import CURRENT_CLUSTER
 from mila_datamodules.clusters.cluster import Cluster
 from mila_datamodules.clusters.utils import get_slurm_tmpdir, on_slurm_cluster
 from mila_datamodules.registry import is_stored_on_cluster
-from torch.utils.data import Dataset
 
 
 def skip_if_not_stored_on_current_cluster(dataset: type[Dataset]):
@@ -32,6 +32,7 @@ def xfail_if_not_stored_on_current_cluster(dataset: type[Dataset]):
 
 def only_runs_on_cluster(cluster: Cluster):
     """When `cluster` is None, only runs when we're on any SLURM cluster.
+
     When `cluster` is set, then only runs when we're on that specific cluster.
     """
     return pytest.mark.skipif(
@@ -41,6 +42,7 @@ def only_runs_on_cluster(cluster: Cluster):
 
 def only_runs_on_clusters():
     """When `cluster` is None, only runs when we're on any SLURM cluster.
+
     When `cluster` is set, then only runs when we're on that specific cluster.
     """
     return pytest.mark.skipif(not on_slurm_cluster(), reason="Test only runs on SLURM clusters")

@@ -1,8 +1,9 @@
 """Auto-generated Configuration dataclasses for use with Hydra or SimpleParsing."""
 from __future__ import annotations
 
-from .datamodule import *  # noqa: F403
 from mila_datamodules.configs.datamodule._utils import get_dynamic_config_for_name
+
+from .datamodule import *  # noqa: F403
 
 
 def __getattr__(name: str):

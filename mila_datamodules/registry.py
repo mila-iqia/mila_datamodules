@@ -1,12 +1,10 @@
 """A registry of where each dataset is stored on each cluster."""
 from __future__ import annotations
-import os
-from re import L
 
 import warnings
 from collections import defaultdict
 from pathlib import Path
-from typing import Callable, List
+from typing import Callable
 
 import pl_bolts.datasets
 import torchvision.datasets as tvd
@@ -65,7 +63,16 @@ the type of dataset.
 # TODO: Fill these in!
 
 dataset_roots_per_cluster: dict[type, dict[Cluster, Path]] = defaultdict(dict)
-""" The path to the `root` directory to use for each dataset type, for each cluster."""
+"""For each type of dataset, a dictionary where for a given cluster, the value corresponds to the
+`root` directory to use to load that dataset on that cluster."""
+
+# TODO: Create a registry of the archives for each dataset, so that we can use these instead of
+# copying the files individually.
+
+dataset_archives_per_cluster: dict[type, dict[Cluster, list[str]]] = defaultdict(dict)
+"""For each type of dataset, a dictionary where for a given cluster, the value corresponds to the
+list of archives to extract to load that dataset on that cluster."""
+
 
 # Add the known dataset locations on the mila cluster.
 for dataset in [
@@ -89,6 +96,16 @@ for dataset in [
     BinaryMNIST,
 ]:
     dataset_roots_per_cluster[dataset][Cluster.Mila] = Path("/network/datasets/torchvision")
+dataset_archives_per_cluster[tvd.Places365] = {
+    # TODO: Unclear if/how these archives should be used to construct the torchvision
+    # Places365 dataset. (train_256(...).tar gets extracted to a `data_256` folder.. the
+    # structure doesn't match what torchvision expects)
+    # Cluster.Mila: [
+    #     "/network/datasets/places365/256/train_256_places365standard.tar",
+    #     "/network/datasets/places365/256/val_256.tar",
+    #     "/network/datasets/places365/256/test_256.tar",
+    # ]
+}
 
 
 # Add the known dataset locations on the mila cluster.
@@ -96,36 +113,24 @@ for dataset in [
 for dataset in [
     tvd.MNIST,
     tvd.CIFAR10,
-    tvd.CIFAR100,
     tvd.Cityscapes,
     tvd.CocoCaptions,
     tvd.CocoDetection,
     BinaryMNIST,
 ]:
     dataset_roots_per_cluster[dataset][Cluster.Beluga] = Path("/project/rpp-bengioy/data/curated")
+    # tvd.CIFAR100,
+dataset_archives_per_cluster[tvd.CIFAR100][Cluster.Beluga] = Path(
+    "/project/rpp-bengioy/data/curated/cifar100/cifar-100-python.tar.gz"
+)
 
 
 too_large_for_slurm_tmpdir: set[Callable] = set()
-""" Set of datasets which are too large to store in $SLURM_TMPDIR."""
+"""Set of datasets which are too large to store in $SLURM_TMPDIR."""
 
 # TODO: How about we adopt a de-centralized kind of registry, a bit like gym?
 # In each dataset module, we could have a `mila_datamodules.register(name, locations={Mila: ...})`?
 
-
-# TODO: Create a registry of the archives for each dataset, so that we can use these instead of
-# copying the files individually.
-dataset_archives_per_cluster: dict[type, dict[Cluster, list[str]]] = {
-    tvd.Places365: {
-        # TODO: Unclear if/how these archives should be used to construct the torchvision
-        # Places365 dataset. (train_256(...).tar gets extracted to a `data_256` folder.. the
-        # structure doesn't match what torchvision expects)
-        # Cluster.Mila: [
-        #     "/network/datasets/places365/256/train_256_places365standard.tar",
-        #     "/network/datasets/places365/256/val_256.tar",
-        #     "/network/datasets/places365/256/test_256.tar",
-        # ]
-    },
-}
 
 # NOTE: Does it make sense to allow passing `cluster=None` here? (in the sense that we're not on a cluster?)
 
@@ -145,6 +150,7 @@ def is_stored_on_cluster(dataset_cls: type, cluster: Cluster | None = CURRENT_CL
     # TODO: This check here won't work when passing a subclass of the dataset. Might want to
     # make this check into a function like `has_known_required_files` ? (something clearer and
     # simpler) than that.
+
     if dataset_cls in dataset_files:
         # We know which files are needed for that dataset!
         # Dynamically check if we have all the files for that dataset (where in the cluster?)
@@ -155,8 +161,12 @@ def is_stored_on_cluster(dataset_cls: type, cluster: Cluster | None = CURRENT_CL
             base_dir=get_scratch_dir(),
         )
 
-    # We don't know
+    if dataset_cls in dataset_archives_per_cluster:
+        if cluster in dataset_archives_per_cluster[dataset_cls]:
+            # We know where to find the archives for that dataset on that cluster!
+            return True
 
+    # We don't know where to find the dataset files on that cluster.
     return False
 
 

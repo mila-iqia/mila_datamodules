@@ -1,30 +1,25 @@
 from __future__ import annotations
 
-
-import os
-from logging import getLogger as get_logger
-from pathlib import Path
-from typing import TypeVar
-
-from mila_datamodules.clusters.utils import on_slurm_cluster
-from mila_datamodules.clusters.env_variables import setup_slurm_env_variables
-
 import functools
 import inspect
 import os
 import shutil
+from logging import getLogger as get_logger
 from pathlib import Path
 from typing import Callable, Sequence, TypeVar
 
 from torch.utils.data import Dataset
 from typing_extensions import Concatenate, ParamSpec
 
+from mila_datamodules.clusters.env_variables import setup_slurm_env_variables
+from mila_datamodules.clusters.utils import on_slurm_cluster
+
 T = TypeVar("T")
 
 logger = get_logger(__name__)
 
 T = TypeVar("T")
-O = TypeVar("O")
+OutT = TypeVar("OutT")
 D = TypeVar("D", bound=Dataset)
 P = ParamSpec("P")
 C = Callable[P, D]
@@ -32,8 +27,7 @@ C = Callable[P, D]
 
 def in_job_process_without_slurm_env_vars() -> bool:
     """Returns `True` if this process is being executed inside another shell of the job (e.g. when
-    using `mila code`, the vscode shell doesn't have the SLURM environment variables set).
-    """
+    using `mila code`, the vscode shell doesn't have the SLURM environment variables set)."""
     if not on_slurm_cluster():
         return False
     return "SLURM_JOB_ID" in os.environ and "SLURM_TMPDIR" not in os.environ
@@ -61,7 +55,7 @@ def replace_root(dataset_type: Callable[Concatenate[str, P], D], root: str | Pat
     return wrapped
 
 
-def replace_kwargs(function: Callable[P, O], **fixed_arguments):
+def replace_kwargs(function: Callable[P, OutT], **fixed_arguments):
     """Returns a callable where the given argument values are fixed.
 
     NOTE: Simply using functools.partial wouldn't work, since passing one of the fixed arguments
@@ -70,7 +64,7 @@ def replace_kwargs(function: Callable[P, O], **fixed_arguments):
     init_signature = inspect.signature(function)
 
     @functools.wraps(function)
-    def _wrap(*args: P.args, **kwargs: P.kwargs) -> O:
+    def _wrap(*args: P.args, **kwargs: P.kwargs) -> OutT:
         bound_signature = init_signature.bind_partial(*args, **kwargs)
         for key, value in fixed_arguments.items():
             bound_signature.arguments[key] = value

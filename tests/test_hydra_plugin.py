@@ -1,23 +1,25 @@
-# Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved
 import inspect
 from pathlib import Path
-import pytest
 
-pytest.importorskip("hydra")
-
-import hydra
 import pytest
-from hydra import compose, initialize
-from hydra.core.global_hydra import GlobalHydra
-from hydra.core.plugins import Plugins
-from hydra.plugins.search_path_plugin import SearchPathPlugin
-from hydra.utils import instantiate
 from omegaconf import DictConfig, OmegaConf
+
+# noqa: E402
 from pytorch_lightning import LightningDataModule
 
 import mila_datamodules
 import mila_datamodules.configs
 from mila_datamodules.vision.coco import CocoCaptionsDataModule
+
+try:
+    from hydra import compose, initialize
+    from hydra.core.global_hydra import GlobalHydra
+    from hydra.core.plugins import Plugins
+    from hydra.plugins.search_path_plugin import SearchPathPlugin
+    from hydra.utils import instantiate
+except ImportError:
+    pass
+
 
 TEST_DIR = Path(__file__).parent
 config_path = "dummy_conf"
@@ -108,6 +110,9 @@ def test_instantiate() -> None:
         from mila_datamodules.vision.cifar10 import CIFAR10DataModule
 
         assert isinstance(datamodule, CIFAR10DataModule)
+
+
+hydra = pytest.importorskip("hydra")
 
 
 @hydra.main(version_base=None, config_path=config_path, config_name="config")

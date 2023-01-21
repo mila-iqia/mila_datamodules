@@ -16,6 +16,7 @@ import subprocess
 import sys
 import warnings
 from contextlib import contextmanager
+from multiprocessing import cpu_count
 from pathlib import Path
 from typing import Callable, NewType, TypedDict
 
@@ -27,8 +28,9 @@ from pytorch_lightning import Trainer
 from torch import nn
 from torch.utils.data import DataLoader
 from typing_extensions import NotRequired
+
+from mila_datamodules.clusters import CURRENT_CLUSTER
 from mila_datamodules.clusters.cluster import Cluster
-from multiprocessing import cpu_count
 from mila_datamodules.clusters.utils import get_slurm_tmpdir
 
 C = NewType("C", int)
@@ -38,20 +40,22 @@ W = NewType("W", int)
 
 class ImageNetFiles(TypedDict):
     train_archive: str
-    """ Path to the "ILSVRC2012_img_train.tar"-like archive containing the training set. """
+    """Path to the "ILSVRC2012_img_train.tar"-like archive containing the training set."""
 
     val_archive: NotRequired[str]
-    """ Path to the "ILSVRC2012_img_val.tar" archive containing the test set.
+    """Path to the "ILSVRC2012_img_val.tar" archive containing the test set.
+
     One of `val_archive` or `val_folder` must be provided.
     """
 
     val_folder: NotRequired[str]
-    """ Path to the 'val' folder containing the test set.
+    """Path to the 'val' folder containing the test set.
+
     One of `val_archive` or `val_folder` must be provided.
     """
 
     devkit: str
-    """ Path to the ILSVRC2012_devkit_t12.tar.gz file. """
+    """Path to the ILSVRC2012_devkit_t12.tar.gz file."""
 
 
 imagenet_file_locations: dict[Cluster, ImageNetFiles] = {
@@ -70,7 +74,7 @@ imagenet_file_locations: dict[Cluster, ImageNetFiles] = {
     # ClusterType.GRAHAM: {},
     # ...
 }
-""" A map that shows where to retrieve the imagenet files for each SLURM cluster. """
+"""A map that shows where to retrieve the imagenet files for each SLURM cluster."""
 
 
 class ImagenetDataModule(_ImagenetDataModule):
@@ -96,19 +100,23 @@ class ImagenetDataModule(_ImagenetDataModule):
         val_transforms: Callable | nn.Module | None = None,
         test_transforms: Callable | nn.Module | None = None,
     ) -> None:
-        slurm_tmpdir = get_slurm_tmpdir()
-        assert slurm_tmpdir
-        fixed_data_dir = str(slurm_tmpdir / "imagenet")
-        if data_dir is not None and data_dir != fixed_data_dir:
-            warnings.warn(
-                RuntimeWarning(
-                    f"Ignoring passed data_dir ({data_dir}), using {fixed_data_dir} instead."
+        if CURRENT_CLUSTER:
+            slurm_tmpdir = get_slurm_tmpdir()
+            assert slurm_tmpdir
+            fixed_data_dir = str(slurm_tmpdir / "imagenet")
+            if data_dir is not None and data_dir != fixed_data_dir:
+                warnings.warn(
+                    RuntimeWarning(
+                        f"Ignoring passed data_dir ({data_dir}), using {fixed_data_dir} instead."
+                    )
                 )
-            )
-        data_dir = fixed_data_dir
-
+            data_dir = fixed_data_dir
+        else:
+            # Not on a SLURM cluster. `data_dir` must be provided (same as the base class).
+            # leave it as None, so the base class can raise the error.
+            pass
         super().__init__(
-            data_dir=data_dir,
+            data_dir=data_dir,  # type: ignore
             meta_dir=meta_dir,
             num_imgs_per_val_class=num_imgs_per_val_class,
             image_size=image_size,
@@ -130,8 +138,9 @@ class ImagenetDataModule(_ImagenetDataModule):
         NOTE: When using this datamodule without the PyTorch-Lightning Trainer, make sure to call
         prepare_data() before calling train/val/test_dataloader().
         """
-        copy_imagenet_to_dest(self.data_dir)
-        _generate_meta_bins(self.data_dir)
+        if CURRENT_CLUSTER is not None:
+            copy_imagenet_to_dest(self.data_dir)
+            _generate_meta_bins(self.data_dir)
         super().prepare_data()
 
     def train_dataloader(self) -> DataLoader:
@@ -243,7 +252,9 @@ def copy_imagenet_to_dest(
     See [this Slack thread](https://mila-umontreal.slack.com/archives/CFAS8455H/p1652168938773169?thread_ts=1652126891.083229&cid=CFAS8455H)
     for more info.
     """
-    paths = imagenet_file_locations[Cluster.current()]
+    # TODO: Make this work for other clusters if possible.
+    assert CURRENT_CLUSTER is not None, "Only works on a SLURM cluster!"
+    paths = imagenet_file_locations[CURRENT_CLUSTER]
     train_archive = paths["train_archive"]
     devkit = paths["devkit"]
     if "val_folder" in paths:

@@ -6,35 +6,23 @@
 from __future__ import annotations
 
 import inspect
-import itertools
-import os
-from pathlib import Path
-from typing import Any, Callable, ClassVar, Generic, TypeVar
+from typing import Callable, TypeVar
 
 import pytest
 import torchvision.datasets
-import torchvision.datasets as tvd
 from torch.utils.data import Dataset
 from typing_extensions import ParamSpec
-from typing import get_args, cast
 
-from mila_datamodules.clusters import CURRENT_CLUSTER, Cluster
-from mila_datamodules.clusters.utils import get_scratch_dir
+from mila_datamodules.clusters import Cluster
 from mila_datamodules.utils import all_files_exist
-from .conftest import (
-    only_runs_on_clusters,
-    skip_if_not_stored_on_current_cluster,
-    xfail_if_not_stored_on_current_cluster,
-)
-from .conftest import only_runs_on_cluster, only_runs_on_clusters
 
+from .conftest import only_runs_on_cluster, xfail_if_not_stored_on_current_cluster
 from .registry import (
     dataset_files,
     dataset_roots_per_cluster,
-    locate_dataset_root_on_cluster,
     is_stored_on_cluster,
+    locate_dataset_root_on_cluster,
 )
-from .vision.coco_test import coco_required
 
 P = ParamSpec("P")
 D = TypeVar("D", bound=Dataset)
@@ -45,7 +33,8 @@ def check_dataset_creation_works_without_download(
     *args: P.args,
     **kwargs: P.kwargs,
 ) -> D:
-    """Utility function that creates the dataset with the given kwargs (and with download=False)."""
+    """Utility function that creates the dataset with the given kwargs (and with
+    download=False)."""
     if "download" in kwargs or "download" in inspect.signature(dataset_type).parameters:
         kwargs["download"] = False
     return check_dataset_creation_works(dataset_type, *args, **kwargs)
@@ -86,9 +75,10 @@ def test_datasets_in_registry_are_actually_there(cluster: Cluster, dataset: type
     # Assert that we know which files are required in order to load this dataset.
     # NOTE: These are the files which would get copied if we wanted to copy the dataset to the fast
     # directory.
+
     assert dataset in dataset_files
     required_files = dataset_files[dataset]
-    return all_files_exist(required_files, root)
+    assert all_files_exist(required_files, root)
 
 
 # Datasets that only have `root` as a required parameter.
@@ -104,7 +94,8 @@ easy_to_use_datasets = [
 ]
 
 easy_to_use_datasets = [
-    xfail_if_not_stored_on_current_cluster(dataset) for dataset in easy_to_use_datasets
+    pytest.param(dataset, marks=xfail_if_not_stored_on_current_cluster(dataset))
+    for dataset in easy_to_use_datasets
 ]
 
 

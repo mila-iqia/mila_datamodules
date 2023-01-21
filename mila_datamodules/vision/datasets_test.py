@@ -7,37 +7,20 @@ from __future__ import annotations
 import inspect
 from functools import partial
 from pathlib import Path
+from typing import Any, Generic, Sequence, TypeVar, cast, get_args
 
 import pytest
+import torchvision.datasets as tvd
 from torchvision.datasets import VisionDataset
 
 import mila_datamodules.vision.datasets
-from mila_datamodules.registry_test import check_dataset_creation_works_without_download
-
-import inspect
-import itertools
-import os
-from pathlib import Path
-from typing import Any, Callable, ClassVar, Generic, Sequence, TypeVar
-
-import pytest
-import torchvision.datasets
-import torchvision.datasets as tvd
-from torch.utils.data import Dataset
-from typing_extensions import ParamSpec
-from typing import get_args, cast
-
 from mila_datamodules.clusters import CURRENT_CLUSTER, Cluster
-from mila_datamodules.clusters.utils import get_scratch_dir
-from mila_datamodules.utils import all_files_exist
-from mila_datamodules.conftest import only_runs_on_clusters, xfail_if_not_stored_on_current_cluster
-
 from mila_datamodules.registry import (
     dataset_files,
-    dataset_roots_per_cluster,
-    locate_dataset_root_on_cluster,
     is_stored_on_cluster,
+    locate_dataset_root_on_cluster,
 )
+from mila_datamodules.registry_test import check_dataset_creation_works_without_download
 from mila_datamodules.vision.coco_test import coco_required
 
 datasets = {
@@ -87,7 +70,7 @@ def _unsupported_variant(version: str, cluster: Cluster | Sequence[Cluster]):
     else:
         condition = CURRENT_CLUSTER in cluster
         if CURRENT_CLUSTER is None:
-            reason = f"This variant isn't stored on the (local) cluster."
+            reason = "Don't know if this variant is stored on the current machine (not a cluster)."
         else:
             reason = f"This variant isn't stored on the {CURRENT_CLUSTER} cluster."
 
@@ -98,13 +81,13 @@ DatasetType = TypeVar("DatasetType", bound=tvd.VisionDataset)
 
 
 class PreStoredDatasetTests(Generic[DatasetType]):
-    """Tests for the datasets that we know are stored on the clusters (that are in the registry)."""
+    """Tests for the datasets that we know are stored on the clusters (that are in the
+    registry)."""
 
     @pytest.fixture()
     def dataset_cls(self) -> type[DatasetType]:
         """Retrieves the dataset class under test from the class definition (without having to set
-        the `dataset_cls` attribute.
-        """
+        the `dataset_cls` attribute."""
 
         class_under_test = get_args(type(self).__orig_bases__[0])[0]  # type: ignore
         assert issubclass(class_under_test, tvd.VisionDataset)
@@ -127,8 +110,7 @@ class PreStoredDatasetTests(Generic[DatasetType]):
         self, dataset_cls: type[DatasetType], dataset_kwargs: dict[str, Any]
     ):
         """Test that the dataset can be created without downloading it if the known location for
-        that dataset on the current cluster is passed as the `root` argument.
-        """
+        that dataset on the current cluster is passed as the `root` argument."""
         if not is_stored_on_cluster(dataset_cls):
             pytest.skip(f"Dataset isn't stored on {CURRENT_CLUSTER} cluster")
 

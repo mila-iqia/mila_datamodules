@@ -1,6 +1,6 @@
 # IDEA: We could add some yaml files in the `datamodule` folder so they get automatically
 # registered into the `datamodule` group of Hydra.
-from .vision import *
+from .vision import *  # noqa: F403
 
 
 def __getattr__(name: str):
