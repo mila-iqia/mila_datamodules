@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import inspect
+from pathlib import Path
 from typing import Callable, TypeVar
 
 import pytest
@@ -18,6 +19,7 @@ from mila_datamodules.utils import all_files_exist
 
 from .conftest import only_runs_on_cluster, xfail_if_not_stored_on_current_cluster
 from .registry import (
+    dataset_archives_per_cluster,
     dataset_files,
     dataset_roots_per_cluster,
     is_stored_on_cluster,
@@ -88,13 +90,31 @@ def test_dataset_files_in_registry_are_actually_there(cluster: Cluster, dataset:
     "cluster,dataset",
     [
         pytest.param(cluster, dataset_cls, marks=[only_runs_on_cluster(cluster)])
-        for cluster, dataset_cls_to_root in dataset_roots_per_cluster.items()
-        for dataset_cls in dataset_cls_to_root
+        for cluster, dataset_cls_to_archives in dataset_archives_per_cluster.items()
+        for dataset_cls in dataset_cls_to_archives
     ],
 )
 def test_dataset_archives_in_registry_are_actually_there(cluster: Cluster, dataset: type[Dataset]):
     """Test that the archives associated with the dataset class are actually present on the
     cluster."""
+    archives = dataset_archives_per_cluster[cluster][dataset]
+    assert all(Path(archive_file).exists() for archive_file in archives)
+    for archive_file in archives:
+        from gzip import GzipFile
+        from tarfile import TarFile
+        from zipfile import ZipFile
+
+        if archive_file.endswith(".tar.gz"):
+            with GzipFile(archive_file, "rb") as f:
+                with TarFile(fileobj=f) as tar:
+                    assert False, tar.getmembers()
+        elif archive_file.endswith(".tar"):
+            with TarFile(archive_file, "r") as tar:
+                assert False, tar.getmembers()
+        elif archive_file.endswith(".zip"):
+            with ZipFile(archive_file, "r") as zip:
+                assert False, zip.namelist()
+        assert Path(archive_file).exists()
     raise NotImplementedError("TODO")
 
 

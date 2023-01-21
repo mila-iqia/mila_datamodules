@@ -44,7 +44,7 @@ def only_runs_on_cluster(cluster: Cluster | Sequence[Cluster]):
     )
 
 
-def only_runs_on_clusters():
+def needs_slurm_cluster():
     """When `cluster` is None, only runs when we're on any SLURM cluster.
 
     When `cluster` is set, then only runs when we're on that specific cluster.
