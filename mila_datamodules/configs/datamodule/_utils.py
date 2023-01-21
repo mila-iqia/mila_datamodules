@@ -20,24 +20,24 @@ C = typing.TypeVar("C", bound=Callable)
 _cs = ConfigStore.instance()
 
 
-def _get_dynamic_config_for_name(name: str):
+def get_dynamic_config_for_name(name: str):
     import inspect
 
     from pytorch_lightning import LightningDataModule
 
     import mila_datamodules.vision
 
-    from ._utils import _builds
+    from ._utils import builds
 
     datamodules = [
         v
-        for k, v in vars(mila_datamodules.vision).items()
+        for v in vars(mila_datamodules.vision).values()
         if inspect.isclass(v) and issubclass(v, LightningDataModule)
     ]
     for datamodule in datamodules:
         if name == f"{datamodule.__name__}Config":
             print(f"Returning a dynamically created config class for datamodule {datamodule}.")
-            config_dataclass_for_datamodule = _builds(datamodule)
+            config_dataclass_for_datamodule = builds(datamodule)
             return config_dataclass_for_datamodule
 
 
@@ -48,7 +48,7 @@ def _cache(fn: C) -> C:
 
 
 @_cache
-def _builds(
+def builds(
     datamodule_class: Callable[P, T], register: bool = True
 ) -> type[BuildsWithSig[type[T], P]]:
     """creates a Config dataclass for the given datamodule type using hydra-zen.
@@ -57,7 +57,10 @@ def _builds(
     """
     name = datamodule_class.__qualname__ + "Config"
     config_class = hydra_zen.builds(
-        datamodule_class, populate_full_signature=True, dataclass_name=name
+        datamodule_class,
+        populate_full_signature=True,
+        # dataclass_name=name,
+        zen_dataclass={"cls_name": name},
     )
     # NOTE: Perhaps we shouldn't register these configs by default? e.g. if users already have their
     # own configs for `cifar10`, etc?

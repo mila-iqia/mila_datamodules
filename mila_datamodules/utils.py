@@ -6,14 +6,13 @@ from logging import getLogger as get_logger
 from pathlib import Path
 from typing import TypeVar
 
-from mila_datamodules.clusters.cluster import on_compute_node, on_slurm_cluster
-from mila_datamodules.clusters.env_variables import SlurmEnvVariables, setup_slurm_env_variables
+from mila_datamodules.clusters.utils import on_slurm_cluster
+from mila_datamodules.clusters.env_variables import setup_slurm_env_variables
 
 import functools
 import inspect
 import os
 import shutil
-from multiprocessing import cpu_count
 from pathlib import Path
 from typing import Callable, Sequence, TypeVar
 
@@ -25,6 +24,7 @@ T = TypeVar("T")
 logger = get_logger(__name__)
 
 T = TypeVar("T")
+O = TypeVar("O")
 D = TypeVar("D", bound=Dataset)
 P = ParamSpec("P")
 C = Callable[P, D]
@@ -61,22 +61,22 @@ def replace_root(dataset_type: Callable[Concatenate[str, P], D], root: str | Pat
     return wrapped
 
 
-def replace_kwargs(dataset_type: Callable[P, D], **fixed_arguments):
+def replace_kwargs(function: Callable[P, O], **fixed_arguments):
     """Returns a callable where the given argument values are fixed.
 
     NOTE: Simply using functools.partial wouldn't work, since passing one of the fixed arguments
     would raise an error.
     """
-    init_signature = inspect.signature(dataset_type)
+    init_signature = inspect.signature(function)
 
-    @functools.wraps(dataset_type)
-    def _wrap(*args: P.args, **kwargs: P.kwargs) -> D:
+    @functools.wraps(function)
+    def _wrap(*args: P.args, **kwargs: P.kwargs) -> O:
         bound_signature = init_signature.bind_partial(*args, **kwargs)
         for key, value in fixed_arguments.items():
             bound_signature.arguments[key] = value
         args = bound_signature.args  # type: ignore
         kwargs = bound_signature.kwargs  # type: ignore
-        return dataset_type(*args, **kwargs)
+        return function(*args, **kwargs)
 
     return _wrap
 

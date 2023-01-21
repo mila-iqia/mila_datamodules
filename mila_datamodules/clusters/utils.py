@@ -9,12 +9,40 @@ from logging import getLogger as get_logger
 from pathlib import Path
 from typing import TypeVar
 
-from mila_datamodules.clusters.cluster import on_compute_node, on_slurm_cluster
-from mila_datamodules.clusters.env_variables import SlurmEnvVariables, setup_slurm_env_variables
+from mila_datamodules.clusters.env_variables import setup_slurm_env_variables
+
+import functools
+import os
+from logging import getLogger as get_logger
+from pathlib import Path
+from shutil import which
+
 
 T = TypeVar("T")
 
 logger = get_logger(__name__)
+
+
+@functools.cache
+def on_slurm_cluster() -> bool:
+    """Return `True` if the current process is running on a SLURM cluster."""
+    return which("srun") is not None
+
+
+def current_cluster_name() -> str | None:
+    if "CC_CLUSTER" in os.environ:
+        return os.environ["CC_CLUSTER"]
+    if "/home/mila" in str(Path.home()):
+        return "mila"
+    return None
+
+
+def on_compute_node() -> bool:
+    return on_slurm_cluster() and ("SLURM_JOB_ID" in os.environ or "SLURM_JOBID" in os.environ)
+
+
+def on_login_node() -> bool:
+    return on_slurm_cluster() and not on_compute_node()
 
 
 def in_job_process_without_slurm_env_vars() -> bool:
@@ -46,13 +74,13 @@ def get_slurm_tmpdir(default: str | Path | None = None) -> Path:
 
 
 def _get_env_var(
-    var_name: str, default: T | None = None, fake_var_prefix: str = "FAKE_"
+    var_name: str, default: T | None = None, mock_var_prefix: str = "FAKE_"
 ) -> str | T:
     if var_name in os.environ:
         return os.environ[var_name]
     if default is not None:
         return default
-    fake_var_name = f"{fake_var_prefix}{var_name}"
+    fake_var_name = f"{mock_var_prefix}{var_name}"
     if fake_var_name in os.environ:
         return os.environ[fake_var_name]
     raise RuntimeError(

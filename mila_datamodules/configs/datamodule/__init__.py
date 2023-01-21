@@ -11,9 +11,9 @@ def __getattr__(name: str):
     `"CocoCaptionsDataModuleConfig"`, then we return a dynamically created config dataclass for
     that datamodule.
     """
-    from ._utils import _get_dynamic_config_for_name
+    from ._utils import get_dynamic_config_for_name
 
-    dynamic_datamodule_config_dataclass = _get_dynamic_config_for_name(name)
+    dynamic_datamodule_config_dataclass = get_dynamic_config_for_name(name)
     if dynamic_datamodule_config_dataclass:
         return dynamic_datamodule_config_dataclass
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

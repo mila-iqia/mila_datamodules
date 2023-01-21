@@ -1,16 +1,20 @@
 """A registry of where each dataset is stored on each cluster."""
 from __future__ import annotations
+import os
+from re import L
 
 import warnings
 from collections import defaultdict
 from pathlib import Path
-from typing import Callable
+from typing import Callable, List
 
 import pl_bolts.datasets
 import torchvision.datasets as tvd
 
 from mila_datamodules.clusters import CURRENT_CLUSTER
 from mila_datamodules.clusters.cluster import Cluster
+from mila_datamodules.clusters.utils import get_scratch_dir
+from mila_datamodules.utils import all_files_exist
 from mila_datamodules.vision.datasets.binary_mnist import BinaryMNIST
 
 dataset_files = {
@@ -123,21 +127,42 @@ dataset_archives_per_cluster: dict[type, dict[Cluster, list[str]]] = {
     },
 }
 
+# NOTE: Does it make sense to allow passing `cluster=None` here? (in the sense that we're not on a cluster?)
+
 
 def is_stored_on_cluster(dataset_cls: type, cluster: Cluster | None = CURRENT_CLUSTER) -> bool:
     """Returns whether we know where to find the given dataset on the given cluster."""
-    return (
+    if (
         dataset_cls in dataset_roots_per_cluster
         and cluster in dataset_roots_per_cluster[dataset_cls]
-    ) or (
+    ):
+        return True
+    if (
         dataset_cls in dataset_archives_per_cluster
         and cluster in dataset_archives_per_cluster[dataset_cls]
-    )
+    ):
+        return True
+    # TODO: This check here won't work when passing a subclass of the dataset. Might want to
+    # make this check into a function like `has_known_required_files` ? (something clearer and
+    # simpler) than that.
+    if dataset_cls in dataset_files:
+        # We know which files are needed for that dataset!
+        # Dynamically check if we have all the files for that dataset (where in the cluster?)
+        # (in the SCRATCH directory for now).
+        files_required_to_load_dataset = dataset_files[dataset_cls]
+        return all_files_exist(
+            required_files=files_required_to_load_dataset,
+            base_dir=get_scratch_dir(),
+        )
+
+    # We don't know
+
+    return False
 
 
-def get_dataset_root(
+def locate_dataset_root_on_cluster(
     dataset_cls: type,
-    cluster: Cluster | None = None,
+    cluster: Cluster | None = CURRENT_CLUSTER,
     default: str | None = None,
 ) -> str:
     """Gets the root directory to use to read the given dataset on the given cluster.
@@ -145,12 +170,23 @@ def get_dataset_root(
     If the dataset is not available on the cluster and `default` is set, then the default value is
     returned. Otherwise, if `default` is None, raises a NotImplementedError.
     """
-    cluster = cluster or Cluster.current()
+    # TODO: Unclear what to do when not on a cluster. Should this just not be used?
+    if cluster is None:
+        if default is not None:
+            return default
+        raise RuntimeError(
+            f"Was asked what root directory is appropriate for dataset type {dataset_cls} while "
+            f"not on a SLURM cluster, and no default value was passed. "
+            # NOTE: Now raising an error instead, just to avoid any surprises.
+            # f"Returning the current directory. "
+        )
+        # return str(Path.cwd())
 
+    cluster_name = cluster.name if cluster is not None else "local"
     github_issue_url = (
         f"https://github.com/lebrice/mila_datamodules/issues/new?"
-        f"labels={cluster.name}&template=feature_request.md&"
-        f"title=Feature%20request:%20{dataset_cls.__name__}%20on%20{cluster.name}"
+        f"labels={cluster_name}&template=feature_request.md&"
+        f"title=Feature%20request:%20{dataset_cls.__name__}%20on%20{cluster_name}"
     )
 
     if dataset_cls not in dataset_roots_per_cluster:
@@ -170,8 +206,8 @@ def get_dataset_root(
 
         # We don't know where this dataset is in this cluster.
         raise NotImplementedError(
-            f"No known location for dataset {dataset_cls.__name__} on {cluster.name} "
-            f"cluster!\n If you do know where it can be found on {cluster.name}, "
+            f"No known location for dataset {dataset_cls.__name__} on {cluster_name} "
+            f"cluster!\n If you do know where it can be found on {cluster_name}, "
             f"please make an issue at {github_issue_url} so the registry can be updated."
         )
 
@@ -179,7 +215,7 @@ def get_dataset_root(
         # Unsupported dataset.
         raise NotImplementedError(
             f"No known location for dataset {dataset_cls.__name__} on any of the clusters!\n"
-            f"If you do know where it can be found on {cluster.name}, or on any other "
+            f"If you do know where it can be found on {cluster_name}, or on any other "
             f"cluster, please make an issue at {github_issue_url} to add it to the registry."
         )
     dataset_root = dataset_roots_per_cluster[dataset_cls][cluster]

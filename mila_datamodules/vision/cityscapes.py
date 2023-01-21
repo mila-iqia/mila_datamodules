@@ -10,7 +10,7 @@ from torchvision.datasets import Cityscapes
 
 from mila_datamodules.clusters import CURRENT_CLUSTER
 from mila_datamodules.clusters.cluster import Cluster
-from mila_datamodules.registry import get_dataset_root
+from mila_datamodules.registry import locate_dataset_root_on_cluster
 
 from .vision_datamodule import _TransformsFix
 
@@ -51,7 +51,7 @@ class CityscapesDataModule(_CityscapesDataModule, _TransformsFix):
         )
 
     def prepare_data(self):
-        cityscapes_dir_location = get_dataset_root(Cityscapes)
+        cityscapes_dir_location = locate_dataset_root_on_cluster(Cityscapes)
         if cityscapes_dir_location is None:
             raise NotImplementedError(
                 f"Don't know where cityscapes data is located in cluster {Cluster.current()}"

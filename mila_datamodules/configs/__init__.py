@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from .datamodule import *  # noqa: F403
+from mila_datamodules.configs.datamodule._utils import get_dynamic_config_for_name
 
 
 def __getattr__(name: str):
@@ -12,9 +13,8 @@ def __getattr__(name: str):
     `"CocoCaptionsDataModuleConfig"`, then we return a dynamically created config dataclass for the
     `CocoCaptionsDataModule` class.
     """
-    from .datamodule._utils import _get_dynamic_config_for_name
 
-    dynamic_datamodule_config_dataclass = _get_dynamic_config_for_name(name)
+    dynamic_datamodule_config_dataclass = get_dynamic_config_for_name(name)
     if dynamic_datamodule_config_dataclass:
         return dynamic_datamodule_config_dataclass
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

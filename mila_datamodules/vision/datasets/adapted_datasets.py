@@ -14,7 +14,7 @@ from typing_extensions import Concatenate, ParamSpec
 from mila_datamodules.clusters import CURRENT_CLUSTER, get_scratch_dir, get_slurm_tmpdir
 from mila_datamodules.registry import (
     dataset_files,
-    get_dataset_root,
+    locate_dataset_root_on_cluster,
     is_stored_on_cluster,
     too_large_for_slurm_tmpdir,
 )
@@ -118,7 +118,7 @@ def adapted_constructor(
         # probably try to download them in $SCRATCH/data first, then copy them to SLURM_TMPDIR if
         # they fit.
         if is_stored_on_cluster(dataset_cls):
-            dataset_root = get_dataset_root(dataset_cls)
+            dataset_root = locate_dataset_root_on_cluster(dataset_cls)
         else:
             dataset_root = None
 

@@ -1,11 +1,49 @@
+from __future__ import annotations
 import os
+import re
 import shutil
 
 import pytest
 from filelock import FileLock
 
 from mila_datamodules.clusters import CURRENT_CLUSTER
-from mila_datamodules.clusters.utils import get_slurm_tmpdir
+from mila_datamodules.clusters.cluster import Cluster
+from mila_datamodules.clusters.utils import get_slurm_tmpdir, on_slurm_cluster
+from mila_datamodules.registry import is_stored_on_cluster
+from torch.utils.data import Dataset
+
+
+def skip_if_not_stored_on_current_cluster(dataset: type[Dataset]):
+    return pytest.mark.skipif(
+        not is_stored_on_cluster(dataset, CURRENT_CLUSTER),
+        reason=f"Dataset isn't stored on {CURRENT_CLUSTER} cluster",
+    )
+
+
+# TODO: Remove this, or make it clear that it's actually partially running the test (uses `xfail`).
+
+
+def xfail_if_not_stored_on_current_cluster(dataset: type[Dataset]):
+    return pytest.mark.xfail(
+        condition=not is_stored_on_cluster(dataset, CURRENT_CLUSTER),
+        reason=f"Dataset isn't stored on {CURRENT_CLUSTER} cluster",
+    )
+
+
+def only_runs_on_cluster(cluster: Cluster):
+    """When `cluster` is None, only runs when we're on any SLURM cluster.
+    When `cluster` is set, then only runs when we're on that specific cluster.
+    """
+    return pytest.mark.skipif(
+        CURRENT_CLUSTER is not cluster, reason=f"Test only runs on {cluster.name}"
+    )
+
+
+def only_runs_on_clusters():
+    """When `cluster` is None, only runs when we're on any SLURM cluster.
+    When `cluster` is set, then only runs when we're on that specific cluster.
+    """
+    return pytest.mark.skipif(not on_slurm_cluster(), reason="Test only runs on SLURM clusters")
 
 
 @pytest.fixture(autouse=True, scope="session")
@@ -26,12 +64,3 @@ def clear_slurm_tmpdir():
                 os.system(f"chmod --recursive +rwx {slurm_tmpdir}/data")
                 shutil.rmtree(slurm_tmpdir / "data")
     yield
-
-
-@pytest.fixture(autouse=True, scope="session", params=["mila", "beluga"])
-def cluster(request):
-    """A fixture that makes all the tests run on all the clusters!"""
-    host: str = request.param
-    if host != CURRENT_CLUSTER.name.lower():
-        pytest.skip(f"Runs on the {host} cluster (we're on {CURRENT_CLUSTER.name})")
-    yield host
