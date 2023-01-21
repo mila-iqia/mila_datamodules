@@ -4,19 +4,22 @@ packages = find_namespace_packages(include=["mila_datamodules*"])
 packages += find_namespace_packages(include=["hydra_plugins.*"])
 
 extras_require = {
-    "ffcv": "ffcv",
+    "ffcv": ["ffcv", "numba", "opencv-python"],
     "hydra": ["hydra-core", "hydra-zen"],
-    "coco": "pycocotools",
+    "coco": ["pycocotools"],
     "test": ["pytest-xdist", "pytest-timeout"],
 }
 extras_require["all"] = sorted(
     set(
         sum(
-            ([dep] if isinstance(dep, str) else dep for dep in extras_require.values()),
+            extras_require.values(),
             [],
         )
     )
 )
+extras_require["no_ffcv"] = list(set(extras_require["all"]) - set(extras_require["ffcv"]))
+
+
 with open("requirements.txt") as f:
     requirements = [
         line.strip() for line in f.read().splitlines() if not line.strip().startswith("#")
