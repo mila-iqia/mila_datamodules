@@ -29,13 +29,14 @@ datasets = {
     if inspect.isclass(v) and issubclass(v, VisionDataset)
 }
 
+_dataset_params = datasets.copy()
 # TODO: Need to stop doing this kind of hard-coded fixing and listing of stuff.
-datasets["EMNIST"] = partial(datasets.pop("EMNIST"), split="mnist")
-datasets["BinaryEMNIST"] = partial(datasets.pop("BinaryEMNIST"), split="mnist")
+_dataset_params["EMNIST"] = partial(datasets.pop("EMNIST"), split="mnist")
+_dataset_params["BinaryEMNIST"] = partial(datasets.pop("BinaryEMNIST"), split="mnist")
 
 # Dataset takes a bit longer to copy.
-dataset_names = list(datasets.keys())
-dataset_names = [
+_dataset_names = list(_dataset_params.keys())
+_dataset_names = [
     pytest.param(
         dataset_name,
         # Put the tests for a given dataset in the same group, so that they (eventually) run on the
@@ -43,13 +44,20 @@ dataset_names = [
         marks=[pytest.mark.xdist_group(name=dataset_name)]
         + ([pytest.mark.timeout(120)] if dataset_name == "CelebA" else []),
     )
-    for dataset_name in dataset_names
+    for dataset_name in _dataset_names
 ]
+
+
+@pytest.mark.parametrize("dataset_name, dataset_cls", sorted(datasets.items()))
+def test_all_datasets_have_a_test_class(dataset_name: str, dataset_cls: type):
+    assert f"Test{dataset_name}" in globals(), f"Missing test class for {dataset_name}."
+    test_class = globals()[f"Test{dataset_name}"]
+    assert issubclass(test_class, PreStoredDatasetTests)
 
 
 # TODO: Make this quicker to test. Each test currently copies the entire dataset to SLURM_TMPDIR.
 @pytest.mark.timeout(30)
-@pytest.mark.parametrize("dataset_name", dataset_names)
+@pytest.mark.parametrize("dataset_name", _dataset_names)
 def test_optimized_dataset_creation(dataset_name: str, tmp_path: Path):
     """Test that the dataset can be created, with the optimizations (copies/etc)."""
     dataset_cls = datasets[dataset_name]
