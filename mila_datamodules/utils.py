@@ -28,9 +28,7 @@ C = Callable[P, D]
 def in_job_process_without_slurm_env_vars() -> bool:
     """Returns `True` if this process is being executed inside another shell of the job (e.g. when
     using `mila code`, the vscode shell doesn't have the SLURM environment variables set)."""
-    if not on_slurm_cluster():
-        return False
-    return "SLURM_JOB_ID" in os.environ and "SLURM_TMPDIR" not in os.environ
+    return on_slurm_cluster() and "SLURM_JOB_ID" in os.environ and "SLURM_TMPDIR" not in os.environ
 
 
 # Load the SLURM environment variables into the current environment, if we're running inside a job
