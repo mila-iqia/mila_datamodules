@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import shutil
+from typing import Sequence
 
 import pytest
 from filelock import FileLock
@@ -30,13 +31,16 @@ def xfail_if_not_stored_on_current_cluster(dataset: type[Dataset]):
     )
 
 
-def only_runs_on_cluster(cluster: Cluster):
+def only_runs_on_cluster(cluster: Cluster | Sequence[Cluster]):
     """When `cluster` is None, only runs when we're on any SLURM cluster.
 
     When `cluster` is set, then only runs when we're on that specific cluster.
     """
+    clusters = [cluster] if isinstance(cluster, Cluster) else list(cluster)
+    reason = f"Test only runs on {'|'.join(c.name for c in clusters)}"
     return pytest.mark.skipif(
-        CURRENT_CLUSTER is not cluster, reason=f"Test only runs on {cluster.name}"
+        CURRENT_CLUSTER not in clusters,
+        reason=reason,
     )
 
 
