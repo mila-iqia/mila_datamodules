@@ -11,7 +11,25 @@ from torch.utils.data import Dataset
 from mila_datamodules.clusters import CURRENT_CLUSTER
 from mila_datamodules.clusters.cluster import Cluster
 from mila_datamodules.clusters.utils import get_slurm_tmpdir, on_slurm_cluster
-from mila_datamodules.registry import is_stored_on_cluster
+from mila_datamodules.registry import dataset_roots_per_cluster, is_stored_on_cluster
+
+
+@pytest.fixture(scope="session", autouse=True)
+def patch_dataset_for_local_cluster():
+    # TODO: @lebrice: This is super hard-coded just for my machine.
+    if CURRENT_CLUSTER is not Cluster._local:
+        return
+
+    all_datasets: set[type] = set(
+        sum([list(d.keys()) for d in dataset_roots_per_cluster.values()], [])
+    )
+    # Add the dataset in the `_local` cluster if it is stored in the FAKE_SCRATCH directory.
+    dataset_roots_per_cluster[Cluster._local] = {
+        dataset: os.environ["FAKE_SCRATCH"]
+        for dataset in all_datasets
+        if is_stored_on_cluster(dataset_cls=dataset, cluster=Cluster._local)
+    }
+    dataset_roots_per_cluster[Cluster._local] = {}
 
 
 def skip_if_not_stored_on_current_cluster(dataset: type[Dataset]):

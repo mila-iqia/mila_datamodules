@@ -10,14 +10,13 @@ from pathlib import Path
 from typing import Callable, TypeVar
 
 import pytest
-import torchvision.datasets
 from torch.utils.data import Dataset
 from typing_extensions import ParamSpec
 
 from mila_datamodules.clusters import Cluster
 from mila_datamodules.utils import all_files_exist
 
-from .conftest import only_runs_on_cluster, xfail_if_not_stored_on_current_cluster
+from .conftest import only_runs_on_cluster
 from .registry import (
     dataset_archives_per_cluster,
     dataset_files,
@@ -118,29 +117,30 @@ def test_dataset_archives_in_registry_are_actually_there(cluster: Cluster, datas
     raise NotImplementedError("TODO")
 
 
+# NOTE: Commenting these out. Created some dedicated test classes for each in `datasets_tests.py`
 # Datasets that only have `root` as a required parameter.
-easy_to_use_datasets = [
-    dataset
-    for dataset in vars(torchvision.datasets).values()
-    if inspect.isclass(dataset)
-    and dataset is not torchvision.datasets.VisionDataset
-    and not any(
-        n != "root" and p.default is p.empty
-        for n, p in inspect.signature(dataset).parameters.items()
-    )
-]
+# easy_to_use_datasets = [
+#     dataset
+#     for dataset in vars(torchvision.datasets).values()
+#     if inspect.isclass(dataset)
+#     and dataset is not torchvision.datasets.VisionDataset
+#     and not any(
+#         n != "root" and p.default is p.empty
+#         for n, p in inspect.signature(dataset).parameters.items()
+#     )
+# ]
 
-easy_to_use_datasets = [
-    pytest.param(dataset, marks=xfail_if_not_stored_on_current_cluster(dataset))
-    for dataset in easy_to_use_datasets
-]
+# easy_to_use_datasets = [
+#     pytest.param(dataset, marks=xfail_if_not_stored_on_current_cluster(dataset))
+#     for dataset in easy_to_use_datasets
+# ]
 
 
-@pytest.mark.parametrize("dataset", easy_to_use_datasets)
-def test_dataset_creation(dataset: type[Dataset]):
-    """Test creating the torchvision datasets that don't have any other required arguments besides
-    'root', using the root that we get from `get_dataset_root`."""
-    check_dataset_creation_works_without_download(
-        dataset,
-        root=locate_dataset_root_on_cluster(dataset, default="/network/datasets/torchvision"),
-    )
+# @pytest.mark.parametrize("dataset", easy_to_use_datasets)
+# def test_dataset_creation(dataset: type[Dataset]):
+#     """Test creating the torchvision datasets that don't have any other required arguments besides
+#     'root', using the root that we get from `get_dataset_root`."""
+#     check_dataset_creation_works_without_download(
+#         dataset,
+#         root=locate_dataset_root_on_cluster(dataset, default="/network/datasets/torchvision"),
+#     )
