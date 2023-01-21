@@ -61,14 +61,17 @@ def check_dataset_creation_works(
     "cluster,dataset",
     [
         pytest.param(cluster, dataset_cls, marks=[only_runs_on_cluster(cluster)])
-        for dataset_cls, cluster_to_root in dataset_roots_per_cluster.items()
-        for cluster in cluster_to_root
+        for cluster, dataset_cls_to_root in dataset_roots_per_cluster.items()
+        for dataset_cls in dataset_cls_to_root
     ],
 )
-def test_datasets_in_registry_are_actually_there(cluster: Cluster, dataset: type[Dataset]):
+def test_dataset_files_in_registry_are_actually_there(cluster: Cluster, dataset: type[Dataset]):
     """Test that the files associated with the dataset class are actually present in the `root` of
     that dataset, if supported on the current cluster."""
     assert is_stored_on_cluster(dataset, cluster=cluster)
+
+    # TODO: This is actually a little wrong.
+    # if it's stored in an extracted form, then check that all the files exist.
 
     # Cluster has this dataset (or so it says). Check that all the required files are there.
     root = locate_dataset_root_on_cluster(dataset, cluster=cluster)
@@ -79,6 +82,20 @@ def test_datasets_in_registry_are_actually_there(cluster: Cluster, dataset: type
     assert dataset in dataset_files
     required_files = dataset_files[dataset]
     assert all_files_exist(required_files, root)
+
+
+@pytest.mark.parametrize(
+    "cluster,dataset",
+    [
+        pytest.param(cluster, dataset_cls, marks=[only_runs_on_cluster(cluster)])
+        for cluster, dataset_cls_to_root in dataset_roots_per_cluster.items()
+        for dataset_cls in dataset_cls_to_root
+    ],
+)
+def test_dataset_archives_in_registry_are_actually_there(cluster: Cluster, dataset: type[Dataset]):
+    """Test that the archives associated with the dataset class are actually present on the
+    cluster."""
+    raise NotImplementedError("TODO")
 
 
 # Datasets that only have `root` as a required parameter.
