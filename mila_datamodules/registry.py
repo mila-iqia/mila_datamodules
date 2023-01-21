@@ -102,7 +102,7 @@ dataset_roots_per_cluster = {
 # TODO: Create a registry of the archives for each dataset, so that we can use these instead of
 # copying the files individually.
 
-dataset_archives_per_cluster = {
+dataset_archives_per_cluster: dict[Cluster, dict[type, list[str]]] = {
     Cluster.Mila: {
         # TODO: Unclear if/how these archives should be used to construct the torchvision
         # Places365 dataset. (train_256(...).tar gets extracted to a `data_256` folder.. the
@@ -223,12 +223,12 @@ def locate_dataset_root_on_cluster(
             f"cluster, 🙏 please make an issue at {github_issue_url} to add it to the registry 🙏."
         )
 
-    if dataset_cls not in dataset_roots_per_cluster:
+    if dataset_cls not in dataset_roots_per_cluster[cluster]:
         # Unsupported dataset.
         raise NotImplementedError(
             f"No known location for dataset {dataset_cls.__name__} on any of the clusters!\n"
             f"If you do know where it can be found on {cluster_name}, or on any other "
             f"cluster, please make an issue at {github_issue_url} to add it to the registry."
         )
-    dataset_root = dataset_roots_per_cluster[dataset_cls][cluster]
+    dataset_root = dataset_roots_per_cluster[cluster][dataset_cls]
     return str(dataset_root)
