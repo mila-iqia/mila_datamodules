@@ -6,7 +6,7 @@ set -o errexit
 cd mila_datamodules
 
 ## ---- With internet access ----
-salloc --time=0-1:00:00 --partition=unkillable --gres=gpu:1 --mem=12G --cpus-per-task=4
+salloc --time=0-1:00:00 --mem=12G --cpus-per-task=4
 echo "inside job with id $SLURM_JOBID"
 
 # NOTE: On the Mila cluster, the compute nodes *do* have internet access!

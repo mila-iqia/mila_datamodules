@@ -19,7 +19,8 @@ fi
 pip install -e .[all]
 pytest -v -n 4 --collect-only
 
-salloc --time=3:0:0 --account=rrg-bengioy-ad_gpu --gres=gpu:1 --mem=12G --cpus-per-task=4
+salloc --time=3:0:0 --account=rrg-bengioy-ad --mem=12G --cpus-per-task=4
+# salloc --time=3:0:0 --account=rrg-bengioy-ad_gpu --gres=gpu:1 --mem=12G --cpus-per-task=4
 ## ---- On compute node without internet access ----
 echo "inside job with id $SLURM_JOBID"
 cd ~/mila_datamodules

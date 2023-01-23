@@ -42,10 +42,10 @@ function run_in_cedar {
     ssh cedar 'bash -s' < scripts/cedar_test.sh
 }
 
-
-# run_in_mila
-# run_in_cedar
-# run_in_beluga
+# TODO: Figure out the proper way to redirect STDOUT and STDERR, and run these in parallel.
+run_in_mila
+run_in_cedar
+run_in_beluga
 # wait
-# run_on_mila_cluster
-# run_on_beluga
+echo "All tests finished."
+# python merge_cluster_logs mila.log cedar.log --output=merged_logs.out

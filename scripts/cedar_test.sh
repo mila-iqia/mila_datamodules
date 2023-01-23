@@ -1,10 +1,11 @@
 #!/usr/bin/bash
 set -o errexit
 
-# TODO: On `cedar`, it's not allowed to launch jobs from the `$HOME` directory.
+# NOTE: On `cedar`, it's not allowed to launch jobs from the `$HOME` directory.
 # Assumes that the entire repo was properly copied to the $SCRATCH directory first.
 cd $SCRATCH/mila_datamodules
-salloc --time=3:0:0 --account=rrg-bengioy-ad_gpu --gres=gpu:1 --mem=12G --cpus-per-task=4
+salloc --time=0-1:00:00 --account=rrg-bengioy-ad --mem=12G --cpus-per-task=4
+# salloc --time=0-1:00:00 --account=rrg-bengioy-ad_gpu --gres=gpu:1 --mem=12G --cpus-per-task=4
 # --- On compute node with internet access ---
 echo "inside job with id $SLURM_JOBID"
 
