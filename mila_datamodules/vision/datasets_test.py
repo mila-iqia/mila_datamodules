@@ -57,9 +57,9 @@ def test_all_datasets_have_a_test_class(dataset_name: str, dataset_cls: type):
     assert issubclass(test_class, PreStoredDatasetTests)
 
     # Check that the test class is indeed a PreStoredDatasetTests[dataset_cls].
-    class_under_test = get_args(type(dataset_cls).__orig_bases__[0])[0]  # type: ignore
-    assert issubclass(class_under_test, tvd.VisionDataset)
-    assert class_under_test is dataset_cls
+    dataset_class_under_test = get_args(type(test_class).__orig_bases__[0])[0]  # type: ignore
+    assert issubclass(dataset_class_under_test, tvd.VisionDataset)
+    assert dataset_class_under_test is dataset_cls
 
 
 # TODO: Make this quicker to test. Each test currently copies the entire dataset to SLURM_TMPDIR.
@@ -163,7 +163,7 @@ class PreStoredDatasetTests(Generic[DatasetType]):
         assert list(bad_path.iterdir()) == []
 
 
-class TestCityScapes(PreStoredDatasetTests[tvd.Cityscapes]):
+class TestCityscapes(PreStoredDatasetTests[tvd.Cityscapes]):
     @pytest.fixture(params=["fine", "coarse"])
     def mode(self, request: pytest.FixtureRequest) -> str:
         return request.param
