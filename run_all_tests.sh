@@ -37,6 +37,12 @@ function run_in_beluga {
 }
 
 
+function run_in_cedar {
+    copy_repo_folder_to cedar
+    ssh cedar 'bash -s' < scripts/cedar_test.sh
+}
+
+
 run_in_mila
 # run_in_beluga
 # wait
