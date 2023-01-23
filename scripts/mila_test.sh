@@ -15,7 +15,6 @@ echo "inside job with id $SLURM_JOBID"
 # module load python/3.9
 module load anaconda/3
 
-
 # # Taken from https://stackoverflow.com/questions/70597896/check-if-conda-env-exists-and-create-if-not-in-bash
 # if { conda env list | grep 'mila_datamodules/env'; } >/dev/null 2>&1; then
 #     conda activate $HOME/mila_datamodules/env

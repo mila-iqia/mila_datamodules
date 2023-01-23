@@ -1,43 +1,19 @@
 #!/usr/bin/bash
 set -o errexit
-# set -o xtrace
 
-## ---- With internet access ----
-module load python/3.9
-
-# NOTE: Now assuming that the entire repo was already copied over properly.
-cd mila_datamodules
-# if [ -d "mila_datamodules" ]
-# then
-#     cd mila_datamodules
-#     git checkout ${BRANCH:-master}
-#     git pull
-# else
-#     git clone https://github.com/mila_iqia/mila_datamodules -b ${BRANCH:-master}
-#     cd mila_datamodules
-# fi
-
-echo $PWD
-
-if [ -d "env" ]
-then
-    source env/bin/activate
-else
-    virtualenv --no-download env
-    source env/bin/activate
-    pip install --no-index --upgrade pip
-fi
-# note: pip installing the packages on the login node, because the compute nodes don't have
-# internet access.
-pip install -e .[all]
-pytest -v -n 4 --collect-only
-
-
-## ---- Without internet access ----
-
-
+# TODO: On `cedar`, it's not allowed to launch jobs from the `$HOME` directory.
+# Assumes that the entire repo was properly copied to the $SCRATCH directory first.
+cd $SCRATCH/mila_datamodules
 salloc --time=3:0:0 --account=rrg-bengioy-ad_gpu --gres=gpu:1 --mem=12G --cpus-per-task=4
+# --- On compute node with internet access ---
 echo "inside job with id $SLURM_JOBID"
-cd ~/mila_datamodules
-source env/bin/activate
-pytest -v -x -n 4
+
+# Create the virtualenv from scratch.
+module load python/3.9
+virtualenv --no-download $SLURM_TMPDIR/env
+source $SLURM_TMPDIR/env/bin/activate
+pip install --no-index --upgrade pip
+
+# Note: No need to cd to $SCRATCH/mila_datamodules, we should already be there.
+pip install -e .[no_ffcv]
+pytest -x -v -n 4

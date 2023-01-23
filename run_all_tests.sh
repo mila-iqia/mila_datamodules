@@ -8,7 +8,7 @@ function copy_repo_folder_to {
     # Adapted from https://stackoverflow.com/questions/13713101/rsync-exclude-according-to-gitignore-hgignore-svnignore-like-filter-c
     local cluster=$1
     local src="."
-    local dest="mila_datamodules"
+    local dest=${2:-"mila_datamodules"}
     # Other interesting solution, using git ls-files:
     # BUG: Seems to make the program hang?
     # rsync -ah --delete --verbose --include .git \
@@ -38,12 +38,13 @@ function run_in_beluga {
 
 
 function run_in_cedar {
-    copy_repo_folder_to cedar
+    copy_repo_folder_to cedar scratch/mila_datamodules
     ssh cedar 'bash -s' < scripts/cedar_test.sh
 }
 
 
-run_in_mila
+# run_in_mila
+# run_in_cedar
 # run_in_beluga
 # wait
 # run_on_mila_cluster
