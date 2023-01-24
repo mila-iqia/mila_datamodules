@@ -141,6 +141,9 @@ def copy_dataset_files(
         if source_path.is_dir():
             print(f"Copying {source_path} -> {destination_path}")
             # Copy the folder over.
+            # TODO: Getting a weird error with CIFAR100. Seems to also be related to SCRATCH
+            # directory contents.
+            destination_path.mkdir(parents=True, exist_ok=True)
             # TODO: Check that this doesn't overwrite existing files.
             # TODO: Test this out with symlinks?
             shutil.copytree(
