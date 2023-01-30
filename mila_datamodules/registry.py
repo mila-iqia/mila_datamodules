@@ -1,7 +1,6 @@
 """A registry of where each dataset is stored on each cluster."""
 from __future__ import annotations
 
-import warnings
 from pathlib import Path
 from typing import Any, Callable, TypeVar
 
@@ -11,7 +10,10 @@ import torchvision.datasets as tvd
 from mila_datamodules.clusters import CURRENT_CLUSTER
 from mila_datamodules.clusters.cluster import Cluster
 from mila_datamodules.clusters.utils import get_scratch_dir
-from mila_datamodules.utils import all_files_exist
+from mila_datamodules.errors import (
+    DatasetNotFoundOnClusterError,
+    UnsupportedDatasetError,
+)
 from mila_datamodules.vision.datasets.binary_mnist import BinaryMNIST
 
 _dataset_files = {
@@ -45,6 +47,7 @@ _dataset_files = {
     BinaryMNIST: ["MNIST"],
     pl_bolts.datasets.BinaryMNIST: ["MNIST"],
     pl_bolts.datasets.BinaryEMNIST: ["EMNIST"],
+    tvd.FlyingChairs: ["FlyingChairs/data", "FlyingChairs/FlyingChairs_train_val.txt"],
 }
 """A map of the folder/files associated with each dataset type, relative to the `root_dir`. This is
 roughly the list of files/folders that would be downloaded when creating the dataset with
@@ -129,18 +132,38 @@ _T = TypeVar("_T", bound=type)
 V = TypeVar("V")
 
 
+def is_supported_dataset(dataset_type: type) -> bool:
+    """Returns whether we 'support' this dataset: if we know which files are required to load it.
+
+    NOTE: This doesn't check if we have a copy of those files on the current cluster! To do this,
+    use `is_stored_on_cluster`.
+    """
+
+    try:
+        _get_key_to_use_for_indexing(_dataset_files, key=dataset_type)
+        return True
+    except KeyError:
+        return False
+
+
 def files_required_for(dataset_type: type) -> list[Path]:
     # TODO: Would be nice if this actually returned 'live' Path objects for the current cluster!
     try:
         files = _getitem_with_subclasscheck(_dataset_files, key=dataset_type)
         return [Path(file) for file in files]
-    except KeyError:
-        raise ValueError(f"Don't know what files are required for dataset {dataset_type}!\n")
+    except KeyError as exc:
+        raise UnsupportedDatasetError(
+            f"Don't know what files are required for dataset {dataset_type}!\n"
+        ) from exc
 
 
 def archives_required_for(
     dataset_type: type, cluster: Cluster | None = Cluster.current()
 ) -> list[Path]:
+    if cluster is None:
+        raise NotImplementedError(
+            f"Can't tell which archives are required for dataset {dataset_type} on local machines!"
+        )
     try:
         archive_paths = _getitem_with_subclasscheck(
             dataset_archives_per_cluster[cluster], key=dataset_type
@@ -159,33 +182,52 @@ def archives_required_for(
 
 
 def is_stored_on_cluster(dataset_cls: type, cluster: Cluster | None = CURRENT_CLUSTER) -> bool:
-    """Returns whether we know where to find the given dataset on the given cluster."""
-    if cluster in dataset_roots_per_cluster and dataset_cls in dataset_roots_per_cluster[cluster]:
-        return True
+    """Returns whether we know where to find the given dataset on the given cluster.
+
+    This first checks if the `dataset_cls` has an entry in either the
+    `dataset_archives_per_cluster` or `dataset_roots_per_cluster` dictionaries.
+    If so, returns True.
+    If not, this dynamically checks if know which archives or files can be used to create the
+    dataset, and whether they exist on the current cluster.
+
+    NOTE: This may check for the existence of the files or archives on the current cluster.
+    """
     if (
         cluster in dataset_archives_per_cluster
         and dataset_cls in dataset_archives_per_cluster[cluster]
     ):
         return True
+    if cluster in dataset_roots_per_cluster and dataset_cls in dataset_roots_per_cluster[cluster]:
+        return True
 
-    files_required_to_load_dataset = files_required_for(dataset_cls)
-    if dataset_cls in _dataset_files:
-        # We know which files are needed for that dataset!
-        # Dynamically check if we have all the files for that dataset (where in the cluster?)
-        # (in the SCRATCH directory for now).
-        files_required_to_load_dataset = _dataset_files[dataset_cls]
-        return all_files_exist(
-            required_files=files_required_to_load_dataset,
-            base_dir=get_scratch_dir(),
-        )
+    if not is_supported_dataset(dataset_cls):
+        # We don't know what files or archives are required for creating this dataset!
+        return False
 
-    if cluster in dataset_archives_per_cluster:
-        if dataset_cls in dataset_archives_per_cluster[cluster]:
-            # We know where to find the archives for that dataset on that cluster!
-            return True
+    # todo: Clean this up.
+    # Need a fallback dataset dir to use as the base directory for the required files.
+    scratch_dir = get_scratch_dir() or "data"
+    scratch_dir_str = str(scratch_dir)
+    dataset_root_str = dataset_roots_per_cluster.get(cluster, {}).get(dataset_cls, scratch_dir_str)
+    dataset_root = Path(dataset_root_str)
+    # TODO: redesign these `*_required_for` functions, having to use a try-catch isn't pretty.
+    try:
+        dataset_archives = archives_required_for(dataset_cls, cluster=cluster)
+        return all((dataset_root / p).exists() for p in dataset_archives)
+    except ValueError:
+        # We don't know what archives could be used to create this dataset on this cluster.
+        # However we might know which files could be used.
+        pass
 
-    # We don't know where to find the dataset files on that cluster.
-    return False
+    # If we know what files are required for this dataset, we can check if they exist.
+    # NOTE: This is a dynamic check
+
+    try:
+        files_required_to_load_dataset = files_required_for(dataset_cls)
+        return all((dataset_root / p).exists() for p in files_required_to_load_dataset)
+    except ValueError:
+        # We don't know what files are required for creating this dataset!
+        return False
 
 
 def locate_dataset_root_on_cluster(
@@ -198,6 +240,10 @@ def locate_dataset_root_on_cluster(
     If the dataset is not available on the cluster and `default` is set, then the default value is
     returned. Otherwise, if `default` is None, raises a NotImplementedError.
     """
+    # TODO: This is specific to torchvision datasets at the moment. Either move this to the vision
+    # folder, or make it actually more general.
+    # TODO: This isn't exactly using anything about archives either!
+
     # TODO: Unclear what to do when not on a cluster. Should this just not be used?
     if cluster is None:
         if default is not None:
@@ -206,57 +252,38 @@ def locate_dataset_root_on_cluster(
             f"Was asked what root directory is appropriate for dataset type {dataset_cls} while "
             f"not on a SLURM cluster, and no default value was passed. "
             # NOTE: Now raising an error instead, just to avoid any surprises.
-            # f"Returning the current directory. "
         )
-        # return str(Path.cwd())
 
-    cluster_name = cluster.name if cluster is not None else "local"
-    github_issue_url = (
-        f"https://github.com/lebrice/mila_datamodules/issues/new?"
-        f"labels={cluster_name}&template=feature_request.md&"
-        f"title=Feature%20request:%20{dataset_cls.__name__}%20on%20{cluster_name}"
-    )
-
-    if (
-        cluster in dataset_roots_per_cluster
-        and dataset_cls not in dataset_roots_per_cluster[cluster]
-    ):
-        for dataset in dataset_roots_per_cluster[cluster]:
-            # A class with the same name (e.g. our adapted datasets) was passed.
-            if dataset.__name__ == dataset_cls.__name__:
-                warnings.warn(
-                    RuntimeWarning(f"Using dataset class {dataset} instead of {dataset_cls}")
-                )
-                dataset_cls = dataset
-                break
+    if not is_supported_dataset(dataset_cls):
+        if default is not None:
+            return default
+        raise UnsupportedDatasetError(dataset=dataset_cls, cluster=cluster)
 
     if not is_stored_on_cluster(dataset_cls, cluster):
         if default is not None:
-            assert isinstance(default, str)
             return default
-
         # We don't know where this dataset is in this cluster.
-        raise NotImplementedError(
-            f"No known location for dataset {dataset_cls.__name__} on {cluster_name} "
-            f"cluster!\n If you do know where it can be found on {cluster_name}, "
-            f"please make an issue at {github_issue_url} so the registry can be updated."
+        raise DatasetNotFoundOnClusterError(
+            dataset=dataset_cls,
+            cluster=cluster,
         )
 
     if cluster not in dataset_roots_per_cluster:
-        raise NotImplementedError(
-            f"Don't know where datasets are stored in cluster {cluster_name}! \n"
-            f"If you do know where it can be found on {cluster_name}, or on any other "
-            f"cluster, 🙏 please make an issue at {github_issue_url} to add it to the registry 🙏."
-        )
+        raise DatasetNotFoundOnClusterError(dataset=dataset_cls, cluster=cluster)
+        # f"Don't know where datasets are stored in cluster {cluster_name}! \n"
+        # f"If you do know where it can be found on {cluster_name}, or on any other "
+        # f"cluster, 🙏 please make an issue at {github_issue_url} to add it to the registry! 🙏"
+        # )
 
     dataset_root = dataset_roots_per_cluster[cluster].get(dataset_cls)
     if dataset_cls is None:
         # Unsupported dataset?
-        raise NotImplementedError(
-            f"No known location for dataset {dataset_cls.__name__} on any of the clusters!\n"
-            f"If you do know where it can be found on {cluster_name}, or on any other "
-            f"cluster, please make an issue at {github_issue_url} to add it to the registry."
-        )
+        raise DatasetNotFoundOnClusterError(dataset=dataset_cls, cluster=cluster)
+        # raise NotImplementedError(
+        #     f"No known location for dataset {dataset_cls.__name__} on any of the clusters!\n"
+        #     f"If you do know where it can be found on {cluster_name}, or on any other "
+        #     f"cluster, 🙏 please make an issue at {github_issue_url} to add it to the registry! 🙏"
+        # )
     return str(dataset_root)
 
 
@@ -268,6 +295,7 @@ def _get_key_to_use_for_indexing(potential_classes: dict[_T, Any], key: _T) -> _
         cls for cls in potential_classes if cls.__name__ == key.__name__ and issubclass(key, cls)
     ]
     if len(parent_classes_with_same_name) == 0:
+        # Can't find a key to use.
         raise KeyError(key)
     elif len(parent_classes_with_same_name) > 1:
         raise ValueError(

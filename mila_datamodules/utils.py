@@ -38,7 +38,7 @@ if in_job_process_without_slurm_env_vars():
 
 
 def all_files_exist(
-    required_files: Sequence[str],
+    required_files: Sequence[str | Path],
     base_dir: str | Path,
 ) -> bool:
     return all((Path(base_dir) / f).exists() for f in required_files)
@@ -123,7 +123,7 @@ def extract_archive(archive_path: str | Path, dest: str | Path):
 
 
 def copy_dataset_files(
-    files_to_copy: Sequence[str], source_dir: str | Path, dest_dir: str | Path
+    files_to_copy: Sequence[str | Path], source_dir: str | Path, dest_dir: str | Path
 ) -> None:
     """TODO: If the file is an archive, extract it into the destination directory, rather than
     copy the files? (see https://github.com/lebrice/mila_datamodules/issues/4).

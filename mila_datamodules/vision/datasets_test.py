@@ -5,19 +5,20 @@ Checks that the 'optimized' constructors work on the current cluster.
 from __future__ import annotations
 
 import inspect
-from abc import ABC
+import os
 from pathlib import Path
 from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
+    ClassVar,
     Generic,
     Sequence,
     TypeVar,
-    cast,
     get_args,
 )
 
+import filelock
 import pl_bolts
 import pytest
 import torchvision.datasets
@@ -28,10 +29,12 @@ from typing_extensions import ParamSpec
 
 import mila_datamodules.vision.datasets
 from mila_datamodules.clusters import CURRENT_CLUSTER, Cluster
+from mila_datamodules.clusters.utils import get_scratch_dir, on_slurm_cluster
 from mila_datamodules.registry import (
     archives_required_for,
     files_required_for,
     is_stored_on_cluster,
+    is_supported_dataset,
     locate_dataset_root_on_cluster,
 )
 from mila_datamodules.registry_test import check_dataset_creation_works_without_download
@@ -97,11 +100,11 @@ def _unsupported_variant(version: str, cluster: Cluster | Sequence[Cluster]):
     return pytest.param(version, marks=pytest.mark.xfail(condition=condition, reason=reason))
 
 
-class VisionDatasetTests(Generic[VisionDatasetType], ABC):
-    """Suite of basic unit tests for any dataset class from `torchvision.datasets`."""
+class DatasetTests(Generic[DatasetType]):
+    _bound: ClassVar[type[Dataset]] = Dataset
 
     @property
-    def dataset_cls(self) -> type[VisionDatasetType]:
+    def dataset_cls(self) -> type[DatasetType]:
         """The original dataset class from torchvision.datasets that is being tested."""
         # TODO: Perhaps we could add some skips / xfails here if we can tell that the dataset isn't
         # supported yet, or isn't stored on the current cluster?
@@ -109,6 +112,36 @@ class VisionDatasetTests(Generic[VisionDatasetType], ABC):
         # appropriately?
         dataset_cls = self._dataset_cls()
         return dataset_cls
+
+    @classmethod
+    def _dataset_cls(cls) -> type[DatasetType]:
+        """Retrieves the dataset class under test from the class definition (without having to set
+        the `dataset_cls` attribute."""
+        class_under_test = get_args(cls.__orig_bases__[0])[0]  # type: ignore
+        # TODO: Get the bound programmatically to avoid hardcoding `Dataset` here.
+        if not (inspect.isclass(class_under_test) and issubclass(class_under_test, cls._bound)):
+            raise RuntimeError(
+                "Your test class needs to pass the class under test to the generic base class.\n"
+                "for example: `class TestMyDataset(DatasetTests[MyDataset]):`\n"
+                f"(Got {class_under_test})"
+            )
+        return class_under_test  # type: ignore
+
+    def make_dataset(
+        self,
+        dataset_cls: Callable[P, DatasetType] | type[DatasetType] | None = None,
+        *args: P.args,
+        **kwargs: P.kwargs,
+    ) -> DatasetType:
+        dataset_cls = dataset_cls or self.dataset_cls
+        assert dataset_cls
+        return dataset_cls(*args, **kwargs)
+
+
+class VisionDatasetTests(DatasetTests[VisionDatasetType]):
+    """Suite of basic unit tests for any dataset class from `torchvision.datasets`."""
+
+    _bound: ClassVar[type[Dataset]] = tvd.VisionDataset
 
     @property
     def adapted_dataset_cls(self) -> type[VisionDatasetType]:
@@ -120,6 +153,14 @@ class VisionDatasetTests(Generic[VisionDatasetType], ABC):
         dataset_cls = self._adapted_dataset_cls()
         return dataset_cls
 
+    @property
+    def stored_dataset(self) -> type[VisionDatasetType]:
+        cluster = Cluster.current()
+        cluster_name = cluster.name + " cluster" if cluster is not None else "local machine"
+        if not is_stored_on_cluster(self.dataset_cls, cluster=cluster):
+            pytest.skip(f"Dataset {self.dataset_cls.__name__} isn't stored on the {cluster_name}.")
+        return self.dataset_cls
+
     @pytest.fixture()
     def dataset_kwargs(self) -> dict[str, Any]:
         """Fixture that returns the kwargs that should be passed to the dataset constructor.
@@ -130,34 +171,11 @@ class VisionDatasetTests(Generic[VisionDatasetType], ABC):
         return dict()
 
     @classmethod
-    def _dataset_cls(cls) -> type[VisionDatasetType]:
-        """Retrieves the dataset class under test from the class definition (without having to set
-        the `dataset_cls` attribute."""
-        class_under_test = get_args(cls.__orig_bases__[0])[0]  # type: ignore
-        if not (
-            inspect.isclass(class_under_test) and issubclass(class_under_test, tvd.VisionDataset)
-        ):
-            raise RuntimeError(
-                "Your test class needs to pass the class under test to the generic base class!\n"
-                "for example: `class TestMyDataset(DatasetTests[MyDataset]):`\n"
-                f"Got {class_under_test}"
-            )
-        return cast(type[VisionDatasetType], class_under_test)
-
-    @classmethod
     def _adapted_dataset_cls(cls) -> type[VisionDatasetType]:
         dataset_class = cls._dataset_cls()
-        return getattr(mila_datamodules.vision.datasets, dataset_class.__name__)
-
-    def make_dataset(
-        self: VisionDatasetTests[VisionDatasetType],
-        dataset_cls: Callable[P, VisionDatasetType] | None = None,
-        *args: P.args,
-        **kwargs: P.kwargs,
-    ) -> VisionDatasetType:
-        dataset_cls = dataset_cls or self.dataset_cls  # type: ignore
-        assert dataset_cls
-        return dataset_cls(*args, **kwargs)
+        if hasattr(mila_datamodules.vision.datasets, dataset_class.__name__):
+            return getattr(mila_datamodules.vision.datasets, dataset_class.__name__)
+        return getattr(mila_datamodules.vision.datasets.adapted_datasets, dataset_class.__name__)
 
     @only_runs_outside_slurm_cluster()
     def test_no_change_when_outside_cluster(self):
@@ -172,17 +190,43 @@ class VisionDatasetTests(Generic[VisionDatasetType], ABC):
         #     class_from_torchvision_datasets
         # )
 
-    @only_runs_on_slurm_clusters()
-    def test_we_have_adapted_version_of_dataset(self):
-        dataset_cls: type[VisionDatasetType] = self._dataset_cls()
-        assert hasattr(mila_datamodules.vision.datasets, dataset_cls.__name__)
-        adapted_dataset_cls = getattr(mila_datamodules.vision.datasets, dataset_cls.__name__)
-        assert issubclass(adapted_dataset_cls, dataset_cls)
-
     def test_we_know_what_files_are_required(self):
         """Test that we know which files are required in order to load this dataset."""
         files = files_required_for(self._dataset_cls())
         assert files
+
+    def test_adapted_dataset_class(self):
+        """We should have an adapted dataset class for explicitly supported datasets in
+        `mila_datamodules.vision.datasets`.
+
+        NOTE: For 'experimental' datasets which we don't explicitly support, we could get them with
+        `from mila_datamodules.vision.datasets.adapted_datasets import SomeFancyNewDataset`, but it
+        should at the very least raise a Warning. (this uses the module-level __getattr__ which is
+        very cool and hacky!)
+        """
+        original_cls = self.dataset_cls
+        adapted_cls = self.adapted_dataset_cls
+        default_constructor_root_parameter = inspect.signature(original_cls).parameters["root"]
+        adapted_constructor_root_parameter = inspect.signature(adapted_cls).parameters["root"]
+
+        if not on_slurm_cluster() or not is_stored_on_cluster(original_cls):
+            # No change when not on a slurm cluster: the "adapted" class is the original class.
+            assert adapted_cls is original_cls
+            # NOTE: redundant at this point here, but just to illustrate:
+            # We don't have the dataset stored on this cluster, so expect root to be required.
+            assert (
+                adapted_constructor_root_parameter.default
+                == default_constructor_root_parameter.default
+            )
+        else:
+            assert adapted_cls is not original_cls
+            assert issubclass(adapted_cls, original_cls)
+            # Check that we did indeed change the signature of the constructor to have the 'root'
+            # set to the right default value.
+            expected_default_root = locate_dataset_root_on_cluster(original_cls)
+            # TODO: Not sure if we can actually check this with `inspect`, without instantiating
+            # the dataset.
+            # assert adapted_constructor_root_parameter.default == expected_default_root
 
     def test_required_files_exist(self):
         """Test that if the registry says that we have the files required to load this dataset on
@@ -199,19 +243,24 @@ class VisionDatasetTests(Generic[VisionDatasetType], ABC):
             path = dataset_root / file
             assert path.exists()
 
-    def test_root_becomes_optional_arg(self):
+    def test_root_becomes_optional_arg_if_stored(self):
         """Checks that the `root` argument becomes optional in the adapted dataset class."""
-        dataset_cls = self._dataset_cls()
-        constructor_root_parameter = inspect.signature(dataset_cls).parameters["root"]
+        dataset_cls = self.dataset_cls
+        adapted_cls = self.adapted_dataset_cls
+        default_constructor_root_parameter = inspect.signature(dataset_cls).parameters["root"]
+        adapted_constructor_root_parameter = inspect.signature(adapted_cls).parameters["root"]
 
         if is_stored_on_cluster(dataset_cls):
             # Check that we did indeed change the signature of the constructor to have the 'root'
             # set to the value we want.
             expected_default_root = locate_dataset_root_on_cluster(dataset_cls)
-            assert constructor_root_parameter.default == expected_default_root
+            assert adapted_constructor_root_parameter.default == expected_default_root
         else:
             # We don't have the dataset stored on this cluster, so expect root to be required.
-            assert constructor_root_parameter.default == inspect.Parameter.empty
+            assert (
+                adapted_constructor_root_parameter.default
+                == default_constructor_root_parameter.default
+            )
 
     @pytest.mark.disable_socket
     def test_creation_without_download(self, dataset_kwargs: dict[str, Any]):
@@ -245,14 +294,16 @@ class VisionDatasetTests(Generic[VisionDatasetType], ABC):
         assert list(bad_path.iterdir()) == []
 
 
-class FitsInMemoryTests(Generic[VisionDatasetType], ABC):
+class FitsInMemoryTests(DatasetTests[VisionDatasetType]):
     """Tests for datasets that fit in RAM or are loaded into RAM anyway, e.g. mnist/cifar10/etc.
 
     - we should just read them from /network/datasets/torchvision, and not bother copying them to SLURM_TMPDIR.
     """
 
+    # TODO: Add tests that check specifically for this behaviour.
 
-class LoadFromArchivesTests(VisionDatasetTests[VisionDatasetType]):
+
+class LoadFromArchivesTests(DatasetTests[VisionDatasetType]):
     """For datasets that don't fit in RAM (e.g. ImageNet), extract the archive directly to.
 
     $SLURM_TMPDIR.
@@ -288,6 +339,38 @@ class LoadFromArchivesTests(VisionDatasetTests[VisionDatasetType]):
         for file in files:
             path = dataset_root / file
             assert path.exists()
+
+    # TODO: Add tests that check specifically that the dataset is loaded from the archives as
+    # described in the doc above.
+
+
+class DownloadForMockTests(DatasetTests[VisionDatasetType]):
+    _bound: ClassVar[type[Dataset]] = tvd.VisionDataset
+
+    @pytest.fixture(scope="session", autouse=True)
+    def download_to_fake_scratch_before_tests(
+        self, worker_id: str, tmp_path_factory: pytest.TempPathFactory
+    ):
+        cluster = Cluster.current()
+        if cluster is not Cluster._mock:
+            # Don't download the datasets.
+            return
+        assert "FAKE_SCRATCH" in os.environ
+        fake_scratch_dir = get_scratch_dir()
+        assert fake_scratch_dir is not None
+        fake_scratch_dir.mkdir(exist_ok=True, parents=True)
+
+        assert "download" in inspect.signature(self.dataset_cls.__init__).parameters
+
+        # get the temp directory shared by all workers
+        temp_dir = tmp_path_factory.getbasetemp().parent
+
+        # Make this only download the dataset on one worker, using filelocks.
+        with filelock.FileLock(temp_dir / f"{self.dataset_cls.__name__}.lock"):
+            self.dataset_cls(root=fake_scratch_dir, download=worker_id == "master")
+
+
+# ------------------ Dataset Tests ------------------
 
 
 class TestCityscapes(VisionDatasetTests[tvd.Cityscapes]):
@@ -384,8 +467,12 @@ class TestCocoCaptions(VisionDatasetTests[tvd.CocoDetection]):
         )
 
 
-class TestCIFAR10(VisionDatasetTests[tvd.CIFAR10], FitsInMemoryTests):
-    pass
+class TestCIFAR10(VisionDatasetTests[tvd.CIFAR10], FitsInMemoryTests, DownloadForMockTests):
+    @only_runs_on_slurm_clusters()
+    def test_always_stored(self):
+        assert is_supported_dataset(self.dataset_cls)
+        assert is_stored_on_cluster(self.dataset_cls)
+        assert Path(locate_dataset_root_on_cluster(self.dataset_cls)).exists()
 
 
 class TestCIFAR100(VisionDatasetTests[tvd.CIFAR100], FitsInMemoryTests):

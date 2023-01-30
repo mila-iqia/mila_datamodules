@@ -8,7 +8,7 @@ from filelock import FileLock
 
 from mila_datamodules.clusters import CURRENT_CLUSTER
 from mila_datamodules.clusters.cluster import Cluster
-from mila_datamodules.clusters.utils import get_slurm_tmpdir
+from mila_datamodules.clusters.utils import get_scratch_dir, get_slurm_tmpdir
 from mila_datamodules.registry import dataset_roots_per_cluster, is_stored_on_cluster
 
 
@@ -26,6 +26,7 @@ def patch_dataset_for_local_cluster():
         for dataset in all_datasets
         if is_stored_on_cluster(dataset_cls=dataset, cluster=Cluster._mock)
     }
+    yield
     dataset_roots_per_cluster[Cluster._mock] = {}
 
 
@@ -55,19 +56,31 @@ def scratch_data_dir(tmp_path_factory: pytest.TempPathFactory):
 
     This is used so the tests don't actually use the real $SCRATCH directory.
     """
-    data_dir_when_not_on_cluster = tmp_path_factory.mktemp("scratch_data_dir")
-    fake_scratch_data_dir = get_slurm_tmpdir(default=data_dir_when_not_on_cluster) / "fake_scratch"
+    # TODO: Fix this Not sure what it should be doing anymore!
+    cluster = Cluster.current()
+    if cluster is Cluster._mock:
+        yield
+        return  # We don't need to do anything if we're on the mock cluster.
+    if cluster is None:
+        yield
+        return  # We can't do anything when we're not on a cluster.
+
+    fake_scratch_data_dir = get_slurm_tmpdir() / "fake_scratch"
 
     if fake_scratch_data_dir.exists():
         # Make sure it's completely empty.
         shutil.rmtree(fake_scratch_data_dir)
-    original_scratch = os.environ.get("SCRATCH")
     # NOTE: exist_ok here because we might be parallelizing the tests with multiple workers.
     fake_scratch_data_dir.mkdir(parents=False, exist_ok=True)
 
+    # save a copy for safekeeping.
+    original_scratch = os.environ.get("SCRATCH")
+
     os.environ["SCRATCH"] = str(fake_scratch_data_dir)
-    if CURRENT_CLUSTER:
-        assert CURRENT_CLUSTER.scratch == fake_scratch_data_dir
+    assert cluster
+    assert cluster.scratch == fake_scratch_data_dir
+    assert get_scratch_dir() == fake_scratch_data_dir
+
     yield
 
     if original_scratch is not None:

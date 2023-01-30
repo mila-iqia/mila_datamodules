@@ -11,9 +11,10 @@ from torch.utils.data import Dataset
 from torchvision.datasets import VisionDataset
 from typing_extensions import Concatenate, ParamSpec
 
-from mila_datamodules.clusters import CURRENT_CLUSTER, get_scratch_dir, get_slurm_tmpdir
+from mila_datamodules.clusters import get_scratch_dir, get_slurm_tmpdir
+from mila_datamodules.clusters.cluster import Cluster
+from mila_datamodules.errors import UnsupportedDatasetError
 from mila_datamodules.registry import (
-    _dataset_files,
     is_stored_on_cluster,
     locate_dataset_root_on_cluster,
     too_large_for_slurm_tmpdir,
@@ -40,8 +41,28 @@ def __getattr__(name: str) -> type[VD]:
         attribute = getattr(tvd, name)
 
         if inspect.isclass(attribute) and issubclass(attribute, VisionDataset):
-            return adapt_dataset(attribute)
+            dataset_class = attribute
+            if is_stored_on_cluster(dataset_class):
+                return adapt_dataset(dataset_class)
+            return dataset_class
     raise AttributeError(name)
+
+
+# TODOS:
+"""
+- For datasets that fit in RAM, (or are loaded into RAM anyway) (e.g. cifar10/cifar100), we should
+  just read them from /network/datasets/torchvision, and not bother copying them to SLURM_TMPDIR.
+- For datasets that don't fit in RAM, extract the archive directly to $SLURM_TMPDIR.
+  NOTE: Might need to also create a symlink of the archive in $SLURM_TMPDIR so that the tvd Dataset
+  constructor doesn't re-download it to SLURM_TMPDIR.
+- NOTE: No speedup reading from $SCRATCH or /network/datasets. Same filesystem
+For ComputeCanada:
+- Extract the archive from the datasets folder to $SLURM_TMPDIR without copying.
+
+In general, for datasets that don't fit in SLURM_TMPDIR, we should use $SCRATCH as the
+"SLURM_TMPDIR".
+NOTE: setting --tmp=800G is a good idea if you're going to move a 600gb dataset to SLURM_TMPDIR.
+"""
 
 
 @_cache
@@ -61,8 +82,9 @@ def adapt_dataset(dataset_type: type[VD]) -> type[VD]:
     there.
     The dataset is then read from SLURM_TMPDIR.
     """
-    if CURRENT_CLUSTER is None:
-        return dataset_type  # Do nothing, since we're not on a SLURM cluster.
+    if Cluster.current() is None or not is_stored_on_cluster(dataset_type):
+        # Do nothing, since we're not on a SLURM cluster, or the cluster doesn't have this dataset.
+        return dataset_type
 
     dataset_subclass = type(
         dataset_type.__name__, (dataset_type,), {"__init__": adapted_constructor(dataset_type)}
@@ -75,30 +97,19 @@ def adapt_dataset(dataset_type: type[VD]) -> type[VD]:
 
 
 def adapted_constructor(
-    dataset_cls: Callable[Concatenate[str, P], VD]
+    dataset_cls: Callable[Concatenate[str, P], VD] | type[VD]
 ) -> Callable[Concatenate[str | None, P], None]:
     """Creates a constructor for the given dataset class that does the required preprocessing steps
     before instantiating the dataset."""
+    from mila_datamodules.registry import files_required_for
 
-    if dataset_cls not in _dataset_files:
-        for dataset in _dataset_files:
-            if dataset.__name__ == dataset_cls.__name__:
-                files = _dataset_files[dataset]
-                break
-        else:
-            github_issue_url = (
-                f"https://github.com/lebrice/mila_datamodules/issues/new?"
-                f"template=feature_request.md&"
-                f"title=Feature%20request:%20{dataset_cls.__name__}%20files"
-            )
-            raise NotImplementedError(
-                f"Don't know which files are associated with dataset type {dataset_cls}!"
-                f"Consider adding the names of the files to the dataset_files dictionary, or "
-                f"creating an issue for this at {github_issue_url}"
-            )
-        required_files = files
-    else:
-        required_files = _dataset_files[dataset_cls]
+    if not is_stored_on_cluster(dataset_cls):
+        return dataset_cls.__init__
+    try:
+        required_files = files_required_for(dataset_cls)  # type: ignore
+        # required_archives = archives_required_for(dataset_cls)  # type: ignore
+    except ValueError:
+        raise UnsupportedDatasetError(dataset=dataset_cls, cluster=Cluster.current())  # type: ignore
 
     @functools.wraps(dataset_cls.__init__)
     def _custom_init(self, *args: P.args, **kwargs: P.kwargs):
@@ -129,6 +140,16 @@ def adapted_constructor(
             logger.info("Dataset is already stored in SLURM_TMPDIR")
             new_root = fast_tmp_dir
         elif all_files_exist(required_files, scratch_dir):
+            # BUG: `all_files_exist` isn't robust to things being removed by the SCRATCH cleanup.
+            # It sees empty directories as just fine.
+            if dataset_root:
+                # TODO: Copy things from the dataset root to $SCRATCH again, just to be sure?
+                # TODO: Does it even actually make sense to use $SCRATCH as an intermediate cache?
+                logger.info(
+                    f"Copying files from {dataset_root} to SCRATCH in case some were removed."
+                )
+                copy_dataset_files(required_files, dataset_root, scratch_dir)
+
             if dataset_cls in too_large_for_slurm_tmpdir:
                 logger.info("Dataset is large, files will be read from SCRATCH.")
                 new_root = scratch_dir
