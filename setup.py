@@ -7,7 +7,7 @@ extras_require = {
     "ffcv": ["ffcv", "numba", "opencv-python"],
     "hydra": ["hydra-core", "hydra-zen"],
     "coco": ["pycocotools"],
-    "test": ["pytest-xdist", "pytest-timeout"],
+    "test": ["pytest-xdist", "pytest-timeout", "pytest-socket"],
 }
 extras_require["all"] = sorted(
     set(
