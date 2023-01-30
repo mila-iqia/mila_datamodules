@@ -2,7 +2,8 @@
 from __future__ import annotations
 
 import warnings
-from typing import Callable
+from pathlib import Path
+from typing import Any, Callable, TypeVar
 
 import pl_bolts.datasets
 import torchvision.datasets as tvd
@@ -13,7 +14,7 @@ from mila_datamodules.clusters.utils import get_scratch_dir
 from mila_datamodules.utils import all_files_exist
 from mila_datamodules.vision.datasets.binary_mnist import BinaryMNIST
 
-dataset_files = {
+_dataset_files = {
     tvd.MNIST: ["MNIST"],
     tvd.CIFAR10: ["cifar-10-batches-py"],
     tvd.CIFAR100: ["cifar-100-python"],
@@ -56,6 +57,7 @@ dataset type in order for it to work.
 These files are copied over to $SCRATCH or $SLURM_TMPDIR before the dataset is read, depending on
 the type of dataset.
 """
+
 
 _mila_torchvision_dir = "/network/datasets/torchvision"
 _beluga_curated_datasets_dir = "/project/rpp-bengioy/data/curated"
@@ -123,6 +125,32 @@ dataset_archives_per_cluster: dict[Cluster, dict[type, list[str]]] = {
 too_large_for_slurm_tmpdir: set[Callable] = set()
 """Set of datasets which are too large to store in $SLURM_TMPDIR."""
 
+_T = TypeVar("_T", bound=type)
+V = TypeVar("V")
+
+
+def files_required_for(dataset_type: type) -> list[Path]:
+    # TODO: Would be nice if this actually returned 'live' Path objects for the current cluster!
+    try:
+        files = _getitem_with_subclasscheck(_dataset_files, key=dataset_type)
+        return [Path(file) for file in files]
+    except KeyError:
+        raise ValueError(f"Don't know what files are required for dataset {dataset_type}!\n")
+
+
+def archives_required_for(
+    dataset_type: type, cluster: Cluster | None = Cluster.current()
+) -> list[Path]:
+    try:
+        archive_paths = _getitem_with_subclasscheck(
+            dataset_archives_per_cluster[cluster], key=dataset_type
+        )
+        # TODO: Maybe return the actual archive type to use?
+        return [Path(archive_path) for archive_path in archive_paths]
+    except KeyError:
+        raise ValueError(f"Don't know what archives are required for dataset {dataset_type}!\n")
+
+
 # TODO: How about we adopt a de-centralized kind of registry, a bit like gym?
 # In each dataset module, we could have a `mila_datamodules.register(name, locations={Mila: ...})`?
 
@@ -139,15 +167,13 @@ def is_stored_on_cluster(dataset_cls: type, cluster: Cluster | None = CURRENT_CL
         and dataset_cls in dataset_archives_per_cluster[cluster]
     ):
         return True
-    # TODO: This check here won't work when passing a subclass of the dataset. Might want to
-    # make this check into a function like `has_known_required_files` ? (something clearer and
-    # simpler) than that.
 
-    if dataset_cls in dataset_files:
+    files_required_to_load_dataset = files_required_for(dataset_cls)
+    if dataset_cls in _dataset_files:
         # We know which files are needed for that dataset!
         # Dynamically check if we have all the files for that dataset (where in the cluster?)
         # (in the SCRATCH directory for now).
-        files_required_to_load_dataset = dataset_files[dataset_cls]
+        files_required_to_load_dataset = _dataset_files[dataset_cls]
         return all_files_exist(
             required_files=files_required_to_load_dataset,
             base_dir=get_scratch_dir(),
@@ -232,3 +258,27 @@ def locate_dataset_root_on_cluster(
             f"cluster, please make an issue at {github_issue_url} to add it to the registry."
         )
     return str(dataset_root)
+
+
+def _get_key_to_use_for_indexing(potential_classes: dict[_T, Any], key: _T) -> _T:
+    if key in potential_classes:
+        return key
+    # Return the entry with the same name, if `some_type` is a subclass of it.
+    parent_classes_with_same_name = [
+        cls for cls in potential_classes if cls.__name__ == key.__name__ and issubclass(key, cls)
+    ]
+    if len(parent_classes_with_same_name) == 0:
+        raise KeyError(key)
+    elif len(parent_classes_with_same_name) > 1:
+        raise ValueError(
+            f"Multiple parent classes with the same name: {parent_classes_with_same_name}"
+        )
+    key = parent_classes_with_same_name[0]
+    return key
+
+
+def _getitem_with_subclasscheck(potential_classes: dict[_T, V], key: _T) -> V:
+    if key in potential_classes:
+        return potential_classes[key]
+    key = _get_key_to_use_for_indexing(potential_classes, key=key)
+    return potential_classes[key]

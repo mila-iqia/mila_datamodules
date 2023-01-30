@@ -13,7 +13,7 @@ from typing_extensions import Concatenate, ParamSpec
 
 from mila_datamodules.clusters import CURRENT_CLUSTER, get_scratch_dir, get_slurm_tmpdir
 from mila_datamodules.registry import (
-    dataset_files,
+    _dataset_files,
     is_stored_on_cluster,
     locate_dataset_root_on_cluster,
     too_large_for_slurm_tmpdir,
@@ -80,10 +80,10 @@ def adapted_constructor(
     """Creates a constructor for the given dataset class that does the required preprocessing steps
     before instantiating the dataset."""
 
-    if dataset_cls not in dataset_files:
-        for dataset in dataset_files:
+    if dataset_cls not in _dataset_files:
+        for dataset in _dataset_files:
             if dataset.__name__ == dataset_cls.__name__:
-                files = dataset_files[dataset]
+                files = _dataset_files[dataset]
                 break
         else:
             github_issue_url = (
@@ -98,7 +98,7 @@ def adapted_constructor(
             )
         required_files = files
     else:
-        required_files = dataset_files[dataset_cls]
+        required_files = _dataset_files[dataset_cls]
 
     @functools.wraps(dataset_cls.__init__)
     def _custom_init(self, *args: P.args, **kwargs: P.kwargs):

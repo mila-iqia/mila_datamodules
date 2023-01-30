@@ -14,12 +14,12 @@ from torch.utils.data import Dataset
 from typing_extensions import ParamSpec
 
 from mila_datamodules.clusters import Cluster
+from mila_datamodules.testutils import param_only_runs_on_cluster
 from mila_datamodules.utils import all_files_exist
 
-from .conftest import only_runs_on_cluster
 from .registry import (
+    _dataset_files,
     dataset_archives_per_cluster,
-    dataset_files,
     dataset_roots_per_cluster,
     is_stored_on_cluster,
     locate_dataset_root_on_cluster,
@@ -61,7 +61,7 @@ def check_dataset_creation_works(
 @pytest.mark.parametrize(
     "cluster,dataset",
     [
-        pytest.param(cluster, dataset_cls, marks=[only_runs_on_cluster(cluster)])
+        param_only_runs_on_cluster(cluster, dataset_cls, cluster=cluster)
         for cluster, dataset_cls_to_root in dataset_roots_per_cluster.items()
         for dataset_cls in dataset_cls_to_root
     ],
@@ -80,15 +80,15 @@ def test_dataset_files_in_registry_are_actually_there(cluster: Cluster, dataset:
     # NOTE: These are the files which would get copied if we wanted to copy the dataset to the fast
     # directory.
 
-    assert dataset in dataset_files
-    required_files = dataset_files[dataset]
+    assert dataset in _dataset_files
+    required_files = _dataset_files[dataset]
     assert all_files_exist(required_files, root)
 
 
 @pytest.mark.parametrize(
     "cluster,dataset",
     [
-        pytest.param(cluster, dataset_cls, marks=[only_runs_on_cluster(cluster)])
+        param_only_runs_on_cluster(cluster, dataset_cls, cluster=cluster)
         for cluster, dataset_cls_to_archives in dataset_archives_per_cluster.items()
         for dataset_cls in dataset_cls_to_archives
     ],
