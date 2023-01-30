@@ -105,6 +105,7 @@ def adapted_constructor(
 
     if not is_stored_on_cluster(dataset_cls):
         return dataset_cls.__init__
+
     try:
         required_files = files_required_for(dataset_cls)  # type: ignore
         # required_archives = archives_required_for(dataset_cls)  # type: ignore
