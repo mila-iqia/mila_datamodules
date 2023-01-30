@@ -16,7 +16,7 @@ class Cluster(enum.Enum):
     Beluga = "beluga"
     Graham = "graham"
     Narval = "narval"
-    _local = "_local"
+    _mock = "_mock"
     """ TODO: IDEA: Fake SLURM cluster for local debugging.
     Uses the values of the `FAKE_SCRATCH` and `FAKE_SLURM_TMPDIR` environment variables.
     """
@@ -26,12 +26,13 @@ class Cluster(enum.Enum):
         """Returns the current cluster when called on a SLURM cluster and `None` otherwise."""
         from mila_datamodules.clusters.utils import (
             current_cluster_name,
+            on_fake_slurm_cluster,
             on_slurm_cluster,
         )
 
-        if not on_slurm_cluster():
-            if "FAKE_SCRATCH" in os.environ and "FAKE_SLURM_TMPDIR" in os.environ:
-                return cls._local
+        if on_fake_slurm_cluster():
+            return cls._mock
+        elif not on_slurm_cluster():
             return None
         cluster_name = current_cluster_name()
         if cluster_name is None:

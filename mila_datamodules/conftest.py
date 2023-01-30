@@ -2,72 +2,31 @@ from __future__ import annotations
 
 import os
 import shutil
-from typing import Sequence
 
 import pytest
 from filelock import FileLock
-from torch.utils.data import Dataset
 
 from mila_datamodules.clusters import CURRENT_CLUSTER
 from mila_datamodules.clusters.cluster import Cluster
-from mila_datamodules.clusters.utils import get_slurm_tmpdir, on_slurm_cluster
+from mila_datamodules.clusters.utils import get_slurm_tmpdir
 from mila_datamodules.registry import dataset_roots_per_cluster, is_stored_on_cluster
 
 
 @pytest.fixture(scope="session", autouse=True)
 def patch_dataset_for_local_cluster():
-    # TODO: @lebrice: This is super hard-coded just for my machine.
-    if CURRENT_CLUSTER is not Cluster._local:
+    if CURRENT_CLUSTER is not Cluster._mock:
         return
 
     all_datasets: set[type] = set(
         sum([list(d.keys()) for d in dataset_roots_per_cluster.values()], [])
     )
     # Add the dataset in the `_local` cluster if it is stored in the FAKE_SCRATCH directory.
-    dataset_roots_per_cluster[Cluster._local] = {
+    dataset_roots_per_cluster[Cluster._mock] = {
         dataset: os.environ["FAKE_SCRATCH"]
         for dataset in all_datasets
-        if is_stored_on_cluster(dataset_cls=dataset, cluster=Cluster._local)
+        if is_stored_on_cluster(dataset_cls=dataset, cluster=Cluster._mock)
     }
-    dataset_roots_per_cluster[Cluster._local] = {}
-
-
-def skip_if_not_stored_on_current_cluster(dataset: type[Dataset]):
-    return pytest.mark.skipif(
-        not is_stored_on_cluster(dataset, CURRENT_CLUSTER),
-        reason=f"Dataset isn't stored on {CURRENT_CLUSTER} cluster",
-    )
-
-
-# TODO: Remove this, or make it clear that it's actually partially running the test (uses `xfail`).
-
-
-def xfail_if_not_stored_on_current_cluster(dataset: type[Dataset]):
-    return pytest.mark.xfail(
-        condition=not is_stored_on_cluster(dataset, CURRENT_CLUSTER),
-        reason=f"Dataset isn't stored on {CURRENT_CLUSTER} cluster",
-    )
-
-
-def only_runs_on_cluster(cluster: Cluster | Sequence[Cluster]):
-    """When `cluster` is None, only runs when we're on any SLURM cluster.
-
-    When `cluster` is set, then only runs when we're on that specific cluster.
-    """
-    clusters = [cluster] if isinstance(cluster, Cluster) else list(cluster)
-    reason = f"Test only runs on {'|'.join(c.name for c in clusters)}"
-    return pytest.mark.skipif(
-        CURRENT_CLUSTER not in clusters,
-        reason=reason,
-    )
-
-
-def needs_slurm_cluster():
-    """When `cluster` is None, only runs when we're on any SLURM cluster.
-
-    When `cluster` is set, then only runs when we're on that specific cluster.
-    """
-    return pytest.mark.skipif(not on_slurm_cluster(), reason="Test only runs on SLURM clusters")
+    dataset_roots_per_cluster[Cluster._mock] = {}
 
 
 @pytest.fixture(autouse=True, scope="session")
@@ -88,3 +47,28 @@ def clear_slurm_tmpdir():
                 os.system(f"chmod --recursive +rwx {slurm_tmpdir}/data")
                 shutil.rmtree(slurm_tmpdir / "data")
     yield
+
+
+@pytest.fixture(autouse=True, scope="session")
+def scratch_data_dir(tmp_path_factory: pytest.TempPathFactory):
+    """Creates a fake $SCRATCH directory in SLURM_TMPDIR.
+
+    This is used so the tests don't actually use the real $SCRATCH directory.
+    """
+    data_dir_when_not_on_cluster = tmp_path_factory.mktemp("scratch_data_dir")
+    fake_scratch_data_dir = get_slurm_tmpdir(default=data_dir_when_not_on_cluster) / "fake_scratch"
+
+    if fake_scratch_data_dir.exists():
+        # Make sure it's completely empty.
+        shutil.rmtree(fake_scratch_data_dir)
+    original_scratch = os.environ.get("SCRATCH")
+    # NOTE: exist_ok here because we might be parallelizing the tests with multiple workers.
+    fake_scratch_data_dir.mkdir(parents=False, exist_ok=True)
+
+    os.environ["SCRATCH"] = str(fake_scratch_data_dir)
+    if CURRENT_CLUSTER:
+        assert CURRENT_CLUSTER.scratch == fake_scratch_data_dir
+    yield
+
+    if original_scratch is not None:
+        os.environ["SCRACTH"] = original_scratch

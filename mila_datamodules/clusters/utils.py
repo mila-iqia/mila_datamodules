@@ -19,10 +19,22 @@ T = TypeVar("T")
 logger = get_logger(__name__)
 
 
-@functools.cache
 def on_slurm_cluster() -> bool:
+    return on_real_slurm_cluster() or on_fake_slurm_cluster()
+
+
+@functools.cache
+def on_real_slurm_cluster() -> bool:
     """Return `True` if the current process is running on a SLURM cluster."""
     return which("srun") is not None
+
+
+def on_fake_slurm_cluster() -> bool:
+    return (
+        not on_real_slurm_cluster()
+        and "FAKE_SCRATCH" in os.environ
+        and "FAKE_SLURM_TMPDIR" in os.environ
+    )
 
 
 def current_cluster_name() -> str | None:
