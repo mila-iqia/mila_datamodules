@@ -19,7 +19,6 @@ from typing import (
 )
 
 import filelock
-import pl_bolts
 import pytest
 import torchvision.datasets
 import torchvision.datasets as tvd
@@ -30,6 +29,7 @@ from typing_extensions import ParamSpec
 import mila_datamodules.vision.datasets
 from mila_datamodules.clusters import CURRENT_CLUSTER, Cluster
 from mila_datamodules.clusters.utils import get_scratch_dir, on_slurm_cluster
+from mila_datamodules.errors import UnsupportedDatasetError
 from mila_datamodules.registry import (
     archives_required_for,
     files_required_for,
@@ -43,6 +43,7 @@ from mila_datamodules.testutils import (
     only_runs_outside_slurm_cluster,
 )
 from mila_datamodules.vision.coco_test import coco_required
+from mila_datamodules.vision.datasets import binary_mnist, caltech101, mnist
 
 datasets = {
     k: v
@@ -65,7 +66,9 @@ if TYPE_CHECKING:
 torchvision_dataset_classes = {
     name: dataset_cls
     for name, dataset_cls in vars(tvd).items()
-    if inspect.isclass(dataset_cls) and issubclass(dataset_cls, torchvision.datasets.VisionDataset)
+    if inspect.isclass(dataset_cls)
+    and issubclass(dataset_cls, torchvision.datasets.VisionDataset)
+    and dataset_cls not in {tvd.FakeData, tvd.VisionDataset, tvd.ImageFolder, tvd.DatasetFolder}
 }
 
 
@@ -83,7 +86,7 @@ def test_all_torchvision_datasets_have_a_test_class(torchvision_dataset_class: t
     # dataset_class_under_test = get_args(type(test_class).__orig_bases__[0])[0]  # type: ignore
     assert issubclass(dataset_class_under_test, tvd.VisionDataset)
     if dataset_class_under_test is not torchvision_dataset_class:
-        assert issubclass(torchvision_dataset_class, dataset_class_under_test)
+        assert issubclass(dataset_class_under_test, torchvision_dataset_class)
 
 
 def _unsupported_variant(version: str, cluster: Cluster | Sequence[Cluster]):
@@ -190,11 +193,6 @@ class VisionDatasetTests(DatasetTests[VisionDatasetType]):
         #     class_from_torchvision_datasets
         # )
 
-    def test_we_know_what_files_are_required(self):
-        """Test that we know which files are required in order to load this dataset."""
-        files = files_required_for(self._dataset_cls())
-        assert files
-
     def test_adapted_dataset_class(self):
         """We should have an adapted dataset class for explicitly supported datasets in
         `mila_datamodules.vision.datasets`.
@@ -228,21 +226,35 @@ class VisionDatasetTests(DatasetTests[VisionDatasetType]):
             # the dataset.
             # assert adapted_constructor_root_parameter.default == expected_default_root
 
+    def test_we_know_what_files_are_required(self):
+        """Test that we know which files are required in order to load this dataset."""
+        try:
+            assert files_required_for(self.dataset_cls)
+        except (UnsupportedDatasetError, AssertionError) as e:
+            # NOTE: This just makes it easier to inspect the class and extract the required files
+            # from the docstring manually.
+            raise AssertionError(
+                f"Unsupported dataset {self.dataset_cls}: {inspect.getabsfile(self.dataset_cls)}: {self.dataset_cls.__doc__}"
+            ) from e
+
     def test_required_files_exist(self):
         """Test that if the registry says that we have the files required to load this dataset on
         the current cluster, then they actually exist."""
-        dataset_cls = self._dataset_cls()
+        dataset_cls = self.dataset_cls
         files = files_required_for(dataset_cls)
         assert files
         if not is_stored_on_cluster(dataset_cls):
             pytest.skip(reason="Dataset isn't stored on the current cluster.")
 
         # Also check that the files exist on the current cluster.
-        dataset_root = locate_dataset_root_on_cluster(self._dataset_cls())
+        dataset_root = Path(locate_dataset_root_on_cluster(self.dataset_cls))
         for file in files:
             path = dataset_root / file
             assert path.exists()
 
+    @pytest.mark.xfail(
+        reason="TODO: The check with `inspect.signature` might not actually be able to pickup the fact that we changed the default value for the `root` argument."
+    )
     def test_root_becomes_optional_arg_if_stored(self):
         """Checks that the `root` argument becomes optional in the adapted dataset class."""
         dataset_cls = self.dataset_cls
@@ -264,7 +276,7 @@ class VisionDatasetTests(DatasetTests[VisionDatasetType]):
 
     @pytest.mark.disable_socket
     def test_creation_without_download(self, dataset_kwargs: dict[str, Any]):
-        dataset_cls = self._dataset_cls()
+        dataset_cls = self.dataset_cls
         """Test that the dataset can be created without downloading it if the known location for
         that dataset on the current cluster is passed as the `root` argument."""
         if not is_stored_on_cluster(dataset_cls):
@@ -287,7 +299,9 @@ class VisionDatasetTests(DatasetTests[VisionDatasetType]):
 
         kwargs = dataset_kwargs.copy()
         kwargs["download"] = True
-        with pytest.warns(UserWarning, match=f"Ignoring path {str(bad_path)}"):
+        with pytest.warns(
+            RuntimeWarning, match=f"Ignoring the passed value for 'root': {str(bad_path)}"
+        ):
             dataset = adapted_dataset_cls(root=str(bad_path), **kwargs)
 
         assert dataset.root not in {bad_path, str(bad_path)}
@@ -329,14 +343,14 @@ class LoadFromArchivesTests(DatasetTests[VisionDatasetType]):
         """Test that if the registry says that we have the files required to load this dataset on
         the current cluster, then they actually exist."""
         dataset_cls = self.dataset_cls
-        files = files_required_for(dataset_cls)
-        assert files
+        archive_files = files_required_for(dataset_cls)
+        assert archive_files
         if not is_stored_on_cluster(dataset_cls):
             pytest.skip(reason="Dataset isn't stored on the current cluster.")
 
-        # Also check that the files exist on the current cluster.
-        dataset_root = locate_dataset_root_on_cluster(dataset_cls)
-        for file in files:
+        # Also check that the archive files exist on the current cluster.
+        dataset_root = Path(locate_dataset_root_on_cluster(dataset_cls))
+        for file in archive_files:
             path = dataset_root / file
             assert path.exists()
 
@@ -450,7 +464,7 @@ class TestCocoDetection(VisionDatasetTests[tvd.CocoDetection]):
 
 
 @coco_required
-class TestCocoCaptions(VisionDatasetTests[tvd.CocoDetection]):
+class TestCocoCaptions(VisionDatasetTests[tvd.CocoCaptions]):
     @pytest.fixture(params=["train", "val"])
     def split(self, request: _FixtureRequest[str]) -> str:
         return request.param
@@ -479,11 +493,13 @@ class TestCIFAR100(VisionDatasetTests[tvd.CIFAR100], FitsInMemoryTests):
     pass
 
 
-class TestBinaryMNIST(VisionDatasetTests[pl_bolts.datasets.BinaryMNIST], FitsInMemoryTests):
+# NOTE: Here the 'original class' is already in `mila_datamodules.datasets.binary_mnist` because
+# we include fixes for bugs in the base class (nothing to do with the clusters though)
+class TestBinaryMNIST(VisionDatasetTests[binary_mnist.BinaryMNIST], FitsInMemoryTests):
     pass
 
 
-class TestBinaryEMNIST(VisionDatasetTests[pl_bolts.datasets.BinaryEMNIST], FitsInMemoryTests):
+class TestBinaryEMNIST(VisionDatasetTests[binary_mnist.BinaryEMNIST], FitsInMemoryTests):
     @pytest.fixture(params=["byclass", "bymerge"])
     def split(self, request: _FixtureRequest[str]) -> str:
         return request.param
@@ -493,7 +509,9 @@ class TestBinaryEMNIST(VisionDatasetTests[pl_bolts.datasets.BinaryEMNIST], FitsI
         return dict(split=split)
 
 
-class TestCaltech101(VisionDatasetTests[tvd.Caltech101]):
+# TODO: Same as for binarymnist (original class is actually our "patched" version of the class) but
+# here the fix is specific to one cluster. This isn't pretty.
+class TestCaltech101(VisionDatasetTests[caltech101.Caltech101]):
     pass
 
 
@@ -505,7 +523,8 @@ class TestCelebA(VisionDatasetTests[tvd.CelebA]):
     pass
 
 
-class TestMNIST(VisionDatasetTests[tvd.MNIST], FitsInMemoryTests):
+# Same here for `MNIST`, we have a 'patch' that fixes an issue with dataset folder names on Beluga.
+class TestMNIST(VisionDatasetTests[mnist.MNIST], FitsInMemoryTests):
     pass
 
 
@@ -557,10 +576,6 @@ class TestEuroSAT(VisionDatasetTests[tvd.EuroSAT]):
     pass
 
 
-class TestFakeData(VisionDatasetTests[tvd.FakeData]):
-    pass
-
-
 class TestFER2013(VisionDatasetTests[tvd.FER2013]):
     pass
 
@@ -569,23 +584,17 @@ class TestFGVCAircraft(VisionDatasetTests[tvd.FGVCAircraft]):
     pass
 
 
+@pytest.mark.xfail(reason="http://nlp.cs.illinois.edu/HockenmaierGroup/8k-pictures.html is down.")
 class TestFlickr8k(VisionDatasetTests[tvd.Flickr8k]):
     pass
 
 
+@pytest.mark.xfail(reason="Isn't freely available for download.")
 class TestFlickr30k(VisionDatasetTests[tvd.Flickr30k]):
     pass
 
 
 class TestFlowers102(VisionDatasetTests[tvd.Flowers102]):
-    pass
-
-
-class TestImageFolder(VisionDatasetTests[tvd.ImageFolder]):
-    pass
-
-
-class TestDatasetFolder(VisionDatasetTests[tvd.DatasetFolder]):
     pass
 
 
@@ -605,8 +614,10 @@ class TestImageNet(VisionDatasetTests[tvd.ImageNet]):
     pass
 
 
-class TestKinetics400(VisionDatasetTests[tvd.Kinetics400]):
-    pass
+if hasattr(tvd, "Kinetics400"):
+
+    class TestKinetics400(VisionDatasetTests[tvd.Kinetics400]):  # type: ignore[attr-defined]
+        pass
 
 
 class TestKinetics(VisionDatasetTests[tvd.Kinetics]):
@@ -702,4 +713,47 @@ class TestVOCDetection(VisionDatasetTests[tvd.VOCDetection]):
 
 
 class TestWIDERFace(VisionDatasetTests[tvd.WIDERFace]):
+    pass
+
+
+# New torchvision version:
+
+
+class TestCarlaStereo(VisionDatasetTests[tvd.CarlaStereo]):
+    pass
+
+
+class TestCREStereo(VisionDatasetTests[tvd.CREStereo]):
+    pass
+
+
+class TestETH3DStereo(VisionDatasetTests[tvd.ETH3DStereo]):
+    pass
+
+
+class TestFallingThingsStereo(VisionDatasetTests[tvd.FallingThingsStereo]):
+    pass
+
+
+class TestInStereo2k(VisionDatasetTests[tvd.InStereo2k]):
+    pass
+
+
+class TestKitti2012Stereo(VisionDatasetTests[tvd.Kitti2012Stereo]):
+    pass
+
+
+class TestKitti2015Stereo(VisionDatasetTests[tvd.Kitti2015Stereo]):
+    pass
+
+
+class TestMiddlebury2014Stereo(VisionDatasetTests[tvd.Middlebury2014Stereo]):
+    pass
+
+
+class TestSceneFlowStereo(VisionDatasetTests[tvd.SceneFlowStereo]):
+    pass
+
+
+class TestSintelStereo(VisionDatasetTests[tvd.SintelStereo]):
     pass

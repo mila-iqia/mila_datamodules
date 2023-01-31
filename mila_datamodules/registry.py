@@ -1,6 +1,7 @@
 """A registry of where each dataset is stored on each cluster."""
 from __future__ import annotations
 
+import textwrap
 from pathlib import Path
 from typing import Any, Callable, TypeVar
 
@@ -48,6 +49,43 @@ _dataset_files = {
     pl_bolts.datasets.BinaryMNIST: ["MNIST"],
     pl_bolts.datasets.BinaryEMNIST: ["EMNIST"],
     tvd.FlyingChairs: ["FlyingChairs/data", "FlyingChairs/FlyingChairs_train_val.txt"],
+    tvd.CLEVRClassification: ["clevr"],
+    tvd.Country211: ["country211"],
+    tvd.DTD: ["dtd/images", "dtd/labels", "dtd/imdb"],
+    tvd.EuroSAT: ["eurosat"],
+    tvd.FER2013: ["fer2013"],
+    tvd.FGVCAircraft: ["fgvc-aircraft-2013b"],
+    tvd.CarlaStereo: ["carla-highres"],
+    tvd.Flickr8k: ["flickr8k"],
+    tvd.Food101: ["food-101/images", "food-101/meta"],
+    tvd.GTSRB: ["gtsrb"],
+    # TODO: Double-check this one.
+    tvd.HMDB51: ["hmdb51"],
+    # TODO: Not sure if we want to actually include these here: They are datasets for which we
+    # should have archives, and that generate these ugly generic names on extraction.
+    tvd.ImageNet: ["train", "val"],
+    tvd.Kinetics: ["split"],
+    tvd.Kitti: ["Kitti/raw/training", "Kitti/raw/testing"],
+    # TODO: Double-check this one.
+    tvd.Kitti2012Stereo: ["Kitti2012/testing", "Kitti2012/training"],
+    tvd.KittiFlow: ["KittiFlow/testing", "KittiFlow/training"],
+    tvd.LFWPairs: ["lfw-py"],
+    tvd.LFWPeople: ["lfw-py"],
+    tvd.LSUN: ["*_lsun"],  # TODO: Double-check this one.
+    tvd.LSUNClass: ["*_lsun"],  # TODO: Double-check this one.
+    tvd.KMNIST: ["KMNIST"],
+    tvd.QMNIST: ["QMNIST"],
+    tvd.Omniglot: ["omniglot-py"],
+    tvd.OxfordIIITPet: ["oxford-iiit-pet"],
+    tvd.PCAM: ["pcam"],
+    tvd.RenderedSST2: ["rendered-sst2"],
+    tvd.SBDataset: ["img", "cls"],
+    tvd.SBU: ["SBUCaptionedPhotoDataset.tar.gz"],
+    # note: disagrees with the docstring, but seems correct based on the code.
+    tvd.SEMEION: ["semeion.data"],
+    tvd.SUN397: ["SUN397"],
+    # TODO: Not sure what this downloads. Seems to be just ImageFolder with the root, so unclear what files are required in this case..
+    tvd.UCF101: ["ucf101"],
 }
 """A map of the folder/files associated with each dataset type, relative to the `root_dir`. This is
 roughly the list of files/folders that would be downloaded when creating the dataset with
@@ -116,10 +154,20 @@ dataset_archives_per_cluster: dict[Cluster, dict[type, list[str]]] = {
             "/network/datasets/places365/256/train_256_places365standard.tar",
             "/network/datasets/places365/256/val_256.tar",
             "/network/datasets/places365/256/test_256.tar",
-        ]
+        ],
+        tvd.ImageNet: [
+            "/network/datasets/imagenet/ILSVRC2012_img_train.tar",
+            "/network/datasets/imagenet/ILSVRC2012_img_val.tar",
+            "/network/datasets/imagenet/ILSVRC2012_devkit_t12.tar.gz",
+        ],
     },
     Cluster.Beluga: {
-        tvd.CIFAR100: ["/project/rpp-bengioy/data/curated/cifar100/cifar-100-python.tar.gz"]
+        tvd.CIFAR100: ["/project/rpp-bengioy/data/curated/cifar100/cifar-100-python.tar.gz"],
+        tvd.ImageNet: [
+            "/project/rpp-bengioy/data/curated/imagenet/ILSVRC2012_img_train.tar",
+            "/project/rpp-bengioy/data/curated/imagenet/ILSVRC2012_img_val.tar",
+            "/project/rpp-bengioy/data/curated/imagenet/ILSVRC2012_devkit_t12.tar.gz",
+        ],
     },
 }
 """For each cluster, for each type of dataset, the list of archives needed to load the dataset."""
@@ -146,15 +194,56 @@ def is_supported_dataset(dataset_type: type) -> bool:
         return False
 
 
-def files_required_for(dataset_type: type) -> list[Path]:
+def files_required_for(dataset_type: type) -> list[str]:
     # TODO: Would be nice if this actually returned 'live' Path objects for the current cluster!
     try:
-        files = _getitem_with_subclasscheck(_dataset_files, key=dataset_type)
-        return [Path(file) for file in files]
+        return _getitem_with_subclasscheck(_dataset_files, key=dataset_type)
     except KeyError as exc:
-        raise UnsupportedDatasetError(
-            f"Don't know what files are required for dataset {dataset_type}!\n"
-        ) from exc
+        pass
+
+    error = UnsupportedDatasetError(
+        dataset=dataset_type,
+    )
+    # FIXME: Hacky AF, but parsing the docstring of the class to extract the 'structure' portion.
+    doc = dataset_type.__doc__
+    if not doc:
+        raise error
+
+    doc_lines = doc.splitlines()
+    structure_begin_line_index = [
+        line_index for line_index, line in enumerate(doc_lines) if line.endswith("::")
+    ]
+    if len(structure_begin_line_index) != 1:
+        raise error
+    structure_begin_line_index = structure_begin_line_index[0] + 1
+
+    if doc_lines[structure_begin_line_index] == "":
+        structure_begin_line_index += 1
+
+    structure_end_line_index = [
+        line_index for line_index, line in enumerate(doc_lines) if line.strip().startswith("Args:")
+    ]
+
+    if len(structure_end_line_index) != 1:
+        raise error
+    structure_end_line_index = structure_end_line_index[0]
+
+    structure_block = textwrap.dedent(
+        "\n".join(doc_lines[structure_begin_line_index:structure_end_line_index])
+    )
+    if structure_block.startswith("root"):
+        structure_begin_line_index += 1
+        structure_block = textwrap.dedent(
+            "\n".join(doc_lines[structure_begin_line_index:structure_end_line_index])
+        )
+
+    if not structure_block:
+        raise error
+    top_level_folders = [
+        line for line in structure_block.splitlines() if line and not line[0].isspace()
+    ]
+
+    return top_level_folders
 
 
 def archives_required_for(

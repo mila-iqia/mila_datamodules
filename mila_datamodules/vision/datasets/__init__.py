@@ -10,7 +10,6 @@ NOTE: These wrappers don't do anything when this is ran outside a SLURM cluster.
 """
 from __future__ import annotations
 
-import pl_bolts.datasets
 import torchvision.datasets
 
 from .adapted_datasets import adapt_dataset
@@ -18,6 +17,7 @@ from .binary_mnist import BinaryEMNIST, BinaryMNIST
 from .caltech101 import Caltech101
 from .mnist import MNIST
 
+# NOTE: These here use "Patched" versions of the datasets.
 MNIST = adapt_dataset(MNIST)
 CIFAR10 = adapt_dataset(torchvision.datasets.CIFAR10)
 CIFAR100 = adapt_dataset(torchvision.datasets.CIFAR100)

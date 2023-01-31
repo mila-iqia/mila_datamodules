@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import functools
 import inspect
+import warnings
 from logging import getLogger as get_logger
 from pathlib import Path
 from typing import Callable, TypeVar, cast
@@ -184,6 +185,15 @@ def adapted_constructor(
 
         if new_root is not None:
             new_root = str(new_root)
+
+        if original_root is not None and new_root != original_root:
+            warnings.warn(
+                RuntimeWarning(
+                    f"Ignoring the passed value for 'root': {original_root}, using {new_root} "
+                    f"instead."
+                )
+            )
+
         bound_args.arguments["root"] = new_root or original_root
 
         args = bound_args.args  # type: ignore
