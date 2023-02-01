@@ -133,7 +133,10 @@ def setup_slurm_env_variables(vars_to_ignore: Sequence[str] = ()) -> SlurmEnvVar
         # Extract them from `os.environ` using the BaseSettings class of pydantic.
         return SlurmEnvVariables()
 
-    temp_dir = tempfile.gettempdir()
+    # TODO: Make sure the location for this file is correct. Also make sure this works with
+    # multiple workers, as it did before when it was using the node-wide `tempfile.gettempdir()`
+    # instead of the user-local `tempfile.mkdtemp()`.
+    temp_dir = tempfile.mkdtemp(prefix="slurm_env_vars_")
     if "SLURM_JOBID" in os.environ:
         # Only the SLURM_JOBID is set when running this in the VsCode console window created with
         # `mila code`, for example.

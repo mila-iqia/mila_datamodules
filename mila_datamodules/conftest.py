@@ -15,6 +15,7 @@ from mila_datamodules.registry import dataset_roots_per_cluster, is_stored_on_cl
 @pytest.fixture(scope="session", autouse=True)
 def patch_dataset_for_local_cluster():
     if CURRENT_CLUSTER is not Cluster._mock:
+        yield
         return
 
     all_datasets: set[type] = set(

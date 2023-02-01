@@ -44,6 +44,7 @@ from mila_datamodules.testutils import (
 )
 from mila_datamodules.vision.coco_test import coco_required
 from mila_datamodules.vision.datasets import binary_mnist, caltech101, mnist
+from mila_datamodules.vision.datasets.adapted_datasets import AdaptedDataset
 
 datasets = {
     k: v
@@ -76,7 +77,11 @@ torchvision_dataset_classes = {
 def test_all_torchvision_datasets_have_a_test_class(torchvision_dataset_class: type[Dataset]):
     dataset_name = torchvision_dataset_class.__name__
     # Check that there is a subclass of the base test class for this dataset.
-    test_classes = {v.__qualname__: v for v in VisionDatasetTests.__subclasses__()}
+    test_classes = {
+        k: v
+        for k, v in globals().items()
+        if inspect.isclass(v) and issubclass(v, VisionDatasetTests)
+    }
     assert f"Test{dataset_name}" in test_classes, f"Missing test class for {dataset_name}."
     test_class = globals()[f"Test{dataset_name}"]
     assert issubclass(test_class, VisionDatasetTests)
@@ -175,7 +180,9 @@ class VisionDatasetTests(DatasetTests[VisionDatasetType]):
     _bound: ClassVar[type[Dataset]] = tvd.VisionDataset
 
     @property
-    def adapted_dataset_cls(self) -> type[VisionDatasetType]:
+    def adapted_dataset_cls(
+        self,
+    ) -> type[VisionDatasetType]:
         """The adapted dataset class from mila_datamodules.vision.datasets."""
         # TODO: Perhaps we could add some skips / xfails here if we can tell that the dataset isn't
         # supported yet, or isn't stored on the current cluster?
@@ -274,7 +281,9 @@ class VisionDatasetTests(DatasetTests[VisionDatasetType]):
             pytest.skip(reason="Dataset isn't stored on the current cluster.")
 
         # Also check that the files exist on the current cluster.
-        dataset_root = Path(locate_dataset_root_on_cluster(self.dataset_cls))
+        dataset_root = locate_dataset_root_on_cluster(self.dataset_cls)
+        assert dataset_root is not None
+        dataset_root = Path(dataset_root)
         for file in files:
             path = dataset_root / file
             assert path.exists()
@@ -301,36 +310,80 @@ class VisionDatasetTests(DatasetTests[VisionDatasetType]):
                 == default_constructor_root_parameter.default
             )
 
+    def _assert_downloaded_if_required_else_skip(self):
+        """Asserts that the dataset is present on the current cluster if it is required.
+
+        Otherwise skips the current test.
+        """
+        cluster = Cluster.current()
+        if not is_stored_on_cluster(self.dataset_cls, cluster=cluster):
+            if self.required_on_all_clusters:
+                pytest.fail(
+                    f"Dataset {self.dataset_cls.__name__} is required and is not stored on {cluster} cluster!"
+                )
+            pytest.skip(f"Dataset isn't stored on {cluster} cluster")
+
     @pytest.mark.disable_socket
-    def test_can_create_dataset_without_download(self, dataset_kwargs: dict[str, Any]):
+    def test_can_read_dataset_from_root_dir(self, dataset_kwargs: dict[str, Any]):
         """Test that the dataset can be created without downloading it the known location for that
-        dataset on the current cluster is passed as the `root` argument."""
+        dataset on the current cluster is passed as the `root` argument.
+
+        NOTE: This test isn't applicable to datasets like ImageNet!
+        """
         dataset_cls = self.dataset_cls
-        if not is_stored_on_cluster(dataset_cls):
-            pytest.skip(f"Dataset isn't stored on {CURRENT_CLUSTER} cluster")
+        self._assert_downloaded_if_required_else_skip()
+
+        dataset_location = locate_dataset_root_on_cluster(dataset_cls)
 
         kwargs = dataset_kwargs.copy()
-        kwargs.setdefault("root", locate_dataset_root_on_cluster(dataset_cls))
+        kwargs.setdefault("root", dataset_location)
         check_dataset_creation_works_without_download(dataset_cls, **kwargs)
 
+    @pytest.mark.timeout(10)
     @pytest.mark.disable_socket
-    def test_we_can_avoid_download(self, tmp_path: Path, dataset_kwargs: dict[str, Any]):
-        """TODO: Clarify exactly what we want to test here."""
+    def test_doesnt_download_even_if_user_asks(
+        self, tmp_path: Path, dataset_kwargs: dict[str, Any]
+    ):
+        """Test that even if `download=True` is passed to the constructor, the dataset is not
+        downloaded.
+
+        TODO: It might be a good idea to let the user override this behaviour in some cases. For
+        example, if there is some issue with the stored dataset files on the cluster, or a new
+        version of the dataset was published. Perhaps by setting some global configuration variable
+        the user could say "No, really do download this please?" Or a new argument to one of the
+        functions? or some context manager?
+        """
         dataset_cls = self.dataset_cls
         adapted_dataset_cls = self.adapted_dataset_cls
-        # IDEA: Move this to the `adapted_dataset_cls` property?
-        if not is_stored_on_cluster(dataset_cls):
-            pytest.skip(reason="Can only avoid a download when the dataset isn't stored.")
+        assert issubclass(adapted_dataset_cls, AdaptedDataset)
+
+        self._assert_downloaded_if_required_else_skip()
+
+        if "download" not in inspect.signature(dataset_cls).parameters:
+            pytest.skip(reason="Can't donload dataset (no download constructor argument).")
+        kwargs = dataset_kwargs.copy()
+        kwargs["download"] = True
+
         bad_path = tmp_path / "bad_path"
         bad_path.mkdir()
 
-        kwargs = dataset_kwargs.copy()
-        kwargs["download"] = True
+        dataset_location = locate_dataset_root_on_cluster(dataset_cls)
+
         with pytest.warns(
-            RuntimeWarning, match=f"Ignoring the passed value for 'root': {str(bad_path)}"
+            RuntimeWarning, match=f"Ignoring passed 'root' argument: {str(bad_path)}"
         ):
             dataset = adapted_dataset_cls(root=str(bad_path), **kwargs)
+        assert dataset.root not in {bad_path, str(bad_path)}
+        assert list(bad_path.iterdir()) == []
 
+        with pytest.warns(
+            UserWarning,
+            match=(
+                f"Not downloading the {self.dataset_name} dataset, since it is "
+                f"already stored on the cluster at {dataset_location}"
+            ),
+        ):
+            dataset = adapted_dataset_cls(root=str(bad_path), **kwargs)
         assert dataset.root not in {bad_path, str(bad_path)}
         assert list(bad_path.iterdir()) == []
 

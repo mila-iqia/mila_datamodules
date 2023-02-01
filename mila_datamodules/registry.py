@@ -200,18 +200,38 @@ def is_supported_dataset(dataset_type: type) -> bool:
         return False
 
 
-def files_to_copy(dataset_type: type, cluster: Cluster) -> list[Path]:
+def files_to_copy(dataset_class: type, cluster: Cluster) -> list[Path] | None:
     """Returns the files that should be copied (or symlinked) to SLURM_TMPDIR to load this dataset.
 
     TODO: Should return 'live' paths, and prioritize using archives when available on the current
     cluster.
     """
-    archives = _archives_required_for(dataset_type=dataset_type, cluster=cluster)
-    # TODO: What to do when a dataset is a mix of archives and files?
+    returned_files: list[Path] = []
+
+    archives = _archives_required_for(dataset_class=dataset_class, cluster=cluster)
     if archives:
+        returned_files.extend(archives)
+
+    # TODO: rework the _archives_required and files_required dicts. It should just give back, for
+    # a given cluster and dataset, what files (archives preferably) should be copied / symlinked
+    # to SLURM_TMPDIR to create the dataset.
+
+    root = locate_dataset_root_on_cluster(dataset_cls=dataset_class, cluster=cluster)
+    if root is None:
         return archives
-    files = files_required_for(dataset_type=dataset_type)
-    return files
+    files = files_required_for(dataset_type=dataset_class)
+    for file in files:
+        filepath = Path(root) / file
+        returned_files.append(filepath)
+
+    # double-check that we actually have all the files we're saying are needed.
+    for file in returned_files:
+        if not file.exists():
+            # Create a better error (e.g. a RegistryMismatch error)?
+            raise FileNotFoundError(
+                f"Internal error: File {file} is supposed to exist according to our registry!"
+            )
+    return returned_files
 
 
 def files_required_for(dataset_type: type) -> list[str]:
@@ -232,21 +252,21 @@ def files_required_for(dataset_type: type) -> list[str]:
 
 
 def _archives_required_for(
-    dataset_type: type, cluster: Cluster | None = Cluster.current()
+    dataset_class: type, cluster: Cluster | None = Cluster.current()
 ) -> list[Path] | None:
     if cluster is None:
         raise NotImplementedError(
-            f"Can't tell which archives are required for dataset {dataset_type} on local machines!"
+            f"Can't tell which archives are required for dataset {dataset_class} on local machines!"
         )
     try:
         archive_paths = getitem_with_subclasscheck(
-            dataset_archives_per_cluster[cluster], key=dataset_type
+            dataset_archives_per_cluster[cluster], key=dataset_class
         )
         # TODO: Maybe return the actual archive type to use?
         return [Path(archive_path) for archive_path in archive_paths]
     except KeyError:
         logger.debug(
-            f"Don't know what archives are present on cluster {cluster} for dataset {dataset_type}!"
+            f"Don't know what archives are present on cluster {cluster} for dataset {dataset_class}!"
         )
         return None
 

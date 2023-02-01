@@ -8,6 +8,7 @@ from logging import getLogger as get_logger
 from pathlib import Path
 from typing import Any, Callable, Sequence, TypeVar
 
+import tqdm
 from torch.utils.data import Dataset
 from typing_extensions import Concatenate, ParamSpec
 
@@ -194,3 +195,42 @@ def getitem_with_subclasscheck(potential_classes: dict[_T, V], key: _T) -> V:
         return potential_classes[key]
     key = _get_key_to_use_for_indexing(potential_classes, key=key)
     return potential_classes[key]
+
+
+def create_links(
+    user_cache_dir: Path, shared_cache_dir: Path, replace_real_files_with_symlinks: bool = False
+):
+    """For every file in `user_cache_dir`, create a (symbolic?) link to it in
+    `shared_cache_dir`."""
+    pbar = tqdm.tqdm()
+
+    def _copy_fn(src: str, dst: str) -> None:
+        # NOTE: This also overwrites the files in the user directory with symlinks to the same files in
+        # the shared directory. We might not necessarily want to do that.
+        # For instance, we might want to do a checksum or something first, to check that they have
+        # exactly the same contents.
+        src_path = Path(src)
+        dst_path = Path(dst)
+        rel_d = dst_path.relative_to(user_cache_dir)
+        rel_s = src_path.relative_to(shared_cache_dir)
+
+        if dst_path.exists():
+            if dst_path.is_symlink():
+                # From a previous run.
+                return
+            if replace_real_files_with_symlinks:
+                # Replace "real" files with symlinks.
+                dst_path.unlink()
+
+        # print(f"Linking {rel_s}")
+        pbar.set_description(f"Linking {rel_s}")
+        pbar.update(1)
+        os.symlink(src, dst)  # Create symlinks instead of copying.
+
+    shutil.copytree(
+        shared_cache_dir,
+        user_cache_dir,
+        symlinks=True,
+        copy_function=_copy_fn,
+        dirs_exist_ok=True,
+    )
