@@ -6,7 +6,7 @@ import os
 import shutil
 from logging import getLogger as get_logger
 from pathlib import Path
-from typing import Callable, Sequence, TypeVar
+from typing import Any, Callable, Sequence, TypeVar
 
 from torch.utils.data import Dataset
 from typing_extensions import Concatenate, ParamSpec
@@ -14,10 +14,10 @@ from typing_extensions import Concatenate, ParamSpec
 from mila_datamodules.clusters.env_variables import setup_slurm_env_variables
 from mila_datamodules.clusters.utils import on_slurm_cluster
 
-T = TypeVar("T")
-
 logger = get_logger(__name__)
 
+V = TypeVar("V")
+_T = TypeVar("_T", bound=type)
 T = TypeVar("T")
 OutT = TypeVar("OutT")
 D = TypeVar("D", bound=Dataset)
@@ -58,6 +58,7 @@ def replace_kwargs(function: Callable[P, OutT], **fixed_arguments):
 
     NOTE: Simply using functools.partial wouldn't work, since passing one of the fixed arguments
     would raise an error.
+    TODO: Double-check that functools.partial isn't enough here.
     """
     init_signature = inspect.signature(function)
 
@@ -80,6 +81,7 @@ def replace_arg_defaults(
 
     NOTE: Simply using functools.partial wouldn't work, since passing one of the fixed arguments
     would raise an error.
+    TODO: Double-check that functools.partial isn't enough here.
     """
     init_signature = inspect.signature(dataset_type)
     new_defaults = init_signature.bind_partial(*new_default_args, **new_default_kwargs)
@@ -167,3 +169,28 @@ def copy_dataset_files(
                 # Weird. Getting a FileExistsError for SVHN, even though we checked that the
                 # destination path didn't already exist...
                 pass
+
+
+def _get_key_to_use_for_indexing(potential_classes: dict[_T, Any], key: _T) -> _T:
+    if key in potential_classes:
+        return key
+    # Return the entry with the same name, if `some_type` is a subclass of it.
+    parent_classes_with_same_name = [
+        cls for cls in potential_classes if cls.__name__ == key.__name__ and issubclass(key, cls)
+    ]
+    if len(parent_classes_with_same_name) == 0:
+        # Can't find a key to use.
+        raise KeyError(key)
+    elif len(parent_classes_with_same_name) > 1:
+        raise ValueError(
+            f"Multiple parent classes with the same name: {parent_classes_with_same_name}"
+        )
+    key = parent_classes_with_same_name[0]
+    return key
+
+
+def getitem_with_subclasscheck(potential_classes: dict[_T, V], key: _T) -> V:
+    if key in potential_classes:
+        return potential_classes[key]
+    key = _get_key_to_use_for_indexing(potential_classes, key=key)
+    return potential_classes[key]

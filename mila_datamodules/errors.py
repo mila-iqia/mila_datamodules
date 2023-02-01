@@ -4,10 +4,12 @@ import textwrap
 
 from mila_datamodules.clusters.cluster import Cluster
 
+repo_host = "mila-iqia"
+
 
 def get_github_issue_url(dataset_name: str, cluster_name: str):
     return (
-        f"https://github.com/lebrice/mila_datamodules/issues/new?"
+        f"https://github.com/{repo_host}/mila_datamodules/issues/new?"
         f"labels={cluster_name}&template=feature_request.md&"
         f"title=Feature%20request:%20{dataset_name}%20on%20{cluster_name}"
     )
@@ -30,7 +32,7 @@ class DatasetNotFoundOnClusterError(NotImplementedError):
             f"""\
             No known location for dataset {dataset_name} on the {cluster_name} cluster!
             If you do know where it can be found on {cluster_name}, add an entry to the
-            'dataset_roots_per_cluster' dictionary at this cluster and dataset, like so:
+            `dataset_roots_per_cluster` dictionary at this cluster and dataset, like so:
 
             ```
             dataset_roots_per_cluster[{cluster_entry}][{dataset_name}] = "/path/to/dataset"
@@ -71,3 +73,7 @@ class UnsupportedDatasetError(NotImplementedError):
             """
         )
         super().__init__(message)
+
+
+class NotOnSlurmClusterError(RuntimeError):
+    ...

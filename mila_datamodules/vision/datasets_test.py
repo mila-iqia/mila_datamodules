@@ -28,10 +28,10 @@ from typing_extensions import ParamSpec
 
 import mila_datamodules.vision.datasets
 from mila_datamodules.clusters import CURRENT_CLUSTER, Cluster
-from mila_datamodules.clusters.utils import get_scratch_dir, on_slurm_cluster
+from mila_datamodules.clusters.utils import get_scratch_dir
 from mila_datamodules.errors import UnsupportedDatasetError
 from mila_datamodules.registry import (
-    archives_required_for,
+    _archives_required_for,
     files_required_for,
     is_stored_on_cluster,
     is_supported_dataset,
@@ -39,8 +39,8 @@ from mila_datamodules.registry import (
 )
 from mila_datamodules.registry_test import check_dataset_creation_works_without_download
 from mila_datamodules.testutils import (
-    only_runs_on_slurm_clusters,
-    only_runs_outside_slurm_cluster,
+    only_runs_on_clusters,
+    only_runs_when_not_on_a_slurm_cluster,
 )
 from mila_datamodules.vision.coco_test import coco_required
 from mila_datamodules.vision.datasets import binary_mnist, caltech101, mnist
@@ -106,6 +106,17 @@ def _unsupported_variant(version: str, cluster: Cluster | Sequence[Cluster]):
 class DatasetTests(Generic[DatasetType]):
     _bound: ClassVar[type[Dataset]] = Dataset
 
+    required_on_all_clusters: ClassVar[bool] = False
+
+    @pytest.fixture()
+    def dataset_kwargs(self) -> dict[str, Any]:
+        """Fixture that returns the kwargs that should be passed to the dataset constructor.
+
+        You can override this fixture in your test class and add dependencies to it, so that each
+        variant is tested.
+        """
+        return dict()
+
     @property
     def dataset_cls(self) -> type[DatasetType]:
         """The original dataset class from torchvision.datasets that is being tested."""
@@ -115,6 +126,14 @@ class DatasetTests(Generic[DatasetType]):
         # appropriately?
         dataset_cls = self._dataset_cls()
         return dataset_cls
+
+    @property
+    def dataset_name(self) -> str:
+        return self.dataset_cls.__name__
+
+    @property
+    def is_stored_on_cluster(self) -> bool:
+        return is_stored_on_cluster(self.dataset_cls, cluster=Cluster.current())
 
     @classmethod
     def _dataset_cls(cls) -> type[DatasetType]:
@@ -141,6 +160,15 @@ class DatasetTests(Generic[DatasetType]):
         return dataset_cls(*args, **kwargs)
 
 
+class Required(Generic[DatasetType]):
+    """Tests that raise an error if the dataset isn't stored.
+
+    By default, tests will be skipped if the dataset isn't stored on the current cluster.
+    """
+
+    required_on_all_clusters: ClassVar[bool] = True
+
+
 class VisionDatasetTests(DatasetTests[VisionDatasetType]):
     """Suite of basic unit tests for any dataset class from `torchvision.datasets`."""
 
@@ -153,47 +181,33 @@ class VisionDatasetTests(DatasetTests[VisionDatasetType]):
         # supported yet, or isn't stored on the current cluster?
         # This way, any test that accesses `self.dataset_cls` would be skipped/xfailed
         # appropriately?
-        dataset_cls = self._adapted_dataset_cls()
-        return dataset_cls
-
-    @property
-    def stored_dataset(self) -> type[VisionDatasetType]:
-        cluster = Cluster.current()
-        cluster_name = cluster.name + " cluster" if cluster is not None else "local machine"
-        if not is_stored_on_cluster(self.dataset_cls, cluster=cluster):
-            pytest.skip(f"Dataset {self.dataset_cls.__name__} isn't stored on the {cluster_name}.")
-        return self.dataset_cls
-
-    @pytest.fixture()
-    def dataset_kwargs(self) -> dict[str, Any]:
-        """Fixture that returns the kwargs that should be passed to the dataset constructor.
-
-        You can override this fixture in your test class and add dependencies to it, so that each
-        variant is tested.
-        """
-        return dict()
+        return self._adapted_dataset_cls()
 
     @classmethod
     def _adapted_dataset_cls(cls) -> type[VisionDatasetType]:
-        dataset_class = cls._dataset_cls()
-        if hasattr(mila_datamodules.vision.datasets, dataset_class.__name__):
-            return getattr(mila_datamodules.vision.datasets, dataset_class.__name__)
-        return getattr(mila_datamodules.vision.datasets.adapted_datasets, dataset_class.__name__)
+        original_dataset_class = cls._dataset_cls()
+        if hasattr(mila_datamodules.vision.datasets, original_dataset_class.__name__):
+            return getattr(mila_datamodules.vision.datasets, original_dataset_class.__name__)
+        # Try to create the adapter dynamically.
+        # NOTE: might want to turn this off so we're more clear on which ones we support and don't.
+        return getattr(
+            mila_datamodules.vision.datasets.adapted_datasets, original_dataset_class.__name__
+        )
 
-    @only_runs_outside_slurm_cluster()
-    def test_no_change_when_outside_cluster(self):
-        class_name = self.dataset_cls.__name__
+    @only_runs_when_not_on_a_slurm_cluster()
+    def test_import_dataset_when_not_on_cluster(self):
+        """Importing a dataset from mila_datamodules.vision.datasets gives back the original class
+        from `torchvision.datasets` when not on a SLURM cluster."""
         assert Cluster.current() is None
-        class_from_mila_datamodules_datasets = self._adapted_dataset_cls()
-        class_from_torchvision_datasets = getattr(tvd, class_name)
-        assert class_from_mila_datamodules_datasets is class_from_torchvision_datasets
-        # NOTE: Redundant in this case. However we'd like to be able to test that we didn't modify
-        # the torchvision package in-place somehow too!
-        # assert inspect.signature(class_from_mila_datamodules_datasets) == inspect.signature(
-        #     class_from_torchvision_datasets
-        # )
+        class_from_torchvision = self.dataset_cls
+        class_from_mila_datamodules = getattr(
+            mila_datamodules.vision.datasets, self.dataset_cls.__name__
+        )
 
-    def test_adapted_dataset_class(self):
+        assert class_from_mila_datamodules is class_from_torchvision
+
+    @only_runs_on_clusters()
+    def test_import_from_package_gives_adapted_dataset_class(self):
         """We should have an adapted dataset class for explicitly supported datasets in
         `mila_datamodules.vision.datasets`.
 
@@ -203,47 +217,60 @@ class VisionDatasetTests(DatasetTests[VisionDatasetType]):
         very cool and hacky!)
         """
         original_cls = self.dataset_cls
-        adapted_cls = self.adapted_dataset_cls
-        default_constructor_root_parameter = inspect.signature(original_cls).parameters["root"]
-        adapted_constructor_root_parameter = inspect.signature(adapted_cls).parameters["root"]
+        adapted_cls = getattr(mila_datamodules.vision.datasets, original_cls.__name__)
 
-        if not on_slurm_cluster() or not is_stored_on_cluster(original_cls):
-            # No change when not on a slurm cluster: the "adapted" class is the original class.
+        if not is_stored_on_cluster(original_cls):
+            if self.required_on_all_clusters:
+                pytest.fail(
+                    reason=f"Dataset {self.dataset_cls.__name__} is required and is not stored on this cluster!"
+                )
+
+            # No change when the dataset isn't stored on the current SLURM cluster:
+            # the "adapted" class is the original class.
             assert adapted_cls is original_cls
-            # NOTE: redundant at this point here, but just to illustrate:
-            # We don't have the dataset stored on this cluster, so expect root to be required.
-            assert (
-                adapted_constructor_root_parameter.default
-                == default_constructor_root_parameter.default
-            )
+            # NOTE: unnecessary, but just to make sure we didn't change the constructor at all.
+            assert adapted_cls.__init__ is original_cls.__init__
         else:
             assert adapted_cls is not original_cls
             assert issubclass(adapted_cls, original_cls)
+            # TODO: Not sure if we can successfully check this with `inspect`:
             # Check that we did indeed change the signature of the constructor to have the 'root'
             # set to the right default value.
-            expected_default_root = locate_dataset_root_on_cluster(original_cls)
-            # TODO: Not sure if we can actually check this with `inspect`, without instantiating
-            # the dataset.
+            # expected_default_root = locate_dataset_root_on_cluster(original_cls)
             # assert adapted_constructor_root_parameter.default == expected_default_root
 
-    def test_we_know_what_files_are_required(self):
+    def test_we_know_what_files_are_required_for_dataset(self):
         """Test that we know which files are required in order to load this dataset."""
         try:
-            assert files_required_for(self.dataset_cls)
-        except (UnsupportedDatasetError, AssertionError) as e:
-            # NOTE: This just makes it easier to inspect the class and extract the required files
-            # from the docstring manually.
-            raise AssertionError(
-                f"Unsupported dataset {self.dataset_cls}: {inspect.getabsfile(self.dataset_cls)}: {self.dataset_cls.__doc__}"
-            ) from e
+            required_files = files_required_for(self.dataset_cls)
+            assert required_files
+        except UnsupportedDatasetError as e:
+            if self.required_on_all_clusters:
+                raise AssertionError(
+                    f"Dataset {self.dataset_cls.__name__} is required and is not stored on this "
+                    f"cluster!"
+                    f"The required files or archives should be added in the registry. Here's some "
+                    f"context that might be helpful: \n"
+                    f"{inspect.getabsfile(self.dataset_cls)}: \n"
+                    f"{self.dataset_cls.__doc__}"
+                ) from e
+            pytest.xfail(reason=f"The dataset {self.dataset_name} isn't supported yet.")
+        except AssertionError as e:
+            # Huh? The dataset doesn't require any files?
+            raise AssertionError(f"Huh? dataset {self.dataset_name} doesn't require any files?")
 
     def test_required_files_exist(self):
         """Test that if the registry says that we have the files required to load this dataset on
         the current cluster, then they actually exist."""
         dataset_cls = self.dataset_cls
         files = files_required_for(dataset_cls)
-        assert files
+
+        assert files  # note: this is a bit redundant with the test above.
+
         if not is_stored_on_cluster(dataset_cls):
+            if self.required_on_all_clusters:
+                pytest.xfail()
+
             pytest.skip(reason="Dataset isn't stored on the current cluster.")
 
         # Also check that the files exist on the current cluster.
@@ -275,10 +302,10 @@ class VisionDatasetTests(DatasetTests[VisionDatasetType]):
             )
 
     @pytest.mark.disable_socket
-    def test_creation_without_download(self, dataset_kwargs: dict[str, Any]):
+    def test_can_create_dataset_without_download(self, dataset_kwargs: dict[str, Any]):
+        """Test that the dataset can be created without downloading it the known location for that
+        dataset on the current cluster is passed as the `root` argument."""
         dataset_cls = self.dataset_cls
-        """Test that the dataset can be created without downloading it if the known location for
-        that dataset on the current cluster is passed as the `root` argument."""
         if not is_stored_on_cluster(dataset_cls):
             pytest.skip(f"Dataset isn't stored on {CURRENT_CLUSTER} cluster")
 
@@ -317,42 +344,41 @@ class FitsInMemoryTests(DatasetTests[VisionDatasetType]):
     # TODO: Add tests that check specifically for this behaviour.
 
 
-class LoadFromArchivesTests(DatasetTests[VisionDatasetType]):
+def fake_slurm_tmpdir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Create a fake SLURM_TMPDIR in the temporary directory and monkeypatch the environment
+    variables to point to it."""
+    slurm_tmpdir = tmp_path / "slurm_tmpdir"
+    slurm_tmpdir.mkdir()
+    monkeypatch.setenv("SLURM_TMPDIR", str(slurm_tmpdir))
+    monkeypatch.setenv("FAKE_SLURM_TMPDIR", str(slurm_tmpdir))
+    return slurm_tmpdir
+
+
+class LoadsFromArchives(VisionDatasetTests[VisionDatasetType]):
     """For datasets that don't fit in RAM (e.g. ImageNet), extract the archive directly to.
 
     $SLURM_TMPDIR.
-    NOTE: Might need to also create a symlink of the archive in $SLURM_TMPDIR so that the tvd Dataset
+
+    NOTE: Might need to also create a symlink of the archive in $SLURM_TMPDIR so that the dataset
     constructor doesn't re-download it to SLURM_TMPDIR.
     - NOTE: No speedup reading from $SCRATCH or /network/datasets. Same filesystem
 
     For ComputeCanada:
-    - Extract the archive from the datasets folder to $SLURM_TMPDIR without copying.
+    - Extract the archive from the datasets folder to $SLURM_TMPDIR (also without copying the
+    archive if possible)
 
     In general, for datasets that don't fit in SLURM_TMPDIR, we should use $SCRATCH as the
     "SLURM_TMPDIR".
     NOTE: setting --tmp=800G is a good idea if you're going to move a 600gb dataset to SLURM_TMPDIR.
     """
 
-    def test_we_know_what_archives_are_required(self):
-        """Test that we know which archives are required in order to load this dataset on the
-        current cluster."""
-        files = archives_required_for(self.dataset_cls)
-        assert files
-
-    def test_we_have_required_archives_(self):
-        """Test that if the registry says that we have the files required to load this dataset on
-        the current cluster, then they actually exist."""
-        dataset_cls = self.dataset_cls
-        archive_files = files_required_for(dataset_cls)
-        assert archive_files
-        if not is_stored_on_cluster(dataset_cls):
-            pytest.skip(reason="Dataset isn't stored on the current cluster.")
-
-        # Also check that the archive files exist on the current cluster.
-        dataset_root = Path(locate_dataset_root_on_cluster(dataset_cls))
-        for file in archive_files:
-            path = dataset_root / file
-            assert path.exists()
+    def test_pre_init_creates_symlinks_to_archives(self, fake_slurm_tmpdir: Path):
+        """Test that the 'pre-init' portion of the adapted constructor creates symlinks to the
+        archives that are to be used later."""
+        adapted_dataset_class = self.adapted_dataset_cls
+        new_root = adapted_dataset_class._pre_init_(root="bad_root")
+        required_archives = _archives_required_for(self.dataset_cls)
+        assert all((fake_slurm_tmpdir / archive).exists() for archive in required_archives)
 
     # TODO: Add tests that check specifically that the dataset is loaded from the archives as
     # described in the doc above.
@@ -423,7 +449,7 @@ class TestINaturalist(VisionDatasetTests[tvd.INaturalist]):
         return dict(version=version)
 
 
-class TestPlaces365(VisionDatasetTests[tvd.Places365]):
+class TestPlaces365(LoadsFromArchives[tvd.Places365]):
     @pytest.fixture(
         params=["train-standard", _unsupported_variant("train-challenge", Cluster.Mila), "val"]
     )
@@ -482,7 +508,7 @@ class TestCocoCaptions(VisionDatasetTests[tvd.CocoCaptions]):
 
 
 class TestCIFAR10(VisionDatasetTests[tvd.CIFAR10], FitsInMemoryTests, DownloadForMockTests):
-    @only_runs_on_slurm_clusters()
+    @only_runs_on_clusters()
     def test_always_stored(self):
         assert is_supported_dataset(self.dataset_cls)
         assert is_stored_on_cluster(self.dataset_cls)
@@ -512,7 +538,10 @@ class TestBinaryEMNIST(VisionDatasetTests[binary_mnist.BinaryEMNIST], FitsInMemo
 # TODO: Same as for binarymnist (original class is actually our "patched" version of the class) but
 # here the fix is specific to one cluster. This isn't pretty.
 class TestCaltech101(VisionDatasetTests[caltech101.Caltech101]):
-    pass
+    def test_archives_are_placed_in_slurm_tmpdir(self):
+        "101_ObjectCategories.tar.gz"
+        "Annotations.tar"
+        raise NotImplementedError
 
 
 class TestCaltech256(VisionDatasetTests[tvd.Caltech256]):

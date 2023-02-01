@@ -6,8 +6,9 @@ import inspect
 import warnings
 from logging import getLogger as get_logger
 from pathlib import Path
-from typing import Callable, TypeVar, cast
+from typing import Any, Callable, Generic, Protocol, Type, TypeVar, cast
 
+import torchvision.datasets as tvd
 from torch.utils.data import Dataset
 from torchvision.datasets import VisionDataset
 from typing_extensions import Concatenate, ParamSpec
@@ -25,8 +26,11 @@ from mila_datamodules.utils import all_files_exist, copy_dataset_files
 T = TypeVar("T", bound=type)
 D = TypeVar("D", bound=Dataset)
 P = ParamSpec("P")
-VD = TypeVar("VD", bound=VisionDataset)
 C = Callable[P, D]
+
+VD = TypeVar("VD", bound=VisionDataset)
+VD_cov = TypeVar("VD_cov", bound=VisionDataset, covariant=True)
+VD_cot = TypeVar("VD_cot", bound=VisionDataset, contravariant=True)
 
 logger = get_logger(__name__)
 
@@ -35,18 +39,105 @@ def _cache(fn: C) -> C:
     return functools.cache(fn)  # type: ignore
 
 
-def __getattr__(name: str) -> type[VD]:
-    import torchvision.datasets as tvd
+# def __getattr__(name: str) -> type[AdaptedDataset | VisionDataset]:
+#     import torchvision.datasets as tvd
 
-    if hasattr(tvd, name):
-        attribute = getattr(tvd, name)
+#     if hasattr(tvd, name):
+#         attribute = getattr(tvd, name)
 
-        if inspect.isclass(attribute) and issubclass(attribute, VisionDataset):
-            dataset_class = attribute
-            if is_stored_on_cluster(dataset_class):
-                return adapt_dataset(dataset_class)
-            return dataset_class
-    raise AttributeError(name)
+#         if inspect.isclass(attribute) and issubclass(attribute, VisionDataset):
+#             dataset_class = attribute
+#             if not is_stored_on_cluster(dataset_class):
+#                 return dataset_class
+
+#             return adapt_dataset(dataset_class)
+#     raise AttributeError(name)
+
+
+class PreInitFunction(Protocol[VD_cot]):
+    """Callable executed before the dataset is initialized. The constructor arguments are passed.
+
+    This is where the dataset is copied/extracted to the optimal location on the cluster
+    (usually a directory in $SLURM_TMPDIR).
+
+    Returns the new/corrected value to use for the 'root' argument.
+    """
+
+    @staticmethod
+    def __call__(
+        dataset_class: Callable[Concatenate[str, P], VD_cot],
+        root: str | None = None,
+        *args: P.args,
+        **kwargs: P.kwargs,
+    ) -> str | None:
+
+        raise NotImplementedError
+
+
+def read_from_datasets_directory(
+    dataset_class: Callable[Concatenate[str, P], VD],
+    root: str | None = None,
+    *args: P.args,
+    **kwargs: P.kwargs,
+) -> str | None:
+    cluster = Cluster.current_or_error()
+    return locate_dataset_root_on_cluster(dataset_cls=dataset_class, cluster=cluster)
+
+
+def make_symlinks_to_archives_in_tempdir(
+    dataset_class: Callable[Concatenate[str, P], VD],
+    root: str | None = None,
+    *args: P.args,
+    **kwargs: P.kwargs,
+) -> str | None:
+    raise NotImplementedError("TODO")
+
+
+pre_init_functions: dict[type[VisionDataset], PreInitFunction[Any]] = {
+    tvd.CIFAR10: read_from_datasets_directory,
+    tvd.CIFAR100: read_from_datasets_directory,
+}
+
+
+def get_pre_init_function(dataset_class: type[VD]) -> PreInitFunction[VD]:
+    from mila_datamodules.registry import getitem_with_subclasscheck
+
+    return getitem_with_subclasscheck(pre_init_functions, key=dataset_class)
+
+
+class AdaptedDataset(VisionDataset, Generic[VD_cov, P]):
+    @classmethod
+    def _pre_init_(cls, root: str | None = None, *args: P.args, **kwargs: P.kwargs) -> str | None:
+        """Called before the dataset is initialized. The constructor arguments are passed.
+
+        This is where the dataset is copied/extracted to the optimal location on the cluster
+        (usually a directory in $SLURM_TMPDIR).
+
+        Returns the new/corrected value to use for the 'root' argument.
+        """
+
+    def __init__(self, root: str | None = None, *args: P.args, **kwargs: P.kwargs) -> None:
+        new_root = type(self)._pre_init_(root, *args, **kwargs)
+        if new_root is not None:
+            kwargs["root"] = new_root
+        super().__init__(*args, **kwargs)
+
+
+_adapters: dict[type[VisionDataset] | Callable[..., VisionDataset], type[AdaptedDataset]] = {}
+
+
+def adapt_dataset(dataset_type: type[VD] | Callable[Concatenate[str, P], VD]):
+    adapter_for_dataset: type[AdaptedDataset[VD, P]] = _adapters.get(dataset_type, AdaptedDataset)
+    dataset_subclass = type(
+        dataset_type.__name__,
+        (
+            adapter_for_dataset,
+            dataset_type,
+        ),
+        {"__init__": adapted_constructor(dataset_type)},
+    )
+    dataset_subclass = cast(Type[VD], dataset_subclass)
+    return dataset_subclass
 
 
 # TODOS:
@@ -67,7 +158,7 @@ NOTE: setting --tmp=800G is a good idea if you're going to move a 600gb dataset 
 
 
 @_cache
-def adapt_dataset(dataset_type: type[VD]) -> type[VD]:
+def _adapt_dataset(dataset_type: type[VD]) -> type[VD]:
     """When not running on a SLURM cluster, returns the given input.
 
     When running on a SLURM cluster, returns a subclass of the given dataset that has a

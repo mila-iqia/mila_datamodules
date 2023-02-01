@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 import enum
-import os
 from logging import getLogger as get_logger
-from pathlib import Path
 
 logger = get_logger(__name__)
 
@@ -20,6 +18,23 @@ class Cluster(enum.Enum):
     """ TODO: IDEA: Fake SLURM cluster for local debugging.
     Uses the values of the `FAKE_SCRATCH` and `FAKE_SLURM_TMPDIR` environment variables.
     """
+
+    @classmethod
+    def current_or_error(cls) -> Cluster:
+        """Returns the current cluster.
+
+        Raises an error when called outside of a SLURM cluster.
+        """
+        current = cls.current()
+        if current is None:
+            from mila_datamodules.errors import NotOnSlurmClusterError
+
+            raise NotOnSlurmClusterError(
+                "The `current_cluster` method (and everything that uses it) can only be used "
+                "on a SLURM cluster."
+            )
+        return current
+
     # TODO: Decide whether this should return None or _local when called on a non-SLURM cluster.
     @classmethod
     def current(cls) -> Cluster | None:
@@ -41,14 +56,3 @@ class Cluster(enum.Enum):
                 "Please make an issue on the `mila-datamodules` repository."
             )
         return cls[cluster_name.capitalize()]
-
-    @property
-    def slurm_tmpdir(self) -> Path:
-        """Returns the 'fast' directory where files should be stored for quick read/writtes."""
-        return Path(os.environ["SLURM_TMPDIR"])
-
-    @property
-    def scratch(self) -> Path:
-        """Returns the writeable directory where checkpoints / code / general data should be
-        stored."""
-        return Path(os.environ["SCRATCH"])

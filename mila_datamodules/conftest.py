@@ -78,7 +78,6 @@ def scratch_data_dir(tmp_path_factory: pytest.TempPathFactory):
 
     os.environ["SCRATCH"] = str(fake_scratch_data_dir)
     assert cluster
-    assert cluster.scratch == fake_scratch_data_dir
     assert get_scratch_dir() == fake_scratch_data_dir
 
     yield

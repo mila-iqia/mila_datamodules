@@ -2,11 +2,13 @@
 from __future__ import annotations
 
 import textwrap
+from logging import getLogger as get_logger
 from pathlib import Path
-from typing import Any, Callable, TypeVar
+from typing import Callable, TypeVar
 
 import pl_bolts.datasets
 import torchvision.datasets as tvd
+from torch.utils.data import Dataset
 
 from mila_datamodules.clusters import CURRENT_CLUSTER
 from mila_datamodules.clusters.cluster import Cluster
@@ -15,8 +17,13 @@ from mila_datamodules.errors import (
     DatasetNotFoundOnClusterError,
     UnsupportedDatasetError,
 )
+from mila_datamodules.utils import (
+    _get_key_to_use_for_indexing,
+    getitem_with_subclasscheck,
+)
 from mila_datamodules.vision.datasets.binary_mnist import BinaryMNIST
 
+logger = get_logger(__name__)
 _dataset_files = {
     tvd.MNIST: ["MNIST"],
     tvd.CIFAR10: ["cifar-10-batches-py"],
@@ -176,7 +183,6 @@ dataset_archives_per_cluster: dict[Cluster, dict[type, list[str]]] = {
 too_large_for_slurm_tmpdir: set[Callable] = set()
 """Set of datasets which are too large to store in $SLURM_TMPDIR."""
 
-_T = TypeVar("_T", bound=type)
 V = TypeVar("V")
 
 
@@ -194,73 +200,55 @@ def is_supported_dataset(dataset_type: type) -> bool:
         return False
 
 
+def files_to_copy(dataset_type: type, cluster: Cluster) -> list[Path]:
+    """Returns the files that should be copied (or symlinked) to SLURM_TMPDIR to load this dataset.
+
+    TODO: Should return 'live' paths, and prioritize using archives when available on the current
+    cluster.
+    """
+    archives = _archives_required_for(dataset_type=dataset_type, cluster=cluster)
+    # TODO: What to do when a dataset is a mix of archives and files?
+    if archives:
+        return archives
+    files = files_required_for(dataset_type=dataset_type)
+    return files
+
+
 def files_required_for(dataset_type: type) -> list[str]:
     # TODO: Would be nice if this actually returned 'live' Path objects for the current cluster!
     try:
-        return _getitem_with_subclasscheck(_dataset_files, key=dataset_type)
+        return getitem_with_subclasscheck(_dataset_files, key=dataset_type)
     except KeyError as exc:
         pass
 
     error = UnsupportedDatasetError(
         dataset=dataset_type,
     )
-    # FIXME: Hacky AF, but parsing the docstring of the class to extract the 'structure' portion.
-    doc = dataset_type.__doc__
-    if not doc:
-        raise error
 
-    doc_lines = doc.splitlines()
-    structure_begin_line_index = [
-        line_index for line_index, line in enumerate(doc_lines) if line.endswith("::")
-    ]
-    if len(structure_begin_line_index) != 1:
-        raise error
-    structure_begin_line_index = structure_begin_line_index[0] + 1
-
-    if doc_lines[structure_begin_line_index] == "":
-        structure_begin_line_index += 1
-
-    structure_end_line_index = [
-        line_index for line_index, line in enumerate(doc_lines) if line.strip().startswith("Args:")
-    ]
-
-    if len(structure_end_line_index) != 1:
-        raise error
-    structure_end_line_index = structure_end_line_index[0]
-
-    structure_block = textwrap.dedent(
-        "\n".join(doc_lines[structure_begin_line_index:structure_end_line_index])
-    )
-    if structure_block.startswith("root"):
-        structure_begin_line_index += 1
-        structure_block = textwrap.dedent(
-            "\n".join(doc_lines[structure_begin_line_index:structure_end_line_index])
-        )
-
-    if not structure_block:
-        raise error
-    top_level_folders = [
-        line for line in structure_block.splitlines() if line and not line[0].isspace()
-    ]
-
-    return top_level_folders
+    folders = _get_folders_from_docstring(dataset_type)
+    if folders:
+        return folders
+    raise error
 
 
-def archives_required_for(
+def _archives_required_for(
     dataset_type: type, cluster: Cluster | None = Cluster.current()
-) -> list[Path]:
+) -> list[Path] | None:
     if cluster is None:
         raise NotImplementedError(
             f"Can't tell which archives are required for dataset {dataset_type} on local machines!"
         )
     try:
-        archive_paths = _getitem_with_subclasscheck(
+        archive_paths = getitem_with_subclasscheck(
             dataset_archives_per_cluster[cluster], key=dataset_type
         )
         # TODO: Maybe return the actual archive type to use?
         return [Path(archive_path) for archive_path in archive_paths]
     except KeyError:
-        raise ValueError(f"Don't know what archives are required for dataset {dataset_type}!\n")
+        logger.debug(
+            f"Don't know what archives are present on cluster {cluster} for dataset {dataset_type}!"
+        )
+        return None
 
 
 # TODO: How about we adopt a de-centralized kind of registry, a bit like gym?
@@ -301,7 +289,7 @@ def is_stored_on_cluster(dataset_cls: type, cluster: Cluster | None = CURRENT_CL
     dataset_root = Path(dataset_root_str)
     # TODO: redesign these `*_required_for` functions, having to use a try-catch isn't pretty.
     try:
-        dataset_archives = archives_required_for(dataset_cls, cluster=cluster)
+        dataset_archives = _archives_required_for(dataset_cls, cluster=cluster)
         return all((dataset_root / p).exists() for p in dataset_archives)
     except ValueError:
         # We don't know what archives could be used to create this dataset on this cluster.
@@ -320,7 +308,7 @@ def is_stored_on_cluster(dataset_cls: type, cluster: Cluster | None = CURRENT_CL
 
 
 def locate_dataset_root_on_cluster(
-    dataset_cls: type,
+    dataset_cls: type | Callable[..., Dataset],
     cluster: Cluster | None = CURRENT_CLUSTER,
     default: str | None = None,
 ) -> str:
@@ -376,26 +364,44 @@ def locate_dataset_root_on_cluster(
     return str(dataset_root)
 
 
-def _get_key_to_use_for_indexing(potential_classes: dict[_T, Any], key: _T) -> _T:
-    if key in potential_classes:
-        return key
-    # Return the entry with the same name, if `some_type` is a subclass of it.
-    parent_classes_with_same_name = [
-        cls for cls in potential_classes if cls.__name__ == key.__name__ and issubclass(key, cls)
+def _get_folders_from_docstring(dataset_type: type) -> list[str] | None:
+    # FIXME: Hacky AF. Tries to parse the docstring of the class to extract the 'structure' portion
+    doc = dataset_type.__doc__
+    if not doc:
+        return
+
+    doc_lines = doc.splitlines()
+    structure_begin_line_index = [
+        line_index for line_index, line in enumerate(doc_lines) if line.endswith("::")
     ]
-    if len(parent_classes_with_same_name) == 0:
-        # Can't find a key to use.
-        raise KeyError(key)
-    elif len(parent_classes_with_same_name) > 1:
-        raise ValueError(
-            f"Multiple parent classes with the same name: {parent_classes_with_same_name}"
+    if len(structure_begin_line_index) != 1:
+        return
+    structure_begin_line_index = structure_begin_line_index[0] + 1
+
+    if doc_lines[structure_begin_line_index] == "":
+        structure_begin_line_index += 1
+
+    structure_end_line_index = [
+        line_index for line_index, line in enumerate(doc_lines) if line.strip().startswith("Args:")
+    ]
+
+    if len(structure_end_line_index) != 1:
+        return
+    structure_end_line_index = structure_end_line_index[0]
+
+    structure_block = textwrap.dedent(
+        "\n".join(doc_lines[structure_begin_line_index:structure_end_line_index])
+    )
+    if structure_block.startswith("root"):
+        structure_begin_line_index += 1
+        structure_block = textwrap.dedent(
+            "\n".join(doc_lines[structure_begin_line_index:structure_end_line_index])
         )
-    key = parent_classes_with_same_name[0]
-    return key
 
+    if not structure_block:
+        return
+    top_level_folders = [
+        line for line in structure_block.splitlines() if line and not line[0].isspace()
+    ]
 
-def _getitem_with_subclasscheck(potential_classes: dict[_T, V], key: _T) -> V:
-    if key in potential_classes:
-        return potential_classes[key]
-    key = _get_key_to_use_for_indexing(potential_classes, key=key)
-    return potential_classes[key]
+    return top_level_folders
