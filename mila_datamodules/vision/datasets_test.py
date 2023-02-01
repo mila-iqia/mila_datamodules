@@ -333,6 +333,12 @@ class VisionDatasetTests(DatasetTests[VisionDatasetType]):
         dataset_cls = self.dataset_cls
         self._assert_downloaded_if_required_else_skip()
 
+        # TODO: Is it ok for us to (e.g.) read a large dataset from the /network/datasets folder
+        # during unit tests?
+        # I think it is.
+        # if issubclass(dataset_cls, tvd.ImageFolder):
+        #     pytest.skip(reason=f"Avoiding loading the dataset from network dataset storage.")
+
         dataset_location = locate_dataset_root_on_cluster(dataset_cls)
 
         kwargs = dataset_kwargs.copy()

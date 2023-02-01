@@ -3,22 +3,25 @@ from __future__ import annotations
 
 import functools
 import inspect
+import os
+import shutil
 import textwrap
 import warnings
 from logging import getLogger as get_logger
 from pathlib import Path
-from typing import Callable, ClassVar, Generic, Type, TypeVar, cast
+from typing import Any, Callable, ClassVar, Generic, Type, TypeVar, cast
 
 import torchvision.datasets as tvd
+import torchvision.datasets.utils
 from torch.utils.data import Dataset
 from torchvision.datasets import VisionDataset
+from torchvision.datasets.utils import calculate_md5
 from typing_extensions import Concatenate, ParamSpec
 
 from mila_datamodules.clusters import get_scratch_dir, get_slurm_tmpdir
 from mila_datamodules.clusters.cluster import Cluster
 from mila_datamodules.errors import UnsupportedDatasetError
 from mila_datamodules.registry import (
-    files_to_copy,
     is_stored_on_cluster,
     locate_dataset_root_on_cluster,
     too_large_for_slurm_tmpdir,
@@ -65,6 +68,37 @@ def __getattr__(name: str) -> type[AdaptedDataset | VisionDataset]:
             )
             return adapt_dataset(dataset_class)
     raise AttributeError(name)
+
+
+def check_md5(fpath: str, md5: str, **kwargs: Any) -> bool:
+    actual_md5 = calculate_md5(fpath, **kwargs)
+    expected = md5
+    if actual_md5 == expected:
+        logger.debug(f"MD5 checksum of {fpath} matches expected value: {expected}")
+        return True
+    else:
+        logger.debug(f"MD5 checksum of {fpath} does not match expected value: {expected}!")
+        return False
+
+
+def check_integrity(fpath: str, md5: str | None = None) -> bool:
+    logger.debug(f"Using our patched version of `check_integrity` on path {fpath}")
+    path = Path(fpath).resolve()
+    while path.is_symlink():
+        logger.debug(f"Following symlink for {path} instead of redownloading dataset!")
+        path = path.readlink()
+        logger.debug(f"Resolved path: {path}")
+    if not os.path.isfile(fpath):
+        logger.debug(f"{fpath} is still not real path?!")
+        return False
+    if md5 is None:
+        logger.debug(f"no md5 check for {fpath}!")
+        return True
+    return check_md5(fpath, md5)
+
+
+setattr(torchvision.datasets.utils, "check_integrity", check_integrity)
+setattr(torchvision.datasets.utils, "check_md5", check_md5)
 
 
 @functools.singledispatch
@@ -139,6 +173,7 @@ def read_from_datasets_directory(
 # Any dataset that is an 'ImageFolder' is going to most probably have some archives!
 
 
+@prepare_dataset_before_init.register(tvd.Places365)
 @prepare_dataset_before_init.register(tvd.ImageFolder)
 def make_symlinks_to_archives_in_tempdir(
     dataset: AdaptedDataset[VD, Concatenate[str, P]],
@@ -152,35 +187,39 @@ def make_symlinks_to_archives_in_tempdir(
     """
     dataset_class = dataset.original_class
     cluster = Cluster.current_or_error()
-    files_required_for_dataset = files_to_copy(dataset_class=dataset_class, cluster=cluster)
-    assert False, files_required_for_dataset
+
+    # FIXME: Fix this: hard-coded for Places365 while debugging.
+    # files_required_for_dataset = files_to_copy(dataset_class=dataset_class, cluster=cluster)
+    # assert False, files_required_for_dataset
+    dataset_archives_root = Path("/network/datasets/places365")
+    files_to_copy = list(dataset_archives_root.rglob("*.tar.gz")) + list(
+        dataset_archives_root.glob("*.txt")
+    )
+
+    dest_dir = get_slurm_tmpdir() / "data"
+    dest_dir.mkdir(exist_ok=True, parents=False)
+    for file in files_to_copy:
+        dest = dest_dir / file.relative_to(dataset_archives_root)
+        if dest.exists():
+            continue
+        # NOTE: Seems like we can't just copy simlinks.. torchvision check_md5 isn't called on
+        # symlinks!
+        if file.suffix in {".tar.gz", ".zip", ".tgz", ".tar", ".gz"}:
+            dest.symlink_to(file)
+            logger.debug(f"Creating link to archive: {dest} -> {file}")
+        else:
+            shutil.copyfile(src=file, dst=dest, follow_symlinks=True)
+
+    kwargs["download"] = False
+
+    d = tvd.Places365(root=str(dest_dir), *args, **kwargs)
+
+    assert False, list(Path(dest_dir).iterdir())
+
     raise NotImplementedError(
         f"TODO: Move/symlink the archives for dataset {dataset_class} in SLURM_TMPDIR, and "
         f"hopefully torchvision does the rest without downloading anything."
     )
-
-
-@prepare_dataset_before_init.register(tvd.INaturalist)
-def prepare_inaturalist(
-    dataset: AdaptedDataset[tvd.INaturalist, P],
-    root: str | None = None,
-    *args: P.args,
-    **kwargs: P.kwargs,
-) -> str | None:
-    cluster = Cluster.current_or_error()
-    # FIXME: Testing it out manually on the Mila cluster for now.
-
-    dataset_class = dataset.original_class
-    dataset_archives = files_to_copy(dataset_class=dataset_class, cluster=cluster)
-
-    # "2017": "https://ml-inat-competition-datasets.s3.amazonaws.com/2017/train_val_images.tar.gz",
-    # "2018": "https://ml-inat-competition-datasets.s3.amazonaws.com/2018/train_val2018.tar.gz",
-    # "2019": "https://ml-inat-competition-datasets.s3.amazonaws.com/2019/train_val2019.tar.gz",
-    # "2021_train": "https://ml-inat-competition-datasets.s3.amazonaws.com/2021/train.tar.gz",
-    # "2021_train_mini": "https://ml-inat-competition-datasets.s3.amazonaws.com/2021/train_mini.tar.gz",
-    # "2021_valid": "https://ml-inat-competition-datasets.s3.amazonaws.com/2021/val.tar.gz",
-    assert False
-    return
 
 
 class AdaptedDataset(VisionDataset, Generic[VD_cov, P]):

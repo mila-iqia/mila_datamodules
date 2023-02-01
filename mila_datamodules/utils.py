@@ -198,7 +198,7 @@ def getitem_with_subclasscheck(potential_classes: dict[_T, V], key: _T) -> V:
 
 
 def create_links(
-    user_cache_dir: Path, shared_cache_dir: Path, replace_real_files_with_symlinks: bool = False
+    dir_with_links: Path, dir_with_files: Path, replace_real_files_with_symlinks: bool = False
 ):
     """For every file in `user_cache_dir`, create a (symbolic?) link to it in
     `shared_cache_dir`."""
@@ -211,8 +211,8 @@ def create_links(
         # exactly the same contents.
         src_path = Path(src)
         dst_path = Path(dst)
-        rel_d = dst_path.relative_to(user_cache_dir)
-        rel_s = src_path.relative_to(shared_cache_dir)
+        rel_d = dst_path.relative_to(dir_with_links)
+        rel_s = src_path.relative_to(dir_with_files)
 
         if dst_path.exists():
             if dst_path.is_symlink():
@@ -228,8 +228,8 @@ def create_links(
         os.symlink(src, dst)  # Create symlinks instead of copying.
 
     shutil.copytree(
-        shared_cache_dir,
-        user_cache_dir,
+        dir_with_files,
+        dir_with_links,
         symlinks=True,
         copy_function=_copy_fn,
         dirs_exist_ok=True,
