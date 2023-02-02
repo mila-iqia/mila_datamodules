@@ -1,14 +1,18 @@
 """A registry of where each dataset is stored on each cluster."""
 from __future__ import annotations
 
+import inspect
+import itertools
 import textwrap
+import warnings
 from logging import getLogger as get_logger
 from pathlib import Path
-from typing import Callable, TypeVar
+from typing import Callable, Iterable, TypeVar
 
 import pl_bolts.datasets
 import torchvision.datasets as tvd
 from torch.utils.data import Dataset
+from typing_extensions import ParamSpec
 
 from mila_datamodules.clusters import CURRENT_CLUSTER
 from mila_datamodules.clusters.cluster import Cluster
@@ -20,6 +24,10 @@ from mila_datamodules.errors import (
 from mila_datamodules.utils import (
     _get_key_to_use_for_indexing,
     getitem_with_subclasscheck,
+)
+from mila_datamodules.vision.datasets._utils import (
+    archives_in_dir,
+    metadata_files_in_dir,
 )
 from mila_datamodules.vision.datasets.binary_mnist import BinaryMNIST
 
@@ -147,6 +155,64 @@ dataset_roots_per_cluster = {
     },
 }
 """For each cluster, for each type of dataset, the value of `root` to use to load the dataset."""
+
+P = ParamSpec("P")
+
+
+def _rel_paths_and_paths(
+    root: str | Path, fn: Callable[[Path], Iterable[Path]]
+) -> Iterable[tuple[str, Path]]:
+    root = Path(root)
+    for path in fn(root):
+        yield str(path.relative_to(root)), path
+
+
+_files_to_copy_for_dataset: dict[type, dict[Cluster, Iterable[tuple[str, Path]]]] = {
+    tvd.Places365: {
+        Cluster.Mila: itertools.chain(
+            _rel_paths_and_paths("/network/datasets/places365", fn=archives_in_dir),
+            _rel_paths_and_paths(
+                "/network/datasets/places365.var/places356_torchvision", fn=metadata_files_in_dir
+            ),
+        )
+    }
+}
+
+
+def files_to_copy_for_dataset(
+    dataset_type: Callable[P, Dataset],
+    cluster: Cluster,
+    *args: P.args,
+    **kwargs: P.kwargs,
+) -> list[tuple[str, Path]]:
+    """Returns the files that should be moved for the given dataset type on the current cluster.
+
+    Note: This is only really applicable to datasets that should be read from archives, e.g.
+    ImageNet.
+    # TODO: Get the files and archives that are required for the dataset on the current cluster.
+    """
+    assert inspect.isclass(dataset_type)
+    files_per_cluster = getitem_with_subclasscheck(
+        potential_classes=_files_to_copy_for_dataset, key=dataset_type, default=None
+    )
+    if files_per_cluster is None:
+        logger.debug(f"We don't know which files should be copied for {dataset_type} yet.")
+        return []
+    if cluster not in files_per_cluster:
+        warnings.warn(
+            RuntimeWarning(
+                f"We don't know which files should be copied for {dataset_type} on {cluster} yet"
+            )
+        )
+        return []
+    return list(files_per_cluster[cluster])
+
+    # if should_be_read_directly_from_dataset_dir(dataset_type, cluster):
+    #     return []
+
+    cluster = Cluster.current_or_error()
+
+    return
 
 
 # TODO: Create a registry of the archives for each dataset, so that we can use these instead of

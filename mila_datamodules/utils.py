@@ -6,7 +6,7 @@ import os
 import shutil
 from logging import getLogger as get_logger
 from pathlib import Path
-from typing import Any, Callable, Sequence, TypeVar
+from typing import Any, Callable, Mapping, Sequence, TypeVar, overload
 
 import tqdm
 from torch.utils.data import Dataset
@@ -172,7 +172,7 @@ def copy_dataset_files(
                 pass
 
 
-def _get_key_to_use_for_indexing(potential_classes: dict[_T, Any], key: _T) -> _T:
+def _get_key_to_use_for_indexing(potential_classes: Mapping[_T, Any], key: _T) -> _T:
     if key in potential_classes:
         return key
     # Return the entry with the same name, if `some_type` is a subclass of it.
@@ -190,11 +190,33 @@ def _get_key_to_use_for_indexing(potential_classes: dict[_T, Any], key: _T) -> _
     return key
 
 
-def getitem_with_subclasscheck(potential_classes: dict[_T, V], key: _T) -> V:
+_V = TypeVar("_V")
+
+_MISSING = object()
+
+
+@overload
+def getitem_with_subclasscheck(potential_classes: Mapping[_T, V], key: _T) -> V:
+    ...
+
+
+@overload
+def getitem_with_subclasscheck(potential_classes: Mapping[_T, V], key: _T, default: _V) -> V | _V:
+    ...
+
+
+def getitem_with_subclasscheck(
+    potential_classes: Mapping[_T, V], key: _T, default: _V = _MISSING
+) -> V | _V:
     if key in potential_classes:
         return potential_classes[key]
-    key = _get_key_to_use_for_indexing(potential_classes, key=key)
-    return potential_classes[key]
+    try:
+        key = _get_key_to_use_for_indexing(potential_classes, key=key)
+        return potential_classes[key]
+    except KeyError:
+        if default is not _MISSING:
+            return default  # type: ignore
+        raise
 
 
 def create_links(

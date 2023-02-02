@@ -345,7 +345,9 @@ class VisionDatasetTests(DatasetTests[VisionDatasetType]):
         kwargs.setdefault("root", dataset_location)
         check_dataset_creation_works_without_download(dataset_cls, **kwargs)
 
-    @pytest.mark.timeout(10)
+    # TODO: Some datasets take a lot longer to extract than others. Might want to customize this
+    # timeout value on a per-dataset basis.
+    @pytest.mark.timeout(300)
     @pytest.mark.disable_socket
     def test_doesnt_download_even_if_user_asks(
         self, tmp_path: Path, dataset_kwargs: dict[str, Any]
@@ -566,7 +568,9 @@ class TestCocoCaptions(VisionDatasetTests[tvd.CocoCaptions]):
         )
 
 
-class TestCIFAR10(VisionDatasetTests[tvd.CIFAR10], FitsInMemoryTests, DownloadForMockTests):
+class TestCIFAR10(
+    VisionDatasetTests[tvd.CIFAR10], FitsInMemoryTests, DownloadForMockTests, Required
+):
     @only_runs_on_clusters()
     def test_always_stored(self):
         assert is_supported_dataset(self.dataset_cls)
@@ -574,7 +578,9 @@ class TestCIFAR10(VisionDatasetTests[tvd.CIFAR10], FitsInMemoryTests, DownloadFo
         assert Path(locate_dataset_root_on_cluster(self.dataset_cls)).exists()
 
 
-class TestCIFAR100(VisionDatasetTests[tvd.CIFAR100], FitsInMemoryTests):
+class TestCIFAR100(
+    VisionDatasetTests[tvd.CIFAR100], FitsInMemoryTests, DownloadForMockTests, Required
+):
     pass
 
 
