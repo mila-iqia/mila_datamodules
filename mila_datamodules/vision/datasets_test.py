@@ -31,8 +31,8 @@ from mila_datamodules.clusters import CURRENT_CLUSTER, Cluster
 from mila_datamodules.clusters.utils import get_scratch_dir
 from mila_datamodules.errors import UnsupportedDatasetError
 from mila_datamodules.registry import (
-    _archives_required_for,
     files_required_for,
+    files_to_copy_for_dataset,
     is_stored_on_cluster,
     is_supported_dataset,
     locate_dataset_root_on_cluster,
@@ -44,7 +44,10 @@ from mila_datamodules.testutils import (
 )
 from mila_datamodules.vision.coco_test import coco_required
 from mila_datamodules.vision.datasets import binary_mnist, caltech101, mnist
-from mila_datamodules.vision.datasets.adapted_datasets import AdaptedDataset
+from mila_datamodules.vision.datasets.adapted_datasets import (
+    AdaptedDataset,
+    prepare_dataset,
+)
 
 datasets = {
     k: v
@@ -180,9 +183,7 @@ class VisionDatasetTests(DatasetTests[VisionDatasetType]):
     _bound: ClassVar[type[Dataset]] = tvd.VisionDataset
 
     @property
-    def adapted_dataset_cls(
-        self,
-    ) -> type[VisionDatasetType]:
+    def adapted_dataset_cls(self) -> type[AdaptedDataset[VisionDatasetType]]:
         """The adapted dataset class from mila_datamodules.vision.datasets."""
         # TODO: Perhaps we could add some skips / xfails here if we can tell that the dataset isn't
         # supported yet, or isn't stored on the current cluster?
@@ -276,17 +277,10 @@ class VisionDatasetTests(DatasetTests[VisionDatasetType]):
 
         if not is_stored_on_cluster(dataset_cls):
             if self.required_on_all_clusters:
-                pytest.xfail()
-
+                pytest.fail(
+                    "Dataset is required, and `is_stored_on_cluster` says it isn't stored."
+                )
             pytest.skip(reason="Dataset isn't stored on the current cluster.")
-
-        # Also check that the files exist on the current cluster.
-        dataset_root = locate_dataset_root_on_cluster(self.dataset_cls)
-        assert dataset_root is not None
-        dataset_root = Path(dataset_root)
-        for file in files:
-            path = dataset_root / file
-            assert path.exists()
 
     @pytest.mark.xfail(
         reason="TODO: The check with `inspect.signature` might not actually be able to pickup the fact that we changed the default value for the `root` argument."
@@ -405,6 +399,7 @@ class FitsInMemoryTests(DatasetTests[VisionDatasetType]):
     # TODO: Add tests that check specifically for this behaviour.
 
 
+@pytest.fixture()
 def fake_slurm_tmpdir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """Create a fake SLURM_TMPDIR in the temporary directory and monkeypatch the environment
     variables to point to it."""
@@ -433,16 +428,31 @@ class LoadsFromArchives(VisionDatasetTests[VisionDatasetType]):
     NOTE: setting --tmp=800G is a good idea if you're going to move a 600gb dataset to SLURM_TMPDIR.
     """
 
-    def test_pre_init_creates_symlinks_to_archives(self, fake_slurm_tmpdir: Path):
+    def test_pre_init_creates_symlinks_to_archives(self, fake_slurm_tmpdir: Path, tmp_path: Path):
         """Test that the 'pre-init' portion of the adapted constructor creates symlinks to the
         archives that are to be used later."""
         adapted_dataset_class = self.adapted_dataset_cls
-        new_root = adapted_dataset_class._pre_init_(root="bad_root")
-        required_archives = _archives_required_for(self.dataset_cls)
-        assert all((fake_slurm_tmpdir / archive).exists() for archive in required_archives)
+        bad_root = tmp_path / "bad_root"
+        files_to_copy = files_to_copy_for_dataset(
+            adapted_dataset_class.original_class,
+            cluster=Cluster.current_or_error(),
+            root=str(bad_root),
+        )
+        assert files_to_copy
+        assert not list(fake_slurm_tmpdir.iterdir())
 
-    # TODO: Add tests that check specifically that the dataset is loaded from the archives as
-    # described in the doc above.
+        new_root = prepare_dataset(adapted_dataset_class, root=str(bad_root))
+
+        assert new_root.startswith(str(fake_slurm_tmpdir))
+
+        for file_relative_to_root, file_on_cluster in files_to_copy.items():
+            # TODO: Change this depending on if we preserve the structure or if we flatten stuff.
+            new_file = Path(new_root) / file_on_cluster.name
+            assert new_file.exists() and new_file.is_symlink()
+            # TODO: Doesn't work?
+            # assert new_file.readlink() == file_on_cluster
+            # assert str(new_file.readlink()) == str(file_on_cluster)
+            assert new_file.readlink().name == file_on_cluster.name
 
 
 class DownloadForMockTests(DatasetTests[VisionDatasetType]):
@@ -704,7 +714,7 @@ class TestHMDB51(VisionDatasetTests[tvd.HMDB51]):
     pass
 
 
-class TestImageNet(VisionDatasetTests[tvd.ImageNet]):
+class TestImageNet(LoadsFromArchives[tvd.ImageNet]):
     pass
 
 

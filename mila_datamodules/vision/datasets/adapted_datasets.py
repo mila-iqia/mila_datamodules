@@ -8,7 +8,7 @@ import textwrap
 import warnings
 from logging import getLogger as get_logger
 from pathlib import Path
-from typing import Any, Callable, ClassVar, Generic, Type, TypeVar, cast
+from typing import Any, Callable, Generic, Type, TypeVar, cast
 
 import torchvision.datasets as tvd
 import torchvision.datasets.utils
@@ -97,10 +97,16 @@ def check_integrity(fpath: str, md5: str | None = None) -> bool:
 setattr(torchvision.datasets.utils, "check_integrity", check_integrity)
 setattr(torchvision.datasets.utils, "check_md5", check_md5)
 
+# TODO: It's a bit weird to require an un-initialized object as input, makes it hard to unit test.
+# It might be better to instead accept the type of dataset as an input, but then we'd need to
+# figure out how to dispatch.
+# OR, we could just have a dictionary. But then we lose the benefits of the dispatching, e.g. to
+# have one function for all the ImageFolder datasets, etc.
+
 
 @functools.singledispatch
-def prepare_dataset_before_init(
-    dataset: AdaptedDataset[VD, P],
+def prepare_dataset(
+    dataset: Callable[Concatenate[str, P], AdaptedDataset[VD]] | AdaptedDataset[VD],
     root: str | None = None,
     *args: P.args,
     **kwargs: P.kwargs,
@@ -133,15 +139,18 @@ def prepare_dataset_before_init(
     )
 
 
-@prepare_dataset_before_init.register(tvd.CIFAR10)
-@prepare_dataset_before_init.register(tvd.CIFAR100)
-@prepare_dataset_before_init.register(tvd.MNIST)
-@prepare_dataset_before_init.register(tvd.FashionMNIST)
+@prepare_dataset.register(type)
+def _dispatch_dataset_class(dataset_type: type[VisionDataset], *args, **kwargs):
+    fake_instance = dataset_type.__new__(dataset_type)
+    return prepare_dataset.dispatch(dataset_type)(fake_instance, *args, **kwargs)
+
+
+@prepare_dataset.register(tvd.CIFAR10)
+@prepare_dataset.register(tvd.CIFAR100)
+@prepare_dataset.register(tvd.MNIST)
+@prepare_dataset.register(tvd.FashionMNIST)
 def read_from_datasets_directory(
-    dataset: AdaptedDataset[VD, P],
-    root: str | None = None,
-    *args: P.args,
-    **kwargs: P.kwargs,
+    dataset: AdaptedDataset[VD], root: str | None = None, *args, **kwargs
 ) -> str | None:
     cluster = Cluster.current_or_error()
     dataset_class = dataset.original_class
@@ -167,13 +176,10 @@ def read_from_datasets_directory(
     return downloaded_dataset_root
 
 
-@prepare_dataset_before_init.register(tvd.Places365)
-@prepare_dataset_before_init.register(tvd.ImageFolder)
+@prepare_dataset.register(tvd.Places365)
+@prepare_dataset.register(tvd.ImageFolder)
 def make_symlinks_to_archives_in_tempdir(
-    dataset: AdaptedDataset[VD, Concatenate[str, P]],
-    root: str | None = None,
-    *args: P.args,
-    **kwargs: P.kwargs,
+    dataset: AdaptedDataset[VD], root: str | None = None, *constructor_args, **constructor_kwargs
 ) -> str | None:
     """Prepare the dataset folder by creating symlinks to the archives inside $SLURM_TMPDIR.
 
@@ -186,25 +192,11 @@ def make_symlinks_to_archives_in_tempdir(
     fast_data_dir.parent.mkdir(exist_ok=True)
     fast_data_dir.mkdir(exist_ok=True)
 
-    # FIXME: Fix this: hard-coded for Places365 while debugging.
-    # files_required_for_dataset = files_to_copy(dataset_class=dataset_class, cluster=cluster)
-    # assert False, files_required_for_dataset
-    # TODO: Get the files and archives that are required for the dataset.
-    files = files_to_copy_for_dataset(dataset_type=dataset_class, cluster=cluster, *args, **kwargs)
-
-    # dataset_archives_root = Path("/network/datasets/places365")
-    # extracted_dataset_root = Path("/network/datasets/places365.var/places365_torchvision")
-    # # TODO: Need to copy all metadata files from the torchvision dir, but the archives are in the
-    # # original root.
-
-    # archives_to_link = list(glob_any(dataset_archives_root, ["*.tar", "*/*.tar"]))
-    # archives_to_link = archives_in_dir(dataset_archives_root, recurse=False)
-
-    # other_files_to_link = list(glob_any(extracted_dataset_root, metadata_file_formats))
-    # # TODO: How to also programmatically include the text files and such?
-    # files = archives_to_link + other_files_to_link
-
-    for path_relative_to_storage_dir, file_in_network_storage in files:
+    files = files_to_copy_for_dataset(
+        dataset_class, cluster=cluster, *constructor_args, **constructor_kwargs
+    )
+    assert files
+    for path_relative_to_storage_dir, file_in_network_storage in files.items():
         # TODO: Do we want to preserve the directory structure of the files? Or flatten things?
         # For now, I'll try a flat structure.
         dest = fast_data_dir / file_in_network_storage.name
@@ -213,43 +205,19 @@ def make_symlinks_to_archives_in_tempdir(
         if dest.exists():
             continue
         dest.symlink_to(file_in_network_storage)
-        logger.debug(f"Creating link to archive: {dest} -> {file_in_network_storage}")
-        # shutil.copyfile(src=file, dst=dest, follow_symlinks=True)
+        logger.debug(f"{dest} -> {file_in_network_storage}")
 
     return str(fast_data_dir)
-    # kwargs["download"] = False
-
-    # d = tvd.Places365(root=str(fast_data_dir), *args, **kwargs)
-
-    # raise NotImplementedError(
-    #     f"TODO: Move/symlink the archives for dataset {dataset_class} in SLURM_TMPDIR, and "
-    #     f"hopefully torchvision does the rest without downloading anything."
-    # )
 
 
-class AdaptedDataset(VisionDataset, Generic[VD_cov, P]):
-    original_class: ClassVar[type[VisionDataset]]
+class AdaptedDataset(VisionDataset, Generic[VD]):
+    original_class: type[VD]
     """The original dataset class that this adapted dataset 'wraps'."""
 
-    def _pre_init_(self, root: str | None = None, *args: P.args, **kwargs: P.kwargs) -> str:
-        """Called before the dataset is initialized. The constructor arguments are passed.
+    def __init__(self, root: str | None = None, *args, **kwargs) -> None:
+        # Calls prepare_dataset before instantiating the original dataset.
+        new_root = prepare_dataset(self, root=root, *args, **kwargs)
 
-        This is where the dataset is copied/extracted to the optimal location on the cluster
-        (usually a directory in $SLURM_TMPDIR).
-
-        Returns the new/corrected value to use for the 'root' argument.
-
-        NOTE: Also making it a class method here, so that users can more easily customize the
-        pre-init behaviour for a particular dataset, by creating a subclass of the adapted dataset
-        and overriding this method.
-        """
-        new_root = prepare_dataset_before_init(self, root=root, *args, **kwargs)
-        return new_root
-
-    def __init__(self, root: str | None = None, *args: P.args, **kwargs: P.kwargs) -> None:
-        # Creates the dataset, but invoking the _pre_init_() method first.
-
-        new_root = self._pre_init_(root=root, *args, **kwargs)
         logger.info(f"New root for {self.original_class.__name__}: {new_root} ({root=})")
         if root is not None and new_root != root:
             warnings.warn(
@@ -265,7 +233,7 @@ _dataset_adapters: dict[
 ] = {}
 
 
-def adapt_dataset(dataset_class: Callable[Concatenate[str, P], VD]) -> type[AdaptedDataset[VD, P]]:
+def adapt_dataset(dataset_class: Callable[Concatenate[str, P], VD]) -> type[AdaptedDataset[VD]]:
     """Creates an optimized version of the given dataset for the current SLURM cluster.
 
     Returns a subclass of the given dataset class and of an adapter class.
@@ -293,19 +261,16 @@ def adapt_dataset(dataset_class: Callable[Concatenate[str, P], VD]) -> type[Adap
     there.
     The dataset is then read from SLURM_TMPDIR.
     """
-    dataset_adapted_class: type[AdaptedDataset[VD, P]] = _dataset_adapters.get(
-        dataset_class, AdaptedDataset
-    )
     dataset_subclass = type(
         dataset_class.__name__,
         (
-            dataset_adapted_class,
+            AdaptedDataset,
             dataset_class,
         ),
         {},  # dataset_type.__dict__,
         # {"__init__": adapted_constructor(dataset_type)},
     )
-    dataset_subclass = cast(Type[AdaptedDataset[VD, P]], dataset_subclass)
+    dataset_subclass = cast(Type[AdaptedDataset[VD]], dataset_subclass)
     dataset_subclass.original_class = dataset_class  # type: ignore
     return dataset_subclass
 

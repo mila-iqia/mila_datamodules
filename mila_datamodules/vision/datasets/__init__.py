@@ -15,6 +15,7 @@ import torchvision.datasets
 from .adapted_datasets import adapt_dataset
 from .binary_mnist import BinaryEMNIST, BinaryMNIST
 from .caltech101 import Caltech101
+from .imagenet import ImageNet
 from .mnist import MNIST
 
 # NOTE: These here use "Patched" versions of the datasets.
@@ -25,6 +26,7 @@ FashionMNIST = adapt_dataset(torchvision.datasets.FashionMNIST)
 
 Caltech101 = adapt_dataset(Caltech101)
 # Caltech101 = adapt_dataset(torchvision.datasets.Caltech101)
+ImageNet = adapt_dataset(ImageNet)
 
 Caltech256 = adapt_dataset(torchvision.datasets.Caltech256)
 CelebA = adapt_dataset(torchvision.datasets.CelebA)

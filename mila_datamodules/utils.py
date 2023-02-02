@@ -219,12 +219,17 @@ def getitem_with_subclasscheck(
         raise
 
 
-def create_links(
-    dir_with_links: Path, dir_with_files: Path, replace_real_files_with_symlinks: bool = False
+def copytree_with_symlinks(
+    src_dir_with_files: Path,
+    dst_dir_with_links: Path,
+    replace_real_files_with_symlinks: bool = False,
+    disable_pbar: bool = False,
 ):
-    """For every file in `user_cache_dir`, create a (symbolic?) link to it in
-    `shared_cache_dir`."""
-    pbar = tqdm.tqdm()
+    """same as sshutil.copytree, but creates symlinks instead of copying the files.
+
+    For every file in `dir_with_files`, create a link to it in `dir_with_links`.
+    """
+    pbar = tqdm.tqdm(disable=disable_pbar)
 
     def _copy_fn(src: str, dst: str) -> None:
         # NOTE: This also overwrites the files in the user directory with symlinks to the same files in
@@ -233,8 +238,8 @@ def create_links(
         # exactly the same contents.
         src_path = Path(src)
         dst_path = Path(dst)
-        rel_d = dst_path.relative_to(dir_with_links)
-        rel_s = src_path.relative_to(dir_with_files)
+        rel_s = src_path.relative_to(src_dir_with_files)
+        rel_d = dst_path.relative_to(dst_dir_with_links)
 
         if dst_path.exists():
             if dst_path.is_symlink():
@@ -247,11 +252,11 @@ def create_links(
         # print(f"Linking {rel_s}")
         pbar.set_description(f"Linking {rel_s}")
         pbar.update(1)
-        os.symlink(src, dst)  # Create symlinks instead of copying.
+        dst_path.symlink_to(src_path)
 
     shutil.copytree(
-        dir_with_files,
-        dir_with_links,
+        src_dir_with_files,
+        dst_dir_with_links,
         symlinks=True,
         copy_function=_copy_fn,
         dirs_exist_ok=True,

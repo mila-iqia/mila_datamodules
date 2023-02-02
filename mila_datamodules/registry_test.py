@@ -19,7 +19,7 @@ from mila_datamodules.utils import all_files_exist
 
 from .registry import (
     _dataset_files,
-    dataset_archives_per_cluster,
+    dataset_archives_locations_per_cluster,
     dataset_roots_per_cluster,
     is_stored_on_cluster,
     locate_dataset_root_on_cluster,
@@ -89,14 +89,14 @@ def test_dataset_files_in_registry_are_actually_there(cluster: Cluster, dataset:
     "cluster,dataset",
     [
         param_only_runs_on_cluster(cluster, dataset_cls, cluster=cluster)
-        for cluster, dataset_cls_to_archives in dataset_archives_per_cluster.items()
+        for cluster, dataset_cls_to_archives in dataset_archives_locations_per_cluster.items()
         for dataset_cls in dataset_cls_to_archives
     ],
 )
 def test_dataset_archives_in_registry_are_actually_there(cluster: Cluster, dataset: type[Dataset]):
     """Test that the archives associated with the dataset class are actually present on the
     cluster."""
-    archives = dataset_archives_per_cluster[cluster][dataset]
+    archives = dataset_archives_locations_per_cluster[cluster][dataset]
     assert all(Path(archive_file).exists() for archive_file in archives)
     for archive_file in archives:
         from gzip import GzipFile

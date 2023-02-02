@@ -31,6 +31,8 @@ from mila_datamodules.vision.datasets._utils import (
 )
 from mila_datamodules.vision.datasets.binary_mnist import BinaryMNIST
 
+# TODO: Redesign this whole registry idea.
+
 logger = get_logger(__name__)
 _dataset_files = {
     tvd.MNIST: ["MNIST"],
@@ -167,45 +169,55 @@ def _rel_paths_and_paths(
         yield str(path.relative_to(root)), path
 
 
-_files_to_copy_for_dataset: dict[type, dict[Cluster, Iterable[tuple[str, Path]]]] = {
+_files_to_copy_for_dataset: dict[type, dict[Cluster, Callable[[], Iterable[tuple[str, Path]]]]] = {
     tvd.Places365: {
-        Cluster.Mila: itertools.chain(
+        Cluster.Mila: lambda: itertools.chain(
             _rel_paths_and_paths("/network/datasets/places365", fn=archives_in_dir),
             _rel_paths_and_paths(
                 "/network/datasets/places365.var/places356_torchvision", fn=metadata_files_in_dir
             ),
         )
     }
+    # tvd.ImageNet: {
+    #     Cluster.Mila: itertools.chain(
+    #         # _rel_paths_and_paths("/network/datasets/imagenet", fn=archives_in_dir),
+    #     )
+    # }
 }
 
 
+# @functools.singledispatch
 def files_to_copy_for_dataset(
-    dataset_type: Callable[P, Dataset],
+    dataset: Callable[P, Dataset],
     cluster: Cluster,
-    *args: P.args,
-    **kwargs: P.kwargs,
-) -> list[tuple[str, Path]]:
+    *constructor_args: P.args,
+    **constructor_kwargs: P.kwargs,
+) -> dict[str, Path] | None:
     """Returns the files that should be moved for the given dataset type on the current cluster.
 
     Note: This is only really applicable to datasets that should be read from archives, e.g.
     ImageNet.
-    # TODO: Get the files and archives that are required for the dataset on the current cluster.
     """
-    assert inspect.isclass(dataset_type)
+    from mila_datamodules.vision.datasets.adapted_datasets import AdaptedDataset
+
+    if inspect.isclass(dataset) and issubclass(dataset, AdaptedDataset):
+        dataset = dataset.original_class
+    assert inspect.isclass(dataset)
     files_per_cluster = getitem_with_subclasscheck(
-        potential_classes=_files_to_copy_for_dataset, key=dataset_type, default=None
+        potential_classes=_files_to_copy_for_dataset, key=dataset, default=None
     )
     if files_per_cluster is None:
-        logger.debug(f"We don't know which files should be copied for {dataset_type} yet.")
-        return []
+        logger.debug(f"We don't know which files should be copied for {dataset} yet.")
+        return None
+
     if cluster not in files_per_cluster:
         warnings.warn(
             RuntimeWarning(
-                f"We don't know which files should be copied for {dataset_type} on {cluster} yet"
+                f"We don't know which files should be copied for {dataset} on {cluster} yet"
             )
         )
-        return []
-    return list(files_per_cluster[cluster])
+        return None
+    return dict(files_per_cluster[cluster]())
 
     # if should_be_read_directly_from_dataset_dir(dataset_type, cluster):
     #     return []
@@ -218,32 +230,29 @@ def files_to_copy_for_dataset(
 # TODO: Create a registry of the archives for each dataset, so that we can use these instead of
 # copying the files individually.
 
-dataset_archives_per_cluster: dict[Cluster, dict[type, list[str]]] = {
-    Cluster.Mila: {
-        # TODO: Unclear if/how these archives should be used to construct the torchvision
-        # Places365 dataset. (train_256(...).tar gets extracted to a `data_256` folder.. the
-        # structure doesn't match what torchvision expects)
-        tvd.Places365: [
-            "/network/datasets/places365/256/train_256_places365standard.tar",
-            "/network/datasets/places365/256/val_256.tar",
-            "/network/datasets/places365/256/test_256.tar",
-        ],
-        tvd.ImageNet: [
-            "/network/datasets/imagenet/ILSVRC2012_img_train.tar",
-            "/network/datasets/imagenet/ILSVRC2012_img_val.tar",
-            "/network/datasets/imagenet/ILSVRC2012_devkit_t12.tar.gz",
-        ],
-    },
-    Cluster.Beluga: {
-        tvd.CIFAR100: ["/project/rpp-bengioy/data/curated/cifar100/cifar-100-python.tar.gz"],
-        tvd.ImageNet: [
-            "/project/rpp-bengioy/data/curated/imagenet/ILSVRC2012_img_train.tar",
-            "/project/rpp-bengioy/data/curated/imagenet/ILSVRC2012_img_val.tar",
-            "/project/rpp-bengioy/data/curated/imagenet/ILSVRC2012_devkit_t12.tar.gz",
-        ],
-    },
-}
-"""For each cluster, for each type of dataset, the list of archives needed to load the dataset."""
+dataset_archives_locations_per_cluster: dict[Cluster, dict[type, list[str]]] = {}
+#     Cluster.Mila: {
+#         # tvd.Places365: [
+#         #     "/network/datasets/places365/256/train_256_places365standard.tar",
+#         #     "/network/datasets/places365/256/val_256.tar",
+#         #     "/network/datasets/places365/256/test_256.tar",
+#         # ],
+#         tvd.ImageNet: [
+#             "/network/datasets/imagenet/ILSVRC2012_img_train.tar",
+#             "/network/datasets/imagenet/ILSVRC2012_img_val.tar",
+#             "/network/datasets/imagenet/ILSVRC2012_devkit_t12.tar.gz",
+#         ],
+#     },
+#     Cluster.Beluga: {
+#         tvd.CIFAR100: ["/project/rpp-bengioy/data/curated/cifar100/cifar-100-python.tar.gz"],
+#         tvd.ImageNet: [
+#             "/project/rpp-bengioy/data/curated/imagenet/ILSVRC2012_img_train.tar",
+#             "/project/rpp-bengioy/data/curated/imagenet/ILSVRC2012_img_val.tar",
+#             "/project/rpp-bengioy/data/curated/imagenet/ILSVRC2012_devkit_t12.tar.gz",
+#         ],
+#     },
+# }
+# """For each cluster, for each type of dataset, the list of archives needed to load the dataset."""
 
 
 too_large_for_slurm_tmpdir: set[Callable] = set()
@@ -307,6 +316,10 @@ def files_required_for(dataset_type: type) -> list[str]:
     except KeyError as exc:
         pass
 
+    files_to_copy = files_to_copy_for_dataset(dataset_type=dataset_type)
+    if files_to_copy:
+        return files_to_copy
+
     error = UnsupportedDatasetError(
         dataset=dataset_type,
     )
@@ -326,7 +339,7 @@ def _archives_required_for(
         )
     try:
         archive_paths = getitem_with_subclasscheck(
-            dataset_archives_per_cluster[cluster], key=dataset_class
+            dataset_archives_locations_per_cluster[cluster], key=dataset_class
         )
         # TODO: Maybe return the actual archive type to use?
         return [Path(archive_path) for archive_path in archive_paths]
@@ -345,7 +358,7 @@ def _archives_required_for(
 
 
 def is_stored_on_cluster(dataset_cls: type, cluster: Cluster | None = CURRENT_CLUSTER) -> bool:
-    """Returns whether we know where to find the given dataset on the given cluster.
+    """Returns whether the given dataset is stored on this cluster.
 
     This first checks if the `dataset_cls` has an entry in either the
     `dataset_archives_per_cluster` or `dataset_roots_per_cluster` dictionaries.
@@ -355,42 +368,59 @@ def is_stored_on_cluster(dataset_cls: type, cluster: Cluster | None = CURRENT_CL
 
     NOTE: This may check for the existence of the files or archives on the current cluster.
     """
-    if (
-        cluster in dataset_archives_per_cluster
-        and dataset_cls in dataset_archives_per_cluster[cluster]
-    ):
-        return True
+    # TODO: This needs a big rework. Either we centralize the registry, or we don't.
+    # TODO: Should raise a custom warning type whenever the registry is wrong, and return False.
+    # required_files = files_to_copy_for_dataset(dataset_cls, cluster=cluster)
+
     if cluster in dataset_roots_per_cluster and dataset_cls in dataset_roots_per_cluster[cluster]:
+        # There is a directory from where this dataset can be read directly.
+        dataset_root = Path(dataset_roots_per_cluster[cluster][dataset_cls])
+        if not dataset_root.exists() and dataset_root.is_dir():
+            warnings.warn(
+                RuntimeWarning(
+                    f"Registry is wrong: it lists {dataset_root} as the root to use to load dataset "
+                    f"{dataset_cls.__name__} but that directory doesn't exist!"
+                )
+            )
         return True
 
-    if not is_supported_dataset(dataset_cls):
-        # We don't know what files or archives are required for creating this dataset!
+    if cluster is None:
+        # No way to check if the dataset is stored on the local machine.
         return False
 
-    # todo: Clean this up.
-    # Need a fallback dataset dir to use as the base directory for the required files.
-    scratch_dir = get_scratch_dir() or "data"
-    scratch_dir_str = str(scratch_dir)
-    dataset_root_str = dataset_roots_per_cluster.get(cluster, {}).get(dataset_cls, scratch_dir_str)
-    dataset_root = Path(dataset_root_str)
-    # TODO: redesign these `*_required_for` functions, having to use a try-catch isn't pretty.
-    try:
-        dataset_archives = _archives_required_for(dataset_cls, cluster=cluster)
-        return all((dataset_root / p).exists() for p in dataset_archives)
-    except ValueError:
-        # We don't know what archives could be used to create this dataset on this cluster.
-        # However we might know which files could be used.
-        pass
-
-    # If we know what files are required for this dataset, we can check if they exist.
-    # NOTE: This is a dynamic check
-
-    try:
-        files_required_to_load_dataset = files_required_for(dataset_cls)
-        return all((dataset_root / p).exists() for p in files_required_to_load_dataset)
-    except ValueError:
-        # We don't know what files are required for creating this dataset!
+    files_to_copy = files_to_copy_for_dataset(dataset_cls, cluster=cluster)
+    if files_to_copy is None:
+        logger.debug(
+            f"Don't know what files to copy for dataset {dataset_cls} on cluster {cluster}. "
+            f"Assuming that the dataset isn't stored."
+        )
         return False
+    if not files_to_copy:
+        raise NotImplementedError(
+            f"There supposedly aren't any files that need to be copied for dataset {dataset_cls} "
+            f"on cluster {cluster}, which is hard to believe. This is probably a bug."
+        )
+    # TODO: What about checking for those files (or other files) inside $SCRATCH?
+    # IDEA: This is interesting. Perhaps we could use SCRATCH before we use the dataset dir, that
+    # way users could "overwrite" some of the files. e.g. use some of the files from SCRATCH and
+    # the rest would come from /network/datasets?
+    scratch_data_dir = get_scratch_dir() / "data"
+    for relative_file_name, file_on_network in files_to_copy.items():
+        file_on_scratch = scratch_data_dir / relative_file_name
+        if file_on_network.exists():
+            continue
+        if file_on_scratch.exists():
+            continue
+        warnings.warn(
+            RuntimeWarning(
+                f"Registry is wrong: Says that in order to load the {dataset_cls}, we'd need "
+                f"to copy {file_on_network} to the data directory, but that file doesn't "
+                f"exist!\n"
+                f"We also looked in $SCRATCH at {file_on_scratch}, but that doesn't exist either!"
+            )
+        )
+        return False
+    return True
 
 
 def locate_dataset_root_on_cluster(
