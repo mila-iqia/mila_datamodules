@@ -25,16 +25,16 @@ from mila_datamodules.registry import (
     is_supported_dataset,
     locate_dataset_root_on_cluster,
 )
+from mila_datamodules.vision.coco_test import coco_required
 from mila_datamodules.vision.datasets import binary_mnist, caltech101, mnist
 
-from .base_tests import (
+from .base_test import (
     FitsInMemoryTests,
     LoadsFromArchives,
     Required,
     VisionDatasetTests,
-    _unsupported_variant,
-    coco_required,
     only_runs_on_clusters,
+    unsupported_variant,
 )
 
 T = TypeVar("T")
@@ -80,9 +80,9 @@ class TestCityscapes(LoadsFromArchives[tvd.Cityscapes], Required):
 class TestINaturalist(VisionDatasetTests[tvd.INaturalist]):
     @pytest.fixture(
         params=[
-            _unsupported_variant("2017", Cluster.Mila),
-            _unsupported_variant("2018", Cluster.Mila),
-            _unsupported_variant("2019", Cluster.Mila),
+            unsupported_variant("2017", Cluster.Mila),
+            unsupported_variant("2018", Cluster.Mila),
+            unsupported_variant("2019", Cluster.Mila),
             "2021_train",
             "2021_train_mini",
             "2021_valid",
@@ -98,7 +98,7 @@ class TestINaturalist(VisionDatasetTests[tvd.INaturalist]):
 
 class TestPlaces365(LoadsFromArchives[tvd.Places365]):
     @pytest.fixture(
-        params=["train-standard", _unsupported_variant("train-challenge", Cluster.Mila), "val"]
+        params=["train-standard", unsupported_variant("train-challenge", Cluster.Mila), "val"]
     )
     def split(self, request: _FixtureRequest[str]) -> str:
         return request.param

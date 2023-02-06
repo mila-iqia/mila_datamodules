@@ -65,6 +65,10 @@ class DownloadableDataset(Protocol):
 
 
 def is_downloadable(
-    dataset: type[VisionDatasetType],
-) -> TypeGuard[type[DownloadableDataset | VisionDatasetType]]:
-    return "download" in inspect.signature(dataset.__init__).parameters
+    dataset: type,
+) -> TypeGuard[type[DownloadableDataset | tvd.VisionDataset]]:
+    return (
+        inspect.isclass(dataset)
+        and issubclass(dataset, tvd.VisionDataset)
+        and "download" in inspect.signature(dataset.__init__).parameters
+    )

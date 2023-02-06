@@ -178,11 +178,6 @@ _files_to_copy_for_dataset: dict[type, dict[Cluster, Callable[[], Iterable[tuple
             ),
         )
     }
-    # tvd.ImageNet: {
-    #     Cluster.Mila: itertools.chain(
-    #         # _rel_paths_and_paths("/network/datasets/imagenet", fn=archives_in_dir),
-    #     )
-    # }
 }
 """Dictionary that gives, for each dataset type, for each cluster, a function that returns all the
 files and/or archives that should be copied over to the SLURM_TMPDIR before the dataset is read
