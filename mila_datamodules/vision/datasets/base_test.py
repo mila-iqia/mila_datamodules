@@ -1,22 +1,9 @@
-"""Tests for the `mila_datamodules.datasets` module.
-
-Checks that the 'optimized' constructors work on the current cluster.
-"""
 from __future__ import annotations
 
 import inspect
 import os
 from pathlib import Path
-from typing import (
-    TYPE_CHECKING,
-    Any,
-    Callable,
-    ClassVar,
-    Generic,
-    Sequence,
-    TypeVar,
-    get_args,
-)
+from typing import Any, Callable, ClassVar, Generic, Sequence, TypeVar, Union, get_args
 
 import filelock
 import pytest
@@ -34,7 +21,6 @@ from mila_datamodules.registry import (
     files_required_for,
     files_to_copy_for_dataset,
     is_stored_on_cluster,
-    is_supported_dataset,
     locate_dataset_root_on_cluster,
 )
 from mila_datamodules.registry_test import check_dataset_creation_works_without_download
@@ -42,12 +28,12 @@ from mila_datamodules.testutils import (
     only_runs_on_clusters,
     only_runs_when_not_on_a_slurm_cluster,
 )
-from mila_datamodules.vision.coco_test import coco_required
-from mila_datamodules.vision.datasets import binary_mnist, caltech101, mnist
 from mila_datamodules.vision.datasets.adapted_datasets import (
     AdaptedDataset,
     prepare_dataset,
 )
+
+from ._utils import DatasetType, DownloadableDataset, VisionDatasetType
 
 datasets = {
     k: v
@@ -57,15 +43,9 @@ datasets = {
 
 P = ParamSpec("P")
 T = TypeVar("T")
-DatasetType = TypeVar("DatasetType", bound=Dataset)
-VisionDatasetType = TypeVar("VisionDatasetType", bound=tvd.VisionDataset)
-
-
-if TYPE_CHECKING:
-
-    class _FixtureRequest(pytest.FixtureRequest, Generic[T]):
-        param: T
-
+DownloadableDatasetT = TypeVar(
+    "DownloadableDatasetT", bound=Union[VisionDataset, DownloadableDataset]
+)
 
 torchvision_dataset_classes = {
     name: dataset_cls
@@ -76,8 +56,20 @@ torchvision_dataset_classes = {
 }
 
 
+@pytest.fixture()
+def fake_slurm_tmpdir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Create a fake SLURM_TMPDIR in the temporary directory and monkeypatch the environment
+    variables to point to it."""
+    slurm_tmpdir = tmp_path / "slurm_tmpdir"
+    slurm_tmpdir.mkdir()
+    monkeypatch.setenv("SLURM_TMPDIR", str(slurm_tmpdir))
+    monkeypatch.setenv("FAKE_SLURM_TMPDIR", str(slurm_tmpdir))
+    return slurm_tmpdir
+
+
 @pytest.mark.parametrize("torchvision_dataset_class", torchvision_dataset_classes.values())
 def test_all_torchvision_datasets_have_a_test_class(torchvision_dataset_class: type[Dataset]):
+    """TODO: This won't work if we split the tests into different files, which is a good idea."""
     dataset_name = torchvision_dataset_class.__name__
     # Check that there is a subclass of the base test class for this dataset.
     test_classes = {
@@ -166,15 +158,6 @@ class DatasetTests(Generic[DatasetType]):
         dataset_cls = dataset_cls or self.dataset_cls
         assert dataset_cls
         return dataset_cls(*args, **kwargs)
-
-
-class Required(Generic[DatasetType]):
-    """Tests that raise an error if the dataset isn't stored.
-
-    By default, tests will be skipped if the dataset isn't stored on the current cluster.
-    """
-
-    required_on_all_clusters: ClassVar[bool] = True
 
 
 class VisionDatasetTests(DatasetTests[VisionDatasetType]):
@@ -282,28 +265,6 @@ class VisionDatasetTests(DatasetTests[VisionDatasetType]):
                 )
             pytest.skip(reason="Dataset isn't stored on the current cluster.")
 
-    @pytest.mark.xfail(
-        reason="TODO: The check with `inspect.signature` might not actually be able to pickup the fact that we changed the default value for the `root` argument."
-    )
-    def test_root_becomes_optional_arg_if_stored(self):
-        """Checks that the `root` argument becomes optional in the adapted dataset class."""
-        dataset_cls = self.dataset_cls
-        adapted_cls = self.adapted_dataset_cls
-        default_constructor_root_parameter = inspect.signature(dataset_cls).parameters["root"]
-        adapted_constructor_root_parameter = inspect.signature(adapted_cls).parameters["root"]
-
-        if is_stored_on_cluster(dataset_cls):
-            # Check that we did indeed change the signature of the constructor to have the 'root'
-            # set to the value we want.
-            expected_default_root = locate_dataset_root_on_cluster(dataset_cls)
-            assert adapted_constructor_root_parameter.default == expected_default_root
-        else:
-            # We don't have the dataset stored on this cluster, so expect root to be required.
-            assert (
-                adapted_constructor_root_parameter.default
-                == default_constructor_root_parameter.default
-            )
-
     def _assert_downloaded_if_required_else_skip(self):
         """Asserts that the dataset is present on the current cluster if it is required.
 
@@ -316,28 +277,6 @@ class VisionDatasetTests(DatasetTests[VisionDatasetType]):
                     f"Dataset {self.dataset_cls.__name__} is required and is not stored on {cluster} cluster!"
                 )
             pytest.skip(f"Dataset isn't stored on {cluster} cluster")
-
-    @pytest.mark.disable_socket
-    def test_can_read_dataset_from_root_dir(self, dataset_kwargs: dict[str, Any]):
-        """Test that the dataset can be created without downloading it the known location for that
-        dataset on the current cluster is passed as the `root` argument.
-
-        NOTE: This test isn't applicable to datasets like ImageNet!
-        """
-        dataset_cls = self.dataset_cls
-        self._assert_downloaded_if_required_else_skip()
-
-        # TODO: Is it ok for us to (e.g.) read a large dataset from the /network/datasets folder
-        # during unit tests?
-        # I think it is.
-        # if issubclass(dataset_cls, tvd.ImageFolder):
-        #     pytest.skip(reason=f"Avoiding loading the dataset from network dataset storage.")
-
-        dataset_location = locate_dataset_root_on_cluster(dataset_cls)
-
-        kwargs = dataset_kwargs.copy()
-        kwargs.setdefault("root", dataset_location)
-        check_dataset_creation_works_without_download(dataset_cls, **kwargs)
 
     # TODO: Some datasets take a lot longer to extract than others. Might want to customize this
     # timeout value on a per-dataset basis.
@@ -390,24 +329,111 @@ class VisionDatasetTests(DatasetTests[VisionDatasetType]):
         assert list(bad_path.iterdir()) == []
 
 
-class FitsInMemoryTests(DatasetTests[VisionDatasetType]):
+class ReadsFromRoot(VisionDatasetTests[VisionDatasetType]):
+    """Tests for datasets that are read from a 'root' directory on the cluster."""
+
+    @only_runs_on_clusters()
+    def test_pre_init_returns_existing_root_on_cluster(self):
+        location_on_cluster = locate_dataset_root_on_cluster(
+            self.dataset_cls, cluster=Cluster.current_or_error()
+        )
+        assert prepare_dataset(self.dataset_cls) == location_on_cluster
+
+    @pytest.mark.disable_socket
+    def test_can_read_dataset_from_root_dir(self, dataset_kwargs: dict[str, Any]):
+        """Test that the dataset can be created without downloading it the known location for that
+        dataset on the current cluster is passed as the `root` argument.
+
+        NOTE: This test isn't applicable to datasets like ImageNet!
+        """
+        dataset_cls = self.dataset_cls
+        self._assert_downloaded_if_required_else_skip()
+
+        # TODO: Is it ok for us to (e.g.) read a large dataset from the /network/datasets folder
+        # during unit tests?
+        # I think it is.
+        # if issubclass(dataset_cls, tvd.ImageFolder):
+        #     pytest.skip(reason=f"Avoiding loading the dataset from network dataset storage.")
+
+        dataset_location = locate_dataset_root_on_cluster(dataset_cls)
+
+        kwargs = dataset_kwargs.copy()
+        kwargs.setdefault("root", dataset_location)
+        check_dataset_creation_works_without_download(dataset_cls, **kwargs)
+
+    @pytest.mark.xfail(
+        reason="TODO: The check with `inspect.signature` might not actually be able to pickup the fact that we changed the default value for the `root` argument."
+    )
+    def test_root_becomes_optional_arg_if_stored(self):
+        """Checks that the `root` argument becomes optional in the adapted dataset class."""
+        dataset_cls = self.dataset_cls
+        adapted_cls = self.adapted_dataset_cls
+        default_constructor_root_parameter = inspect.signature(dataset_cls).parameters["root"]
+        adapted_constructor_root_parameter = inspect.signature(adapted_cls).parameters["root"]
+
+        if is_stored_on_cluster(dataset_cls):
+            # Check that we did indeed change the signature of the constructor to have the 'root'
+            # set to the value we want.
+            expected_default_root = locate_dataset_root_on_cluster(dataset_cls)
+            assert adapted_constructor_root_parameter.default == expected_default_root
+        else:
+            # We don't have the dataset stored on this cluster, so expect root to be required.
+            assert (
+                adapted_constructor_root_parameter.default
+                == default_constructor_root_parameter.default
+            )
+
+
+class DownloadableDatasetTests(VisionDatasetTests[DownloadableDatasetT]):
+    """Tests for dataset that can be downloaded."""
+
+    ...
+
+
+class Required(VisionDatasetTests[VisionDatasetType]):
+    """Tests that raise an error if the dataset isn't stored.
+
+    By default, tests will be skipped if the dataset isn't stored on the current cluster.
+    """
+
+    required_on_all_clusters: ClassVar[bool] = True
+
+    @pytest.fixture(scope="session", autouse=True)
+    def download_before_tests_on_mock_cluster(
+        self, worker_id: str, tmp_path_factory: pytest.TempPathFactory
+    ):
+        cluster = Cluster.current()
+        if cluster is not Cluster._mock:
+            # Don't download the dataset, it should already be stored.
+            return
+
+        assert "FAKE_SCRATCH" in os.environ
+        fake_scratch_dir = get_scratch_dir()
+        assert fake_scratch_dir is not None
+        fake_scratch_dir.mkdir(exist_ok=True, parents=True)
+
+        if "download" not in inspect.signature(self.dataset_cls.__init__).parameters:
+            # TODO: The dataset should be downloaded before the tests are run.
+            pytest.fail(
+                reason="Dataset needs to be downloaded manually on this machine for these tests to run."
+            )
+            return
+
+        # get the temp directory shared by all workers.
+        # note: we only use this for the filelock, not for downloading the dataset.
+        temp_dir = tmp_path_factory.getbasetemp().parent
+        # Make this only download the dataset on one worker, using filelocks.
+        with filelock.FileLock(temp_dir / f"{self.dataset_cls.__name__}.lock"):
+            self.dataset_cls(root=fake_scratch_dir, download=worker_id == "master")  # type: ignore
+
+
+class FitsInMemoryTests(VisionDatasetTests[VisionDatasetType]):
     """Tests for datasets that fit in RAM or are loaded into RAM anyway, e.g. mnist/cifar10/etc.
 
     - we should just read them from /network/datasets/torchvision, and not bother copying them to SLURM_TMPDIR.
     """
 
     # TODO: Add tests that check specifically for this behaviour.
-
-
-@pytest.fixture()
-def fake_slurm_tmpdir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    """Create a fake SLURM_TMPDIR in the temporary directory and monkeypatch the environment
-    variables to point to it."""
-    slurm_tmpdir = tmp_path / "slurm_tmpdir"
-    slurm_tmpdir.mkdir()
-    monkeypatch.setenv("SLURM_TMPDIR", str(slurm_tmpdir))
-    monkeypatch.setenv("FAKE_SLURM_TMPDIR", str(slurm_tmpdir))
-    return slurm_tmpdir
 
 
 class LoadsFromArchives(VisionDatasetTests[VisionDatasetType]):
@@ -427,6 +453,13 @@ class LoadsFromArchives(VisionDatasetTests[VisionDatasetType]):
     "SLURM_TMPDIR".
     NOTE: setting --tmp=800G is a good idea if you're going to move a 600gb dataset to SLURM_TMPDIR.
     """
+
+    def test_is_stored_on_cluster(self):
+        assert is_stored_on_cluster(self.dataset_cls, cluster=Cluster.current_or_error())
+
+    @pytest.mark.disable_socket
+    def test_create_with_download_true(self):
+        raise NotImplementedError
 
     def test_pre_init_creates_symlinks_to_archives(self, fake_slurm_tmpdir: Path, tmp_path: Path):
         """Test that the 'pre-init' portion of the adapted constructor creates symlinks to the
@@ -453,411 +486,3 @@ class LoadsFromArchives(VisionDatasetTests[VisionDatasetType]):
             # assert new_file.readlink() == file_on_cluster
             # assert str(new_file.readlink()) == str(file_on_cluster)
             assert new_file.readlink().name == file_on_cluster.name
-
-
-class DownloadForMockTests(DatasetTests[VisionDatasetType]):
-    _bound: ClassVar[type[Dataset]] = tvd.VisionDataset
-
-    @pytest.fixture(scope="session", autouse=True)
-    def download_to_fake_scratch_before_tests(
-        self, worker_id: str, tmp_path_factory: pytest.TempPathFactory
-    ):
-        cluster = Cluster.current()
-        if cluster is not Cluster._mock:
-            # Don't download the datasets.
-            return
-        assert "FAKE_SCRATCH" in os.environ
-        fake_scratch_dir = get_scratch_dir()
-        assert fake_scratch_dir is not None
-        fake_scratch_dir.mkdir(exist_ok=True, parents=True)
-
-        assert "download" in inspect.signature(self.dataset_cls.__init__).parameters
-
-        # get the temp directory shared by all workers
-        temp_dir = tmp_path_factory.getbasetemp().parent
-
-        # Make this only download the dataset on one worker, using filelocks.
-        with filelock.FileLock(temp_dir / f"{self.dataset_cls.__name__}.lock"):
-            self.dataset_cls(root=fake_scratch_dir, download=worker_id == "master")
-
-
-# ------------------ Dataset Tests ------------------
-
-
-class TestCityscapes(VisionDatasetTests[tvd.Cityscapes]):
-    @pytest.fixture(params=["fine", "coarse"])
-    def mode(self, request) -> str:
-        return request.param
-
-    @pytest.fixture(params=["instance", "semantic", "polygon", "color"])
-    def target_type(self, request: _FixtureRequest[str]) -> str:
-        return request.param
-
-    @pytest.fixture()
-    def dataset_kwargs(self, mode: str, target_type: str) -> dict[str, Any]:
-        return dict(mode=mode, target_type=target_type)
-
-
-# TODO: Need a kind of "skip if not stored on current cluster" mark.
-
-
-class TestINaturalist(VisionDatasetTests[tvd.INaturalist]):
-    @pytest.fixture(
-        params=[
-            _unsupported_variant("2017", Cluster.Mila),
-            _unsupported_variant("2018", Cluster.Mila),
-            _unsupported_variant("2019", Cluster.Mila),
-            "2021_train",
-            "2021_train_mini",
-            "2021_valid",
-        ]
-    )
-    def version(self, request: _FixtureRequest[str]) -> str:
-        return request.param
-
-    @pytest.fixture()
-    def dataset_kwargs(self, version: str) -> dict[str, Any]:
-        return dict(version=version)
-
-
-class TestPlaces365(LoadsFromArchives[tvd.Places365]):
-    @pytest.fixture(
-        params=["train-standard", _unsupported_variant("train-challenge", Cluster.Mila), "val"]
-    )
-    def split(self, request: _FixtureRequest[str]) -> str:
-        return request.param
-
-    @pytest.fixture
-    def dataset_kwargs(self, split: str) -> dict[str, Any]:
-        return dict(split=split)
-
-
-class TestSTL10(VisionDatasetTests[tvd.STL10]):
-    @pytest.fixture(params=["train", "test", "unlabeled", "train+unlabeled"])
-    def split(self, request: _FixtureRequest[str]) -> str:
-        return request.param
-
-    @pytest.fixture
-    def dataset_kwargs(self, split: str) -> dict[str, Any]:
-        return dict(split=split)
-
-
-@coco_required
-class TestCocoDetection(VisionDatasetTests[tvd.CocoDetection]):
-    @pytest.fixture(params=["train", "val"])
-    def split(self, request: _FixtureRequest[str]) -> str:
-        return request.param
-
-    @pytest.fixture
-    def dataset_kwargs(self, split: str) -> dict[str, Any]:
-        return dict(
-            split=split,
-            root=f"{locate_dataset_root_on_cluster(tvd.CocoDetection)}/{split}2017",
-            annFile=str(
-                Path(locate_dataset_root_on_cluster(tvd.CocoDetection))
-                / f"annotations/instances_{split}2017.json"
-            ),
-        )
-
-
-@coco_required
-class TestCocoCaptions(VisionDatasetTests[tvd.CocoCaptions]):
-    @pytest.fixture(params=["train", "val"])
-    def split(self, request: _FixtureRequest[str]) -> str:
-        return request.param
-
-    @pytest.fixture
-    def dataset_kwargs(self, split: str) -> dict[str, Any]:
-        return dict(
-            split=split,
-            root=f"{locate_dataset_root_on_cluster(tvd.CocoCaptions)}/{split}2017",
-            annFile=str(
-                Path(locate_dataset_root_on_cluster(tvd.CocoCaptions))
-                / f"annotations/captions_{split}2017.json"
-            ),
-        )
-
-
-class TestCIFAR10(
-    VisionDatasetTests[tvd.CIFAR10], FitsInMemoryTests, DownloadForMockTests, Required
-):
-    @only_runs_on_clusters()
-    def test_always_stored(self):
-        assert is_supported_dataset(self.dataset_cls)
-        assert is_stored_on_cluster(self.dataset_cls)
-        assert Path(locate_dataset_root_on_cluster(self.dataset_cls)).exists()
-
-
-class TestCIFAR100(
-    VisionDatasetTests[tvd.CIFAR100], FitsInMemoryTests, DownloadForMockTests, Required
-):
-    pass
-
-
-# NOTE: Here the 'original class' is already in `mila_datamodules.datasets.binary_mnist` because
-# we include fixes for bugs in the base class (nothing to do with the clusters though)
-class TestBinaryMNIST(VisionDatasetTests[binary_mnist.BinaryMNIST], FitsInMemoryTests):
-    pass
-
-
-class TestBinaryEMNIST(VisionDatasetTests[binary_mnist.BinaryEMNIST], FitsInMemoryTests):
-    @pytest.fixture(params=["byclass", "bymerge"])
-    def split(self, request: _FixtureRequest[str]) -> str:
-        return request.param
-
-    @pytest.fixture
-    def dataset_kwargs(self, split: str) -> dict[str, Any]:
-        return dict(split=split)
-
-
-# TODO: Same as for binarymnist (original class is actually our "patched" version of the class) but
-# here the fix is specific to one cluster. This isn't pretty.
-class TestCaltech101(VisionDatasetTests[caltech101.Caltech101]):
-    def test_archives_are_placed_in_slurm_tmpdir(self):
-        "101_ObjectCategories.tar.gz"
-        "Annotations.tar"
-        raise NotImplementedError
-
-
-class TestCaltech256(VisionDatasetTests[tvd.Caltech256]):
-    pass
-
-
-class TestCelebA(VisionDatasetTests[tvd.CelebA]):
-    pass
-
-
-# Same here for `MNIST`, we have a 'patch' that fixes an issue with dataset folder names on Beluga.
-class TestMNIST(VisionDatasetTests[mnist.MNIST], FitsInMemoryTests):
-    pass
-
-
-class TestFashionMNIST(VisionDatasetTests[tvd.FashionMNIST], FitsInMemoryTests):
-    pass
-
-
-class TestEMNIST(VisionDatasetTests[tvd.EMNIST], FitsInMemoryTests):
-    pass
-
-
-class TestSVHN(VisionDatasetTests[tvd.SVHN], FitsInMemoryTests):
-    pass
-
-
-class TestFlyingChairs(VisionDatasetTests[tvd.FlyingChairs]):
-    pass
-
-
-class TestKittiFlow(VisionDatasetTests[tvd.KittiFlow]):
-    pass
-
-
-class TestSintel(VisionDatasetTests[tvd.Sintel]):
-    pass
-
-
-class TestFlyingThings3D(VisionDatasetTests[tvd.FlyingThings3D]):
-    pass
-
-
-class TestHD1K(VisionDatasetTests[tvd.HD1K]):
-    pass
-
-
-class TestCLEVRClassification(VisionDatasetTests[tvd.CLEVRClassification]):
-    pass
-
-
-class TestCountry211(VisionDatasetTests[tvd.Country211]):
-    pass
-
-
-class TestDTD(VisionDatasetTests[tvd.DTD]):
-    pass
-
-
-class TestEuroSAT(VisionDatasetTests[tvd.EuroSAT]):
-    pass
-
-
-class TestFER2013(VisionDatasetTests[tvd.FER2013]):
-    pass
-
-
-class TestFGVCAircraft(VisionDatasetTests[tvd.FGVCAircraft]):
-    pass
-
-
-@pytest.mark.xfail(reason="http://nlp.cs.illinois.edu/HockenmaierGroup/8k-pictures.html is down.")
-class TestFlickr8k(VisionDatasetTests[tvd.Flickr8k]):
-    pass
-
-
-@pytest.mark.xfail(reason="Isn't freely available for download.")
-class TestFlickr30k(VisionDatasetTests[tvd.Flickr30k]):
-    pass
-
-
-class TestFlowers102(VisionDatasetTests[tvd.Flowers102]):
-    pass
-
-
-class TestFood101(VisionDatasetTests[tvd.Food101]):
-    pass
-
-
-class TestGTSRB(VisionDatasetTests[tvd.GTSRB]):
-    pass
-
-
-class TestHMDB51(VisionDatasetTests[tvd.HMDB51]):
-    pass
-
-
-class TestImageNet(LoadsFromArchives[tvd.ImageNet]):
-    pass
-
-
-if hasattr(tvd, "Kinetics400"):
-
-    class TestKinetics400(VisionDatasetTests[tvd.Kinetics400]):  # type: ignore[attr-defined]
-        pass
-
-
-class TestKinetics(VisionDatasetTests[tvd.Kinetics]):
-    pass
-
-
-class TestKitti(VisionDatasetTests[tvd.Kitti]):
-    pass
-
-
-class TestLFWPeople(VisionDatasetTests[tvd.LFWPeople]):
-    pass
-
-
-class TestLFWPairs(VisionDatasetTests[tvd.LFWPairs]):
-    pass
-
-
-class TestLSUN(VisionDatasetTests[tvd.LSUN]):
-    pass
-
-
-class TestLSUNClass(VisionDatasetTests[tvd.LSUNClass]):
-    pass
-
-
-class TestKMNIST(VisionDatasetTests[tvd.KMNIST]):
-    pass
-
-
-class TestQMNIST(VisionDatasetTests[tvd.QMNIST]):
-    pass
-
-
-class TestOmniglot(VisionDatasetTests[tvd.Omniglot]):
-    pass
-
-
-class TestOxfordIIITPet(VisionDatasetTests[tvd.OxfordIIITPet]):
-    pass
-
-
-class TestPCAM(VisionDatasetTests[tvd.PCAM]):
-    pass
-
-
-class TestPhotoTour(VisionDatasetTests[tvd.PhotoTour]):
-    pass
-
-
-class TestRenderedSST2(VisionDatasetTests[tvd.RenderedSST2]):
-    pass
-
-
-class TestSBDataset(VisionDatasetTests[tvd.SBDataset]):
-    pass
-
-
-class TestSBU(VisionDatasetTests[tvd.SBU]):
-    pass
-
-
-class TestSEMEION(VisionDatasetTests[tvd.SEMEION]):
-    pass
-
-
-class TestStanfordCars(VisionDatasetTests[tvd.StanfordCars]):
-    pass
-
-
-class TestSUN397(VisionDatasetTests[tvd.SUN397]):
-    pass
-
-
-class TestUCF101(VisionDatasetTests[tvd.UCF101]):
-    pass
-
-
-class TestUSPS(VisionDatasetTests[tvd.USPS]):
-    pass
-
-
-class TestVisionDataset(VisionDatasetTests[tvd.VisionDataset]):
-    pass
-
-
-class TestVOCSegmentation(VisionDatasetTests[tvd.VOCSegmentation]):
-    pass
-
-
-class TestVOCDetection(VisionDatasetTests[tvd.VOCDetection]):
-    pass
-
-
-class TestWIDERFace(VisionDatasetTests[tvd.WIDERFace]):
-    pass
-
-
-# New torchvision version:
-
-
-class TestCarlaStereo(VisionDatasetTests[tvd.CarlaStereo]):
-    pass
-
-
-class TestCREStereo(VisionDatasetTests[tvd.CREStereo]):
-    pass
-
-
-class TestETH3DStereo(VisionDatasetTests[tvd.ETH3DStereo]):
-    pass
-
-
-class TestFallingThingsStereo(VisionDatasetTests[tvd.FallingThingsStereo]):
-    pass
-
-
-class TestInStereo2k(VisionDatasetTests[tvd.InStereo2k]):
-    pass
-
-
-class TestKitti2012Stereo(VisionDatasetTests[tvd.Kitti2012Stereo]):
-    pass
-
-
-class TestKitti2015Stereo(VisionDatasetTests[tvd.Kitti2015Stereo]):
-    pass
-
-
-class TestMiddlebury2014Stereo(VisionDatasetTests[tvd.Middlebury2014Stereo]):
-    pass
-
-
-class TestSceneFlowStereo(VisionDatasetTests[tvd.SceneFlowStereo]):
-    pass
-
-
-class TestSintelStereo(VisionDatasetTests[tvd.SintelStereo]):
-    pass

@@ -8,8 +8,21 @@ from filelock import FileLock
 
 from mila_datamodules.clusters import CURRENT_CLUSTER
 from mila_datamodules.clusters.cluster import Cluster
-from mila_datamodules.clusters.utils import get_scratch_dir, get_slurm_tmpdir
+from mila_datamodules.clusters.utils import (
+    get_scratch_dir,
+    get_slurm_tmpdir,
+    on_slurm_cluster,
+)
 from mila_datamodules.registry import dataset_roots_per_cluster, is_stored_on_cluster
+from mila_datamodules.vision.imagenet.imagenet import num_cpus_to_use
+
+
+def pytest_xdist_auto_num_workers(config):
+    """Return the number of workers to spawn when ``--numprocesses=auto`` is given in the command-
+    line."""
+    if on_slurm_cluster():
+        return num_cpus_to_use()
+    return os.cpu_count()
 
 
 @pytest.fixture(scope="session", autouse=True)

@@ -184,9 +184,14 @@ _files_to_copy_for_dataset: dict[type, dict[Cluster, Callable[[], Iterable[tuple
     #     )
     # }
 }
+"""Dictionary that gives, for each dataset type, for each cluster, a function that returns all the
+files and/or archives that should be copied over to the SLURM_TMPDIR before the dataset is read
+from there.
+
+This is so that torchvision then extracts the files from the archives and reads them from there.
+"""
 
 
-# @functools.singledispatch
 def files_to_copy_for_dataset(
     dataset: Callable[P, Dataset],
     cluster: Cluster,

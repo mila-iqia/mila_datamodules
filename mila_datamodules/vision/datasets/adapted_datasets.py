@@ -184,6 +184,9 @@ def make_symlinks_to_archives_in_tempdir(
     """Prepare the dataset folder by creating symlinks to the archives inside $SLURM_TMPDIR.
 
     The dataset constructor should then extract the archives in $SLURM_TMPDIR and load the dataset.
+
+    TODO: The dataset constructor often only extracts the archives if the `download` parameter is
+    set to True!
     """
     dataset_class = dataset.original_class
     cluster = Cluster.current_or_error()
@@ -206,6 +209,17 @@ def make_symlinks_to_archives_in_tempdir(
             continue
         dest.symlink_to(file_in_network_storage)
         logger.debug(f"{dest} -> {file_in_network_storage}")
+
+    # TODO: We probably need to call the dataset constructor with download=True, so that it
+    # actually extracts the dataset files from the archives.
+    if "download" in inspect.signature(dataset_class.__init__).parameters:
+        kwargs = constructor_kwargs.copy()
+        kwargs["download"] = True
+        logger.info(
+            f"Calling {dataset_class.__name__}.__init__ with download=True once, to extract the "
+            f"archives to {fast_data_dir}."
+        )
+        dataset_class(root=str(fast_data_dir), *constructor_args, **kwargs)
 
     return str(fast_data_dir)
 
