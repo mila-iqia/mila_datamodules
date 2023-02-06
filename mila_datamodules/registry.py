@@ -372,7 +372,10 @@ def is_stored_on_cluster(dataset_cls: type, cluster: Cluster | None = CURRENT_CL
     # TODO: Should raise a custom warning type whenever the registry is wrong, and return False.
     # required_files = files_to_copy_for_dataset(dataset_cls, cluster=cluster)
 
-    if cluster in dataset_roots_per_cluster and dataset_cls in dataset_roots_per_cluster[cluster]:
+    if cluster in dataset_roots_per_cluster and bool(
+        getitem_with_subclasscheck(dataset_roots_per_cluster[cluster], dataset_cls, default=None)
+    ):
+        dataset_cls = _get_key_to_use_for_indexing(dataset_roots_per_cluster[cluster], dataset_cls)
         # There is a directory from where this dataset can be read directly.
         dataset_root = Path(dataset_roots_per_cluster[cluster][dataset_cls])
         if not dataset_root.exists() and dataset_root.is_dir():

@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import os
+import random
 import shutil
 
+import numpy as np
 import pytest
+import torch
 from filelock import FileLock
 
 from mila_datamodules.clusters import CURRENT_CLUSTER
@@ -15,6 +18,24 @@ from mila_datamodules.clusters.utils import (
 )
 from mila_datamodules.registry import dataset_roots_per_cluster, is_stored_on_cluster
 from mila_datamodules.vision.imagenet.imagenet import num_cpus_to_use
+
+TEST_SEED = 123
+
+
+@pytest.fixture()
+def seed():
+    random.seed(TEST_SEED)
+    np.random.seed(TEST_SEED)
+    torch.manual_seed(TEST_SEED)
+    yield TEST_SEED
+
+
+# @pytest.fixture(autouse=True)
+# def datadir():
+#     return Path(__file__).parent.parent / "data"
+
+
+seeded = pytest.mark.usefixtures("seed")
 
 
 def pytest_xdist_auto_num_workers(config):

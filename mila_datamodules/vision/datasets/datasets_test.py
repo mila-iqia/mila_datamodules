@@ -29,8 +29,9 @@ from mila_datamodules.vision.coco_test import coco_required
 from mila_datamodules.vision.datasets import binary_mnist, caltech101, mnist
 
 from .base_test import (
-    FitsInMemoryTests,
+    DownloadableDatasetTests,
     LoadsFromArchives,
+    ReadFromRoot,
     Required,
     VisionDatasetTests,
     only_runs_on_clusters,
@@ -51,7 +52,7 @@ class TestImageNet(LoadsFromArchives[tvd.ImageNet], Required):
     pass
 
 
-class TestCIFAR10(FitsInMemoryTests[tvd.CIFAR10], Required):
+class TestCIFAR10(ReadFromRoot[tvd.CIFAR10], DownloadableDatasetTests, Required):
     @only_runs_on_clusters()
     def test_always_stored(self):
         assert is_supported_dataset(self.dataset_cls)
@@ -59,7 +60,7 @@ class TestCIFAR10(FitsInMemoryTests[tvd.CIFAR10], Required):
         assert Path(locate_dataset_root_on_cluster(self.dataset_cls)).exists()
 
 
-class TestCIFAR100(FitsInMemoryTests[tvd.CIFAR100], Required):
+class TestCIFAR100(ReadFromRoot[tvd.CIFAR100], DownloadableDatasetTests, Required):
     pass
 
 
@@ -77,7 +78,10 @@ class TestCityscapes(LoadsFromArchives[tvd.Cityscapes], Required):
         return dict(mode=mode, target_type=target_type)
 
 
-class TestINaturalist(VisionDatasetTests[tvd.INaturalist]):
+class TestINaturalist(
+    LoadsFromArchives[tvd.INaturalist],
+    DownloadableDatasetTests,
+):
     @pytest.fixture(
         params=[
             unsupported_variant("2017", Cluster.Mila),
@@ -96,7 +100,7 @@ class TestINaturalist(VisionDatasetTests[tvd.INaturalist]):
         return dict(version=version)
 
 
-class TestPlaces365(LoadsFromArchives[tvd.Places365]):
+class TestPlaces365(LoadsFromArchives[tvd.Places365], DownloadableDatasetTests):
     @pytest.fixture(
         params=["train-standard", unsupported_variant("train-challenge", Cluster.Mila), "val"]
     )
@@ -156,11 +160,11 @@ class TestCocoCaptions(VisionDatasetTests[tvd.CocoCaptions]):
 
 # NOTE: Here the 'original class' is already in `mila_datamodules.datasets.binary_mnist` because
 # we include fixes for bugs in the base class (nothing to do with the clusters though)
-class TestBinaryMNIST(FitsInMemoryTests[binary_mnist.BinaryMNIST]):
+class TestBinaryMNIST(ReadFromRoot[binary_mnist.BinaryMNIST]):
     pass
 
 
-class TestBinaryEMNIST(FitsInMemoryTests[binary_mnist.BinaryEMNIST]):
+class TestBinaryEMNIST(ReadFromRoot[binary_mnist.BinaryEMNIST]):
     @pytest.fixture(params=["byclass", "bymerge"])
     def split(self, request: _FixtureRequest[str]) -> str:
         return request.param
@@ -183,24 +187,24 @@ class TestCaltech256(VisionDatasetTests[tvd.Caltech256]):
     pass
 
 
-class TestCelebA(VisionDatasetTests[tvd.CelebA]):
+class TestCelebA(LoadsFromArchives[tvd.CelebA], DownloadableDatasetTests):
     pass
 
 
 # Same here for `MNIST`, we have a 'patch' that fixes an issue with dataset folder names on Beluga.
-class TestMNIST(FitsInMemoryTests[mnist.MNIST]):
+class TestMNIST(ReadFromRoot[mnist.MNIST], DownloadableDatasetTests, Required):
     pass
 
 
-class TestFashionMNIST(FitsInMemoryTests[tvd.FashionMNIST]):
+class TestFashionMNIST(ReadFromRoot[tvd.FashionMNIST], DownloadableDatasetTests, Required):
     pass
 
 
-class TestEMNIST(FitsInMemoryTests[tvd.EMNIST]):
+class TestEMNIST(ReadFromRoot[tvd.EMNIST], DownloadableDatasetTests, Required):
     pass
 
 
-class TestSVHN(FitsInMemoryTests[tvd.SVHN]):
+class TestSVHN(ReadFromRoot[tvd.SVHN]):
     pass
 
 

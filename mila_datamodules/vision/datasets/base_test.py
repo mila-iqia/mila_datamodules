@@ -10,6 +10,7 @@ import pytest
 import torchvision.datasets
 import torchvision.datasets as tvd
 from pytest_regressions.data_regression import DataRegressionFixture
+from pytest_regressions.ndarrays_regression import NDArraysRegressionFixture
 from torch.utils.data import Dataset
 from torchvision.datasets import VisionDataset
 from typing_extensions import ParamSpec
@@ -17,12 +18,12 @@ from typing_extensions import ParamSpec
 import mila_datamodules.vision.datasets
 from mila_datamodules.clusters import CURRENT_CLUSTER, Cluster
 from mila_datamodules.clusters.utils import get_scratch_dir
+from mila_datamodules.conftest import seeded
 from mila_datamodules.registry import (
     files_to_copy_for_dataset,
     is_stored_on_cluster,
     locate_dataset_root_on_cluster,
 )
-from mila_datamodules.registry_test import check_dataset_creation_works_without_download
 from mila_datamodules.testutils import (
     only_runs_on_clusters,
     only_runs_when_not_on_a_slurm_cluster,
@@ -45,6 +46,9 @@ T = TypeVar("T")
 DownloadableDatasetT = TypeVar(
     "DownloadableDatasetT", bound=Union[VisionDataset, DownloadableDataset]
 )
+
+
+without_internet = pytest.mark.disable_socket
 
 
 @pytest.fixture()
@@ -143,10 +147,6 @@ class VisionDatasetTests(Generic[VisionDatasetType]):
     def dataset_name(self) -> str:
         return self.dataset_cls.__name__
 
-    @property
-    def is_stored_on_cluster(self) -> bool:
-        return is_stored_on_cluster(self.dataset_cls, cluster=Cluster.current())
-
     @classmethod
     def _dataset_cls(cls) -> type[VisionDatasetType]:
         """Retrieves the dataset class under test from the class definition (without having to set
@@ -226,45 +226,39 @@ class VisionDatasetTests(Generic[VisionDatasetType]):
             # expected_default_root = locate_dataset_root_on_cluster(original_cls)
             # assert adapted_constructor_root_parameter.default == expected_default_root
 
-    def test_can_load_first_item(self, data_regression: DataRegressionFixture):
-        dataset = self.adapted_dataset_cls()
+    def dataset_sample_to_dictionary(self, sample: Any) -> dict:
+        """Converts an item of this dataset to a dictionary for the regression fixture."""
+        if isinstance(sample, tuple):
+            return {str(i): v for i, v in enumerate(sample)}
+        raise NotImplementedError(sample)
+
+    # TODO: Some datasets take a lot longer to extract than others. Might want to customize this
+    # timeout value on a per-dataset basis.
+    # IDEA: Perhaps we could have a `adapted_dataset` fixture with a timeout mark? Would that work?
+
+    @pytest.mark.timeout(30)
+    @seeded()
+    @without_internet()
+    @pytest.fixture(scope="class")
+    def dataset(self) -> AdaptedDataset[VisionDatasetType]:
+        return self.adapted_dataset_cls()
+
+    def test_load_first_sample(
+        self,
+        dataset: AdaptedDataset[VisionDatasetType],
+        ndarrays_regression: NDArraysRegressionFixture,
+    ):
+        # Note: this is specific to map-style datasets, but should be fine for now.
+        # Otherwise, we'd want to do something like `next(iter(dataset))` instead.
         first_sample = dataset[0]
-        data_regression.check(first_sample)
+        sample_dict = self.dataset_sample_to_dictionary(first_sample)
+        ndarrays_regression.check(sample_dict, basename=f"{self.dataset_name}_sample_0")
 
-    # def test_we_know_what_files_are_required_for_dataset(self):
-    #     """Test that we know which files are required in order to load this dataset."""
-    #     try:
-    #         required_files = files_required_for(self.dataset_cls)
-    #         assert required_files
-    #     except UnsupportedDatasetError as e:
-    #         if self.required_on_all_clusters:
-    #             raise AssertionError(
-    #                 f"Dataset {self.dataset_cls.__name__} is required and is not stored on this "
-    #                 f"cluster!"
-    #                 f"The required files or archives should be added in the registry. Here's some "
-    #                 f"context that might be helpful: \n"
-    #                 f"{inspect.getabsfile(self.dataset_cls)}: \n"
-    #                 f"{self.dataset_cls.__doc__}"
-    #             ) from e
-    #         pytest.xfail(reason=f"The dataset {self.dataset_name} isn't supported yet.")
-    #     except AssertionError as e:
-    #         # Huh? The dataset doesn't require any files?
-    #         raise AssertionError(f"Huh? dataset {self.dataset_name} doesn't require any files?")
-
-    # def test_required_files_exist(self):
-    #     """Test that if the registry says that we have the files required to load this dataset on
-    #     the current cluster, then they actually exist."""
-    #     dataset_cls = self.dataset_cls
-    #     files = files_required_for(dataset_cls)
-
-    #     assert files  # note: this is a bit redundant with the test above.
-
-    #     if not is_stored_on_cluster(dataset_cls):
-    #         if self.required_on_all_clusters:
-    #             pytest.fail(
-    #                 "Dataset is required, and `is_stored_on_cluster` says it isn't stored."
-    #             )
-    #         pytest.skip(reason="Dataset isn't stored on the current cluster.")
+    def test_len(
+        self, dataset: AdaptedDataset[VisionDatasetType], data_regression: DataRegressionFixture
+    ):
+        # NOTE: won't work with `IterableDataset`s.
+        data_regression.check({"len": len(dataset)}, basename=f"{self.dataset_name}_len")
 
     def _assert_downloaded_if_required_else_skip(self):
         """Asserts that the dataset is present on the current cluster if it is required.
@@ -279,12 +273,15 @@ class VisionDatasetTests(Generic[VisionDatasetType]):
                 )
             pytest.skip(f"Dataset isn't stored on {cluster} cluster")
 
-    # TODO: Some datasets take a lot longer to extract than others. Might want to customize this
-    # timeout value on a per-dataset basis.
 
+class ReadFromRoot(VisionDatasetTests[VisionDatasetType]):
+    """Tests for datasets that are read from a 'root' directory on the cluster.
 
-class ReadsFromRoot(VisionDatasetTests[VisionDatasetType]):
-    """Tests for datasets that are read from a 'root' directory on the cluster."""
+    These datasets that fit in RAM or are loaded into RAM anyway, e.g. mnist/cifar10/etc.
+
+    We should just read them from /network/datasets/torchvision, and not bother copying them to
+    SLURM_TMPDIR.
+    """
 
     @only_runs_on_clusters()
     def test_pre_init_returns_existing_root_on_cluster(self):
@@ -293,7 +290,7 @@ class ReadsFromRoot(VisionDatasetTests[VisionDatasetType]):
         )
         assert prepare_dataset(self.dataset_cls) == location_on_cluster
 
-    @pytest.mark.disable_socket
+    @without_internet
     def test_can_read_dataset_from_root_dir(self, dataset_kwargs: dict[str, Any]):
         """Test that the dataset can be created without downloading it the known location for that
         dataset on the current cluster is passed as the `root` argument.
@@ -301,22 +298,20 @@ class ReadsFromRoot(VisionDatasetTests[VisionDatasetType]):
         NOTE: This test isn't applicable to datasets like ImageNet!
         """
         dataset_cls = self.dataset_cls
-        self._assert_downloaded_if_required_else_skip()
-
-        # TODO: Is it ok for us to (e.g.) read a large dataset from the /network/datasets folder
-        # during unit tests?
-        # I think it is.
-        # if issubclass(dataset_cls, tvd.ImageFolder):
-        #     pytest.skip(reason=f"Avoiding loading the dataset from network dataset storage.")
-
         dataset_location = locate_dataset_root_on_cluster(dataset_cls)
 
         kwargs = dataset_kwargs.copy()
-        kwargs.setdefault("root", dataset_location)
-        check_dataset_creation_works_without_download(dataset_cls, **kwargs)
+        if is_downloadable(dataset_cls):
+            kwargs["download"] = False
+
+        dataset = self.dataset_cls(root=dataset_location, **kwargs)
+        # TODO: Check that the loaded dataset is valid? Perhaps with data_regressions?
 
     @pytest.mark.xfail(
-        reason="TODO: The check with `inspect.signature` might not actually be able to pickup the fact that we changed the default value for the `root` argument."
+        reason=(
+            "TODO: The check with `inspect.signature` might not actually be able to pickup the "
+            "fact that we changed the default value for the `root` argument."
+        )
     )
     def test_root_becomes_optional_arg_if_stored(self):
         """Checks that the `root` argument becomes optional in the adapted dataset class."""
@@ -336,106 +331,6 @@ class ReadsFromRoot(VisionDatasetTests[VisionDatasetType]):
                 adapted_constructor_root_parameter.default
                 == default_constructor_root_parameter.default
             )
-
-
-class DownloadableDatasetTests(VisionDatasetTests[DownloadableDatasetT]):
-    """Tests for dataset that can be downloaded."""
-
-    @pytest.mark.timeout(300)
-    @pytest.mark.disable_socket
-    def test_doesnt_download_even_if_user_asks(
-        self, tmp_path: Path, dataset_kwargs: dict[str, Any]
-    ):
-        """Test that even if `download=True` is passed to the constructor, the dataset is not
-        downloaded.
-
-        TODO: It might be a good idea to let the user override this behaviour in some cases. For
-        example, if there is some issue with the stored dataset files on the cluster, or a new
-        version of the dataset was published. Perhaps by setting some global configuration variable
-        the user could say "No, really do download this please?" Or a new argument to one of the
-        functions? or some context manager?
-        """
-        dataset_cls = self.dataset_cls
-        adapted_dataset_cls = self.adapted_dataset_cls
-        assert issubclass(adapted_dataset_cls, AdaptedDataset)
-
-        self._assert_downloaded_if_required_else_skip()
-
-        assert is_downloadable(dataset_cls)
-
-        kwargs = dataset_kwargs.copy()
-        kwargs["download"] = True
-
-        bad_path = tmp_path / "bad_path"
-        bad_path.mkdir()
-
-        dataset_location = locate_dataset_root_on_cluster(dataset_cls)
-
-        with pytest.warns(
-            RuntimeWarning, match=f"Ignoring passed 'root' argument: {str(bad_path)}"
-        ):
-            dataset = adapted_dataset_cls(root=str(bad_path), **kwargs)
-        assert dataset.root not in {bad_path, str(bad_path)}
-        assert list(bad_path.iterdir()) == []
-
-        with pytest.warns(
-            UserWarning,
-            match=(
-                f"Not downloading the {self.dataset_name} dataset, since it is "
-                f"already stored on the cluster at {dataset_location}"
-            ),
-        ):
-            dataset = adapted_dataset_cls(root=str(bad_path), **kwargs)
-        assert dataset.root not in {bad_path, str(bad_path)}
-        assert list(bad_path.iterdir()) == []
-
-    ...
-
-
-class Required(VisionDatasetTests[VisionDatasetType]):
-    """Tests that raise an error if the dataset isn't stored.
-
-    By default, tests will be skipped if the dataset isn't stored on the current cluster.
-    """
-
-    required_on_all_clusters: ClassVar[bool] = True
-
-    @pytest.fixture(scope="session", autouse=True)
-    def download_before_tests_on_mock_cluster(
-        self, worker_id: str, tmp_path_factory: pytest.TempPathFactory
-    ):
-        cluster = Cluster.current()
-        if cluster is not Cluster._mock:
-            # Don't download the dataset, it should already be stored.
-            return
-
-        assert "FAKE_SCRATCH" in os.environ
-        fake_scratch_dir = get_scratch_dir()
-        assert fake_scratch_dir is not None
-        fake_scratch_dir.mkdir(exist_ok=True, parents=True)
-
-        if "download" not in inspect.signature(self.dataset_cls.__init__).parameters:
-            # TODO: The dataset should be downloaded before the tests are run.
-            pytest.fail(
-                reason="Dataset needs to be downloaded manually on this machine for these tests to run."
-            )
-            return
-
-        # get the temp directory shared by all workers.
-        # note: we only use this for the filelock, not for downloading the dataset.
-        temp_dir = tmp_path_factory.getbasetemp().parent
-        # Make this only download the dataset on one worker, using filelocks.
-        with filelock.FileLock(temp_dir / f"{self.dataset_cls.__name__}.lock"):
-            self.dataset_cls(root=fake_scratch_dir, download=worker_id == "master")  # type: ignore
-
-
-class FitsInMemoryTests(VisionDatasetTests[VisionDatasetType]):
-    """Tests for datasets that fit in RAM or are loaded into RAM anyway, e.g. mnist/cifar10/etc.
-
-    - we should just read them from /network/datasets/torchvision, and not bother copying them to SLURM_TMPDIR.
-    """
-
-    # TODO: Add tests that check specifically for this behaviour.
 
 
 class LoadsFromArchives(VisionDatasetTests[VisionDatasetType]):
@@ -488,3 +383,96 @@ class LoadsFromArchives(VisionDatasetTests[VisionDatasetType]):
             # assert new_file.readlink() == file_on_cluster
             # assert str(new_file.readlink()) == str(file_on_cluster)
             assert new_file.readlink().name == file_on_cluster.name
+
+
+class DownloadableDatasetTests(VisionDatasetTests[DownloadableDatasetT]):
+    """Tests for dataset that can be downloaded."""
+
+    @pytest.mark.timeout(300)
+    @without_internet
+    def test_doesnt_download_even_if_user_asks(
+        self, tmp_path: Path, dataset_kwargs: dict[str, Any]
+    ):
+        """Test that even if `download=True` is passed to the constructor, the dataset is not
+        downloaded.
+
+        TODO: It might be a good idea to let the user override this behaviour in some cases. For
+        example, if there is some issue with the stored dataset files on the cluster, or a new
+        version of the dataset was published. Perhaps by setting some global configuration variable
+        the user could say "No, really do download this please?" Or a new argument to one of the
+        functions? or some context manager?
+        """
+        dataset_cls = self.dataset_cls
+        adapted_dataset_cls = self.adapted_dataset_cls
+        assert issubclass(adapted_dataset_cls, AdaptedDataset)
+
+        self._assert_downloaded_if_required_else_skip()
+
+        assert is_downloadable(dataset_cls)
+
+        kwargs = dataset_kwargs.copy()
+        kwargs["download"] = True
+
+        bad_path = tmp_path / "bad_path"
+        bad_path.mkdir()
+
+        dataset_location = locate_dataset_root_on_cluster(dataset_cls)
+
+        with pytest.warns(
+            RuntimeWarning, match=f"Ignoring passed 'root' argument: {str(bad_path)}"
+        ):
+            dataset = adapted_dataset_cls(root=str(bad_path), **kwargs)
+        assert dataset.root not in {bad_path, str(bad_path)}
+        assert list(bad_path.iterdir()) == []
+
+        # NOTE: Seems like we need to use another fixture to check for the other warning.
+        # This is just a duplicate of the above.
+        with pytest.warns(
+            UserWarning,
+            match=(
+                f"Not downloading the {self.dataset_name} dataset, since it is "
+                f"already stored on the cluster at {dataset_location}"
+            ),
+        ):
+            dataset = adapted_dataset_cls(root=str(bad_path), **kwargs)
+        assert dataset.root not in {bad_path, str(bad_path)}
+        assert list(bad_path.iterdir()) == []
+
+    ...
+
+
+class Required(VisionDatasetTests[VisionDatasetType]):
+    """Tests that raise an error if the dataset isn't stored.
+
+    By default, tests will be skipped if the dataset isn't stored on the current cluster.
+    """
+
+    required_on_all_clusters: ClassVar[bool] = True
+
+    @pytest.fixture(scope="session", autouse=True)
+    def download_before_tests_on_mock_cluster(
+        self, worker_id: str, tmp_path_factory: pytest.TempPathFactory
+    ):
+        cluster = Cluster.current()
+        if cluster is not Cluster._mock:
+            # Don't download the dataset, it should already be stored.
+            return
+
+        assert "FAKE_SCRATCH" in os.environ
+        fake_scratch_dir = get_scratch_dir()
+        assert fake_scratch_dir is not None
+        fake_scratch_dir.mkdir(exist_ok=True, parents=True)
+
+        if "download" not in inspect.signature(self.dataset_cls.__init__).parameters:
+            # TODO: The dataset should be downloaded before the tests are run.
+            pytest.fail(
+                reason="Dataset needs to be downloaded manually on this machine for these tests to run."
+            )
+            return
+
+        # get the temp directory shared by all workers.
+        # note: we only use this for the filelock, not for downloading the dataset.
+        temp_dir = tmp_path_factory.getbasetemp().parent
+        # Make this only download the dataset on one worker, using filelocks.
+        with filelock.FileLock(temp_dir / f"{self.dataset_cls.__name__}.lock"):
+            self.dataset_cls(root=fake_scratch_dir, download=worker_id == "master")  # type: ignore

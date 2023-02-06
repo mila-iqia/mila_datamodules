@@ -30,7 +30,7 @@ class DatasetNotFoundOnClusterError(NotImplementedError):
         github_issue_url = get_github_issue_url(dataset_name, cluster_name)
         message = message or textwrap.dedent(
             f"""\
-            No known location for dataset {dataset_name} on the {cluster_name} cluster!
+            No known location for dataset {dataset_name} ({dataset}) on the {cluster_name} cluster!
             If you do know where it can be found on {cluster_name}, add an entry to the
             `dataset_roots_per_cluster` dictionary at this cluster and dataset, like so:
 
