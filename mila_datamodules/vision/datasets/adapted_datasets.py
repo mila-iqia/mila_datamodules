@@ -20,7 +20,7 @@ from typing_extensions import Concatenate, ParamSpec
 from mila_datamodules.clusters import get_slurm_tmpdir
 from mila_datamodules.clusters.cluster import Cluster
 from mila_datamodules.registry import (
-    files_to_copy_for_dataset,
+    files_to_use_for_dataset,
     is_stored_on_cluster,
     locate_dataset_root_on_cluster,
 )
@@ -195,7 +195,7 @@ def make_symlinks_to_archives_in_tempdir(
     fast_data_dir.parent.mkdir(exist_ok=True)
     fast_data_dir.mkdir(exist_ok=True)
 
-    files = files_to_copy_for_dataset(
+    files = files_to_use_for_dataset(
         dataset_class, cluster=cluster, *constructor_args, **constructor_kwargs
     )
     assert files

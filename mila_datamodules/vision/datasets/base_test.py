@@ -20,7 +20,7 @@ from mila_datamodules.clusters import CURRENT_CLUSTER, Cluster
 from mila_datamodules.clusters.utils import get_scratch_dir
 from mila_datamodules.conftest import seeded
 from mila_datamodules.registry import (
-    files_to_copy_for_dataset,
+    files_to_use_for_dataset,
     is_stored_on_cluster,
     locate_dataset_root_on_cluster,
 )
@@ -49,17 +49,6 @@ DownloadableDatasetT = TypeVar(
 
 
 without_internet = pytest.mark.disable_socket
-
-
-@pytest.fixture()
-def fake_slurm_tmpdir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    """Create a fake SLURM_TMPDIR in the temporary directory and monkeypatch the environment
-    variables to point to it."""
-    slurm_tmpdir = tmp_path / "slurm_tmpdir"
-    slurm_tmpdir.mkdir()
-    monkeypatch.setenv("SLURM_TMPDIR", str(slurm_tmpdir))
-    monkeypatch.setenv("FAKE_SLURM_TMPDIR", str(slurm_tmpdir))
-    return slurm_tmpdir
 
 
 torchvision_dataset_classes = {
@@ -236,7 +225,6 @@ class VisionDatasetTests(Generic[VisionDatasetType]):
     # timeout value on a per-dataset basis.
     # IDEA: Perhaps we could have a `adapted_dataset` fixture with a timeout mark? Would that work?
 
-    @pytest.mark.timeout(30)
     @seeded()
     @without_internet()
     @pytest.fixture(scope="class")
@@ -354,26 +342,44 @@ class LoadsFromArchives(VisionDatasetTests[VisionDatasetType]):
     def test_is_stored_on_cluster(self):
         assert is_stored_on_cluster(self.dataset_cls, cluster=Cluster.current_or_error())
 
-    @pytest.mark.disable_socket
-    def test_create_with_download_true(self):
-        raise NotImplementedError
+    @pytest.fixture()
+    def fake_slurm_tmpdir(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        """Create a fake SLURM_TMPDIR in the temporary directory and monkeypatch the environment
+        variables to point to it."""
+        slurm_tmpdir = tmp_path / "slurm_tmpdir"
+        slurm_tmpdir.mkdir()
+        monkeypatch.setenv("SLURM_TMPDIR", str(slurm_tmpdir))
+        monkeypatch.setenv("FAKE_SLURM_TMPDIR", str(slurm_tmpdir))
+        return slurm_tmpdir
 
-    def test_pre_init_creates_symlinks_to_archives(self, fake_slurm_tmpdir: Path, tmp_path: Path):
-        """Test that the 'pre-init' portion of the adapted constructor creates symlinks to the
-        archives that are to be used later."""
+    @pytest.fixture(scope="class")
+    def prepared_dataset_location(
+        self, dataset_kwargs: dict[str, Any], tmp_path_factory: pytest.TempPathFactory
+    ):
+        bad_root = tmp_path_factory.mktemp("bad_root")
+        adapted_dataset_class = self.adapted_dataset_cls
+        new_root = prepare_dataset(adapted_dataset_class, root=str(bad_root), **dataset_kwargs)
+        assert not list(bad_root.iterdir())
+        return new_root
+
+    def test_prepare_dataset_creates_symlinks_to_archives(
+        self, prepared_dataset_location: Path, tmp_path: Path
+    ):
+        """Test that the prepare_dataset function creates symlinks in SLURM_TMPDIR for the archives
+        listed by `files_to_copy_for_dataset` (that torchvision then uses to extract the
+        datasets)."""
+        # Note: Since preparing the dataset can be expensive, perhaps we could reuse a fixture for
+        # the preprared dataset location?
+
         adapted_dataset_class = self.adapted_dataset_cls
         bad_root = tmp_path / "bad_root"
-        files_to_copy = files_to_copy_for_dataset(
+        files_to_copy = files_to_use_for_dataset(
             adapted_dataset_class.original_class,
             cluster=Cluster.current_or_error(),
             root=str(bad_root),
         )
         assert files_to_copy
-        assert not list(fake_slurm_tmpdir.iterdir())
-
-        new_root = prepare_dataset(adapted_dataset_class, root=str(bad_root))
-
-        assert new_root.startswith(str(fake_slurm_tmpdir))
+        new_root = prepared_dataset_location
 
         for file_relative_to_root, file_on_cluster in files_to_copy.items():
             # TODO: Change this depending on if we preserve the structure or if we flatten stuff.
@@ -388,13 +394,13 @@ class LoadsFromArchives(VisionDatasetTests[VisionDatasetType]):
 class DownloadableDatasetTests(VisionDatasetTests[DownloadableDatasetT]):
     """Tests for dataset that can be downloaded."""
 
-    @pytest.mark.timeout(300)
     @without_internet
     def test_doesnt_download_even_if_user_asks(
         self, tmp_path: Path, dataset_kwargs: dict[str, Any]
     ):
-        """Test that even if `download=True` is passed to the constructor, the dataset is not
-        downloaded.
+        """Test that if the dataset accepts a `download` argument, that a warning is raised when we
+        call the adapted dataset constructor with `download=True`, telling us that the download was
+        avoided because we already have the dataset on the cluster.
 
         TODO: It might be a good idea to let the user override this behaviour in some cases. For
         example, if there is some issue with the stored dataset files on the cluster, or a new

@@ -25,14 +25,13 @@ def metadata_files_in_dir(
 
 
 def archives_in_dir(
-    root: str | Path, recurse: bool = True, patterns: Sequence[str] = ARCHIVE_FORMATS
+    root: str | Path, recurse: bool = False, patterns: Sequence[str] = ARCHIVE_FORMATS
 ) -> Iterable[Path]:
     """Returns paths to all archives in the given directory (and all subdirs if `recurse`)."""
     root = Path(root)
     fn = rglob_any if recurse else glob_any
     paths = fn(root, patterns)
     return paths
-    return (path.relative_to(root) for path in paths)
 
 
 def glob_patterns_in_each_dir(

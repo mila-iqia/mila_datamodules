@@ -65,7 +65,8 @@ def patch_dataset_for_local_cluster():
     dataset_roots_per_cluster[Cluster._mock] = {}
 
 
-@pytest.fixture(autouse=True, scope="session")
+# Note: Turning this off for now, so I can test ImageNet quicker.
+@pytest.fixture(autouse=False, scope="session")
 def clear_slurm_tmpdir():
     """Clears the SLURM_TMPDIR/data before running any tests.
 

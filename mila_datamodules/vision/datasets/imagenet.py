@@ -85,11 +85,10 @@ def prepare_imagenet_dataset(
 
     cluster = Cluster.current_or_error()
     paths = imagenet_file_locations[cluster]
-    train_archive = paths["train_archive"]
+    train_archive = Path(paths["train_archive"])
     devkit = paths["devkit"]
 
     destination_dir = Path(destination_dir)
-    raise_errors = False
 
     extracted_train_folder = destination_dir / "train"
     extracted_train_folder.mkdir(exist_ok=True, parents=True)
@@ -136,14 +135,20 @@ def prepare_imagenet_dataset(
 
     if split in ["train", "both"]:
         train_done_file = destination_dir / "train_done.txt"
+
+        train_archive_in_slurm_tmpdir = destination_dir / Path(train_archive).name
+        if not train_archive_in_slurm_tmpdir.exists():
+            train_archive_in_slurm_tmpdir.symlink_to(target=train_archive)
+
         if not train_done_file.exists():
-            print(f"Copying imagenet train dataset to {extracted_train_folder} ...")
-            print("(NOTE: This should take no more than 10 minutes.)")
+            print(f"Extracting imagenet train archive to {extracted_train_folder} ...")
+            print("(NOTE: This should take ~7 minutes.)")
             with temporarily_chdir(extracted_train_folder):
                 print(
                     "> tar -xf {train_archive} "
                     "--to-command='mkdir ${TAR_REALNAME%.tar}; tar -xC ${TAR_REALNAME%.tar}'"
                 )
+                raise_errors = False
                 subprocess.run(
                     args=(
                         f"tar -xf {train_archive} "
@@ -154,8 +159,6 @@ def prepare_imagenet_dataset(
                     stdout=sys.stdout,
                 )
             train_done_file.touch()
-
-    print("DONE!")
 
     return str(destination_dir)
 

@@ -14,7 +14,7 @@ Also, there are different characteristics of the datasets:
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Generic, TypeVar
+from typing import Any, Generic, TypeVar
 
 import pytest
 import torchvision.datasets as tvd
@@ -26,7 +26,7 @@ from mila_datamodules.registry import (
     locate_dataset_root_on_cluster,
 )
 from mila_datamodules.vision.coco_test import coco_required
-from mila_datamodules.vision.datasets import binary_mnist, caltech101, mnist
+from mila_datamodules.vision.datasets import binary_mnist, mnist
 
 from .base_test import (
     DownloadableDatasetTests,
@@ -39,10 +39,10 @@ from .base_test import (
 )
 
 T = TypeVar("T")
-if TYPE_CHECKING:
 
-    class _FixtureRequest(pytest.FixtureRequest, Generic[T]):
-        param: T
+
+class _FixtureRequest(pytest.FixtureRequest, Generic[T]):
+    param: T
 
 
 # ------------------ Dataset Tests ------------------
@@ -172,7 +172,7 @@ class TestBinaryEMNIST(ReadFromRoot[binary_mnist.BinaryEMNIST]):
 
 # TODO: Same as for binarymnist (original class is actually our "patched" version of the class) but
 # here the fix is specific to one cluster. This isn't pretty.
-class TestCaltech101(LoadsFromArchives[caltech101.Caltech101]):
+class TestCaltech101(LoadsFromArchives[tvd.Caltech101]):
     def test_pre_init_places_archives_in_slurm_tmpdir(self):
         "101_ObjectCategories.tar.gz"
         "Annotations.tar"

@@ -1,8 +1,8 @@
 """A registry of where each dataset is stored on each cluster."""
 from __future__ import annotations
 
+import functools
 import inspect
-import itertools
 import textwrap
 import warnings
 from logging import getLogger as get_logger
@@ -25,10 +25,7 @@ from mila_datamodules.utils import (
     _get_key_to_use_for_indexing,
     getitem_with_subclasscheck,
 )
-from mila_datamodules.vision.datasets._utils import (
-    archives_in_dir,
-    metadata_files_in_dir,
-)
+from mila_datamodules.vision.datasets._utils import archives_in_dir
 from mila_datamodules.vision.datasets.binary_mnist import BinaryMNIST
 
 # TODO: Redesign this whole registry idea.
@@ -169,15 +166,37 @@ def _rel_paths_and_paths(
         yield str(path.relative_to(root)), path
 
 
-_files_to_copy_for_dataset: dict[type, dict[Cluster, Callable[[], Iterable[tuple[str, Path]]]]] = {
+def list_archives_in(
+    archive_dir: str | Path | list[str] | list[Path], recurse: bool = False
+) -> Callable[[], Iterable[tuple[str, Path]]]:
+    """Function that, when invoked, lists out the archives in the given directory."""
+    if isinstance(archive_dir, (str, Path)):
+        archive_dirs = [archive_dir]
+    else:
+        archive_dirs = archive_dir
+
+    def _list_archives():
+        for archive_dir in archive_dirs:
+            yield from _rel_paths_and_paths(
+                archive_dir, fn=functools.partial(archives_in_dir, recurse=recurse)
+            )
+
+    return _list_archives
+
+
+_files_to_use_for_dataset: dict[type, dict[Cluster, Callable[[], Iterable[tuple[str, Path]]]]] = {
     tvd.Places365: {
-        Cluster.Mila: lambda: itertools.chain(
-            _rel_paths_and_paths("/network/datasets/places365", fn=archives_in_dir),
-            _rel_paths_and_paths(
-                "/network/datasets/places365.var/places356_torchvision", fn=metadata_files_in_dir
-            ),
+        Cluster.Mila: list_archives_in(
+            [
+                "/network/datasets/places365",
+                "/network/datasets/places365/large",
+            ]
         )
-    }
+    },
+    tvd.ImageNet: {
+        Cluster.Mila: list_archives_in("/network/datasets/imagenet"),
+        Cluster.Beluga: list_archives_in("/project/rpp-bengioy/data/curated/imagenet/"),
+    },
 }
 """Dictionary that gives, for each dataset type, for each cluster, a function that returns all the
 files and/or archives that should be copied over to the SLURM_TMPDIR before the dataset is read
@@ -187,7 +206,7 @@ This is so that torchvision then extracts the files from the archives and reads 
 """
 
 
-def files_to_copy_for_dataset(
+def files_to_use_for_dataset(
     dataset: Callable[P, Dataset],
     cluster: Cluster,
     *constructor_args: P.args,
@@ -204,7 +223,7 @@ def files_to_copy_for_dataset(
         dataset = dataset.original_class
     assert inspect.isclass(dataset)
     files_per_cluster = getitem_with_subclasscheck(
-        potential_classes=_files_to_copy_for_dataset, key=dataset, default=None
+        potential_classes=_files_to_use_for_dataset, key=dataset, default=None
     )
     if files_per_cluster is None:
         logger.debug(f"We don't know which files should be copied for {dataset} yet.")
@@ -219,17 +238,8 @@ def files_to_copy_for_dataset(
         return None
     return dict(files_per_cluster[cluster]())
 
-    # if should_be_read_directly_from_dataset_dir(dataset_type, cluster):
-    #     return []
 
-    cluster = Cluster.current_or_error()
-
-    return
-
-
-# TODO: Create a registry of the archives for each dataset, so that we can use these instead of
-# copying the files individually.
-
+# Probably remove this?
 dataset_archives_locations_per_cluster: dict[Cluster, dict[type, list[str]]] = {}
 #     Cluster.Mila: {
 #         # tvd.Places365: [
@@ -275,7 +285,7 @@ def is_supported_dataset(dataset_type: type) -> bool:
         return False
 
 
-def files_to_copy(dataset_class: type, cluster: Cluster) -> list[Path] | None:
+def files_needed(dataset_class: type, cluster: Cluster) -> list[Path] | None:
     """Returns the files that should be copied (or symlinked) to SLURM_TMPDIR to load this dataset.
 
     TODO: Should return 'live' paths, and prioritize using archives when available on the current
@@ -316,7 +326,7 @@ def files_required_for(dataset_type: type) -> list[str]:
     except KeyError as exc:
         pass
 
-    files_to_copy = files_to_copy_for_dataset(dataset_type=dataset_type)
+    files_to_copy = files_to_use_for_dataset(dataset_type=dataset_type)
     if files_to_copy:
         return files_to_copy
 
@@ -391,7 +401,7 @@ def is_stored_on_cluster(dataset_cls: type, cluster: Cluster | None = CURRENT_CL
         # No way to check if the dataset is stored on the local machine.
         return False
 
-    files_to_copy = files_to_copy_for_dataset(dataset_cls, cluster=cluster)
+    files_to_copy = files_to_use_for_dataset(dataset_cls, cluster=cluster)
     if files_to_copy is None:
         logger.debug(
             f"Don't know what files to copy for dataset {dataset_cls} on cluster {cluster}. "
