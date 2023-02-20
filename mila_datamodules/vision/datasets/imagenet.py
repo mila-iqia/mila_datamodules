@@ -11,7 +11,7 @@ from logging import getLogger as get_logger
 from pathlib import Path
 from typing import Literal, TypedDict
 
-from torchvision.datasets import ImageNet
+import torchvision.datasets as tvd
 from torchvision.datasets.imagenet import parse_val_archive
 from typing_extensions import NotRequired
 
@@ -62,9 +62,9 @@ imagenet_file_locations: dict[Cluster, ImageNetFiles] = {
 """A map that shows where to retrieve the imagenet files for each SLURM cluster."""
 
 
-@prepare_dataset.register(ImageNet)
+@prepare_dataset.register(tvd.ImageNet)
 def prepare_imagenet_dataset(
-    dataset: ImageNet,
+    dataset: tvd.ImageNet,
     root: str | None = None,
     split: Literal["train", "val"] = "train",
     *args,

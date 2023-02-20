@@ -13,8 +13,9 @@ from __future__ import annotations
 import os
 import warnings
 from multiprocessing import cpu_count
-from typing import Callable, NewType
+from typing import Callable, Literal, NewType
 
+import torchvision.datasets as tvd
 from pl_bolts.datamodules.imagenet_datamodule import (
     ImagenetDataModule as _ImagenetDataModule,
 )
@@ -25,7 +26,9 @@ from torch.utils.data import DataLoader
 
 from mila_datamodules.clusters import CURRENT_CLUSTER
 from mila_datamodules.clusters.utils import get_slurm_tmpdir
-from mila_datamodules.vision.datasets.imagenet import prepare_imagenet_dataset
+from mila_datamodules.vision.datasets import AdaptedDataset, ImageNet
+
+Stage = Literal["fit", "validate", "test", "predict"]
 
 C = NewType("C", int)
 H = NewType("H", int)
@@ -35,9 +38,14 @@ W = NewType("W", int)
 class ImagenetDataModule(_ImagenetDataModule):
     """Imagenet DataModule adapted to the Mila cluster.
 
-    - Copies/Extracts the datasets to the `$SLURM_TMPDIR/imagenet` directory.
+    - Copies/Extracts the datasets to the `$SLURM_TMPDIR/data/ImageNet` directory.
     - Uses the right number of workers, depending on the SLURM configuration.
+
+    TODO: Unclear why this couldn't just be a VisionDataModule using the ImageNet class.
+    TODO: Unclear why this `UnlabeledImageNet` dataset class is needed.
     """
+
+    dataset_cls: type[AdaptedDataset[tvd.ImageNet]] = ImageNet
 
     def __init__(
         self,
@@ -58,7 +66,7 @@ class ImagenetDataModule(_ImagenetDataModule):
         if CURRENT_CLUSTER:
             slurm_tmpdir = get_slurm_tmpdir()
             assert slurm_tmpdir
-            fixed_data_dir = str(slurm_tmpdir / "imagenet")
+            fixed_data_dir = str(slurm_tmpdir / "data" / "ImageNet")
             if data_dir is not None and data_dir != fixed_data_dir:
                 warnings.warn(
                     RuntimeWarning(
@@ -87,6 +95,13 @@ class ImagenetDataModule(_ImagenetDataModule):
         self._test_transforms = test_transforms
         self.trainer: Trainer | None = None
 
+        # NOTE: Do we want to store the dataset instances on the datamodule? Perhaps it could be
+        # useful for restoring state later or something?
+        # self.dataset_fit: UnlabeledImagenet | None = None
+        # self.dataset_validate: UnlabeledImagenet | None = None
+        # self.dataset_test: UnlabeledImagenet | None = None
+        # self.dataset_predict: UnlabeledImagenet | None = None
+
     def prepare_data(self) -> None:
         """Prepares the data, copying the dataset to the SLURM temporary directory.
 
@@ -94,7 +109,9 @@ class ImagenetDataModule(_ImagenetDataModule):
         prepare_data() before calling train/val/test_dataloader().
         """
         if CURRENT_CLUSTER is not None:
-            prepare_imagenet_dataset(self.data_dir)
+            # Create the dataset.
+            self.dataset_cls(split="train")
+            self.dataset_cls(split="val")
         super().prepare_data()
 
     def train_dataloader(self) -> DataLoader:
@@ -129,32 +146,6 @@ class ImagenetDataModule(_ImagenetDataModule):
         return super().train_dataloader()
 
     def val_dataloader(self) -> DataLoader:
-        # # Unfortunate that we have to copy all of that, just to change the `persistent_workers`
-        # # argument..
-        # NOTE: Not actually sure if it's alright to use this `persistent_workers=True` for
-        # validation.
-        # transforms = (
-        #     self.val_transform() if self.val_transforms is None else self.val_transforms
-        # )
-
-        # dataset = UnlabeledImagenet(
-        #     self.data_dir,
-        #     num_imgs_per_class_val_split=self.num_imgs_per_val_class,
-        #     meta_dir=self.meta_dir,
-        #     split="val",
-        #     transform=transforms,
-        # )
-        # loader: DataLoader = DataLoader(
-        #     dataset,
-        #     batch_size=self.batch_size,
-        #     shuffle=False,
-        #     num_workers=self.num_workers,
-        #     drop_last=self.drop_last,
-        #     pin_memory=self.pin_memory,
-        #     persistent_workers=self.persistent_workers,
-        # )
-        # return loader
-
         return super().val_dataloader()
 
     def test_dataloader(self) -> DataLoader:

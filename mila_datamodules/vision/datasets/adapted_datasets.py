@@ -242,11 +242,6 @@ class AdaptedDataset(VisionDataset, Generic[VD]):
         super().__init__(new_root, *args, **kwargs)
 
 
-_dataset_adapters: dict[
-    type[VisionDataset] | Callable[..., VisionDataset], type[AdaptedDataset]
-] = {}
-
-
 def adapt_dataset(dataset_class: Callable[Concatenate[str, P], VD]) -> type[AdaptedDataset[VD]]:
     """Creates an optimized version of the given dataset for the current SLURM cluster.
 
@@ -281,8 +276,7 @@ def adapt_dataset(dataset_class: Callable[Concatenate[str, P], VD]) -> type[Adap
             AdaptedDataset,
             dataset_class,
         ),
-        {},  # dataset_type.__dict__,
-        # {"__init__": adapted_constructor(dataset_type)},
+        {},
     )
     dataset_subclass = cast(Type[AdaptedDataset[VD]], dataset_subclass)
     dataset_subclass.original_class = dataset_class  # type: ignore
@@ -304,3 +298,5 @@ In general, for datasets that don't fit in SLURM_TMPDIR, we should use $SCRATCH 
 "SLURM_TMPDIR".
 NOTE: setting --tmp=800G is a good idea if you're going to move a 600gb dataset to SLURM_TMPDIR.
 """
+
+from .imagenet import prepare_imagenet_dataset  # noqa

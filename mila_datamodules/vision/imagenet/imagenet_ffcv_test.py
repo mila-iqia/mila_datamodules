@@ -6,6 +6,13 @@ from pytorch_lightning import LightningModule, Trainer
 from torch import Tensor, nn
 from torch.optim.adam import Adam
 
+from ..vision_datamodule_test import VisionDataModuleTests
+from .imagenet_ffcv import ImagenetFfcvDataModule
+
+
+class TestImagenetFfcvDataModule(VisionDataModuleTests):
+    DataModule = ImagenetFfcvDataModule
+
 
 class Model(LightningModule):
     def __init__(self, num_classes: int = 1000):
