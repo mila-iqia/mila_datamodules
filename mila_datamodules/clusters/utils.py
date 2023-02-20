@@ -66,8 +66,6 @@ def get_scratch_dir(default: str | Path | None = None) -> Path:
 
     If the current machine is not on the Mila cluster, returns `default`.
     """
-    if in_job_process_without_slurm_env_vars():
-        setup_slurm_env_variables()
     return Path(_get_env_var("SCRATCH", default=default))
 
 
@@ -75,14 +73,14 @@ def get_slurm_tmpdir(default: str | Path | None = None) -> Path:
     """Returns the path to the SLURM_TMPDIR directory on the current cluster, or `default` when not
     on a cluster."""
     # NOTE: This variable is a little bit different.
-    if in_job_process_without_slurm_env_vars():
-        setup_slurm_env_variables()
     return Path(_get_env_var("SLURM_TMPDIR", default=default))
 
 
 def _get_env_var(
     var_name: str, default: T | None = None, mock_var_prefix: str = "FAKE_"
 ) -> str | T:
+    if in_job_process_without_slurm_env_vars():
+        setup_slurm_env_variables()
     if var_name in os.environ:
         return os.environ[var_name]
     if default is not None:
