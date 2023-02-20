@@ -13,11 +13,12 @@ from typing import Literal, TypedDict
 
 import torchvision.datasets as tvd
 from torchvision.datasets.imagenet import parse_val_archive
-from typing_extensions import NotRequired
 
 from mila_datamodules.clusters.cluster import Cluster
 from mila_datamodules.clusters.utils import get_slurm_tmpdir
 from mila_datamodules.vision.datasets.adapted_datasets import prepare_dataset
+
+from .adapted_datasets import adapt_dataset
 
 logger = get_logger(__name__)
 
@@ -26,17 +27,8 @@ class ImageNetFiles(TypedDict):
     train_archive: str
     """Path to the "ILSVRC2012_img_train.tar"-like archive containing the training set."""
 
-    val_archive: NotRequired[str]
-    """Path to the "ILSVRC2012_img_val.tar" archive containing the test set.
-
-    One of `val_archive` or `val_folder` must be provided.
-    """
-
-    val_folder: NotRequired[str]
-    """Path to the extracted 'val' folder containing the test set.
-
-    One of `val_archive` or `val_folder` must be provided.
-    """
+    val_archive: str
+    """Path to the "ILSVRC2012_img_val.tar" archive containing the test set."""
 
     devkit: str
     """Path to the ILSVRC2012_devkit_t12.tar.gz file."""
@@ -46,7 +38,6 @@ imagenet_file_locations: dict[Cluster, ImageNetFiles] = {
     Cluster.Mila: {
         "train_archive": "/network/datasets/imagenet/ILSVRC2012_img_train.tar",
         "val_archive": "/network/datasets/imagenet/ILSVRC2012_img_val.tar",
-        "val_folder": "/network/datasets/imagenet.var/imagenet_torchvision/val",
         "devkit": "/network/datasets/imagenet/ILSVRC2012_devkit_t12.tar.gz",
     },
     # TODO: Need help with filling these:
@@ -104,33 +95,20 @@ def prepare_imagenet_dataset(
         (d / "meta.bin").exists()
         for d in (destination_dir, extracted_train_folder, extracted_val_folder)
     ):
-        generate_meta_bins(destination_dir)
+        _generate_meta_bins(destination_dir)
 
     if split in ["val", "both"]:
-        val_archive: Path | None = None
-        val_folder: Path | None = None
-        if "val_archive" in paths:
-            val_archive = Path(paths["val_archive"])
-        elif "val_folder" in paths:
-            val_folder = Path(paths["val_folder"])
-        else:
-            raise RuntimeError(
-                f"One of 'val_folder' or 'val_archive' must be set for cluster {cluster}!"
-            )
+        val_archive = Path(paths["val_archive"])
 
         val_done_file = extracted_val_folder / "val_done.txt"
         if not val_done_file.exists():
-            if val_archive:
-                # Create a symlink to the val archive in SLURM_TMPDIR, then use the torchvision
-                # functions to unpack it.
-                val_archive_in_slurm_tmpdir = destination_dir / val_archive.name
-                if not val_archive_in_slurm_tmpdir.exists():
-                    val_archive_in_slurm_tmpdir.symlink_to(target=val_archive)
-                print("Parsing val archive ...")
-                parse_val_archive(str(destination_dir), file=val_archive.name)
-            else:
-                assert val_folder
-                copy_val_folder(val_folder, extracted_val_folder)
+            # Create a symlink to the val archive in SLURM_TMPDIR, then use the torchvision
+            # functions to unpack it.
+            val_archive_in_slurm_tmpdir = destination_dir / val_archive.name
+            if not val_archive_in_slurm_tmpdir.exists():
+                val_archive_in_slurm_tmpdir.symlink_to(target=val_archive)
+            print("Parsing val archive ...")
+            parse_val_archive(str(destination_dir), file=val_archive.name)
             val_done_file.touch()
 
     if split in ["train", "both"]:
@@ -163,7 +141,7 @@ def prepare_imagenet_dataset(
     return str(destination_dir)
 
 
-def generate_meta_bins(data_dir: str | Path) -> None:
+def _generate_meta_bins(data_dir: str | Path) -> None:
     """Generates the meta.bin file required by the PL imagenet datamodule, and copies it in the
     train and val directories."""
     from pl_bolts.datasets.imagenet_dataset import UnlabeledImagenet
@@ -176,11 +154,6 @@ def generate_meta_bins(data_dir: str | Path) -> None:
     (data_dir / "val").mkdir(parents=False, exist_ok=True)
     shutil.copyfile(meta_bin_file, data_dir / "train" / "meta.bin")
     shutil.copyfile(meta_bin_file, data_dir / "val" / "meta.bin")
-
-
-def copy_val_folder(val_folder: Path, extracted_val_folder: Path):
-    print(f"Copying imagenet val dataset to {extracted_val_folder} ...")
-    shutil.copytree(val_folder, extracted_val_folder)
 
 
 @contextmanager
@@ -196,9 +169,12 @@ def temporarily_chdir(new_dir: Path):
         os.chdir(start_dir)
 
 
-def debug():
-    from mila_datamodules.vision.datasets import ImageNet
+# NOTE: Keeping it below the `prepare_imagenet_dataset` function, just to make sure that the `.register` hook is always
+# executed when importing this variable.
+ImageNet = adapt_dataset(tvd.ImageNet)
 
+
+def _debug():
     val_dataset = ImageNet(split="val")
     print(val_dataset)
 
@@ -207,4 +183,4 @@ def debug():
 
 
 if __name__ == "__main__":
-    debug()
+    _debug()

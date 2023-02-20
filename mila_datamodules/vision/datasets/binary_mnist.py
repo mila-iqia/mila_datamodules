@@ -7,6 +7,8 @@ from PIL import Image
 from pl_bolts.datasets import BinaryEMNIST as _BinaryEMNIST
 from pl_bolts.datasets import BinaryMNIST as _BinaryMNIST
 
+from .adapted_datasets import adapt_dataset
+
 # TODO: Reformulate this as just MNIST + a transform?
 
 
@@ -51,6 +53,10 @@ class BinaryEMNIST(_BinaryEMNIST):
 
     def __getitem__(self, idx: int) -> tuple:
         return _fixed_getitem(self, idx)
+
+
+BinaryMNIST = adapt_dataset(BinaryMNIST)
+BinaryEMNIST = adapt_dataset(BinaryEMNIST)
 
 
 def _fixed_getitem(dataset: BinaryMNIST | BinaryEMNIST, idx: int):

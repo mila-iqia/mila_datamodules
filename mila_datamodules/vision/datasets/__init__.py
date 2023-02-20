@@ -18,11 +18,10 @@ import torchvision.datasets
 
 from .adapted_datasets import AdaptedDataset, adapt_dataset, prepare_dataset
 from .binary_mnist import BinaryEMNIST, BinaryMNIST
+from .imagenet import ImageNet
 from .mnist import MNIST
 
 # NOTE: These here use "Patched" versions of the datasets.
-MNIST = adapt_dataset(MNIST)
-ImageNet = adapt_dataset(torchvision.datasets.ImageNet)
 Caltech101 = adapt_dataset(torchvision.datasets.Caltech101)
 Caltech256 = adapt_dataset(torchvision.datasets.Caltech256)
 CelebA = adapt_dataset(torchvision.datasets.CelebA)
@@ -39,10 +38,5 @@ EMNIST = adapt_dataset(torchvision.datasets.EMNIST)
 CocoDetection = adapt_dataset(torchvision.datasets.CocoDetection)
 CocoCaptions = adapt_dataset(torchvision.datasets.CocoCaptions)
 
-
-BinaryMNIST = adapt_dataset(BinaryMNIST)
-BinaryEMNIST = adapt_dataset(BinaryEMNIST)
-# BinaryMNIST = adapt_dataset(pl_bolts.datasets.BinaryMNIST)
-# BinaryEMNIST = adapt_dataset(pl_bolts.datasets.BinaryEMNIST)
 
 # todo: Add the other datasets here.

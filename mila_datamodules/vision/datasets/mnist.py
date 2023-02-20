@@ -6,6 +6,8 @@ from torchvision.datasets import MNIST as _MNIST
 from mila_datamodules.clusters import CURRENT_CLUSTER
 from mila_datamodules.clusters.cluster import Cluster
 
+from .adapted_datasets import adapt_dataset
+
 # TODO: The `dataset_files` entry for MNIST is actually wrong in the case of the Beluga cluster!
 # TODO: Would it be better to just fix the naming issue / create symlinks on Beluga instead?
 
@@ -25,3 +27,6 @@ class MNIST(_MNIST):
     @property
     def processed_folder(self) -> str:
         return os.path.join(self.root, self.folder_name, "processed")
+
+
+MNIST = adapt_dataset(MNIST)
