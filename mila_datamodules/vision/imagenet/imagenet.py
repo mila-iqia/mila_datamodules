@@ -11,10 +11,8 @@ Requirements (these are the versions I'm using, but this can probably be loosene
 from __future__ import annotations
 
 import os
-import shutil
 import warnings
 from multiprocessing import cpu_count
-from pathlib import Path
 from typing import Callable, NewType
 
 from pl_bolts.datamodules.imagenet_datamodule import (
@@ -27,7 +25,7 @@ from torch.utils.data import DataLoader
 
 from mila_datamodules.clusters import CURRENT_CLUSTER
 from mila_datamodules.clusters.utils import get_slurm_tmpdir
-from mila_datamodules.vision.datasets.imagenet import copy_imagenet_to_dest
+from mila_datamodules.vision.datasets.imagenet import prepare_imagenet_dataset
 
 C = NewType("C", int)
 H = NewType("H", int)
@@ -96,8 +94,7 @@ class ImagenetDataModule(_ImagenetDataModule):
         prepare_data() before calling train/val/test_dataloader().
         """
         if CURRENT_CLUSTER is not None:
-            copy_imagenet_to_dest(self.data_dir)
-            _generate_meta_bins(self.data_dir)
+            prepare_imagenet_dataset(self.data_dir)
         super().prepare_data()
 
     def train_dataloader(self) -> DataLoader:
@@ -198,19 +195,6 @@ class ImagenetDataModule(_ImagenetDataModule):
     @dims.setter
     def dims(self, v: tuple[C, H, W]):
         self._dims = v
-
-
-def _generate_meta_bins(data_dir: str | Path) -> None:
-    """Generates the meta.bin file required by the PL imagenet datamodule, and copies it in the
-    train and val directories."""
-    UnlabeledImagenet.generate_meta_bins(str(data_dir))
-    data_dir = Path(data_dir)
-    meta_bin_file = data_dir / "meta.bin"
-    assert meta_bin_file.exists() and meta_bin_file.is_file()
-    (data_dir / "train").mkdir(parents=False, exist_ok=True)
-    (data_dir / "val").mkdir(parents=False, exist_ok=True)
-    shutil.copyfile(meta_bin_file, data_dir / "train" / "meta.bin")
-    shutil.copyfile(meta_bin_file, data_dir / "val" / "meta.bin")
 
 
 def num_cpus_to_use() -> int:

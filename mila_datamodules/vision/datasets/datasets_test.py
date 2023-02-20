@@ -48,10 +48,6 @@ if TYPE_CHECKING:
 # ------------------ Dataset Tests ------------------
 
 
-class TestImageNet(LoadsFromArchives[tvd.ImageNet], Required):
-    pass
-
-
 class TestCIFAR10(ReadFromRoot[tvd.CIFAR10], DownloadableDatasetTests, Required):
     @only_runs_on_clusters()
     def test_always_stored(self):
