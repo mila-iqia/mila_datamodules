@@ -25,8 +25,8 @@ from mila_datamodules.utils import (
     _get_key_to_use_for_indexing,
     getitem_with_subclasscheck,
 )
+from mila_datamodules.vision.datasets._binary_mnist import BinaryMNIST
 from mila_datamodules.vision.datasets._utils import archives_in_dir
-from mila_datamodules.vision.datasets.binary_mnist import BinaryMNIST
 
 # TODO: Redesign this whole registry idea.
 

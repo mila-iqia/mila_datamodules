@@ -16,9 +16,7 @@ from torchvision.datasets.imagenet import parse_val_archive
 
 from mila_datamodules.clusters.cluster import Cluster
 from mila_datamodules.clusters.utils import get_slurm_tmpdir
-from mila_datamodules.vision.datasets.adapted_datasets import prepare_dataset
-
-from .adapted_datasets import adapt_dataset
+from mila_datamodules.vision.datasets.prepare_dataset import prepare_dataset
 
 logger = get_logger(__name__)
 
@@ -169,12 +167,9 @@ def temporarily_chdir(new_dir: Path):
         os.chdir(start_dir)
 
 
-# NOTE: Keeping it below the `prepare_imagenet_dataset` function, just to make sure that the `.register` hook is always
-# executed when importing this variable.
-ImageNet = adapt_dataset(tvd.ImageNet)
-
-
 def _debug():
+    from mila_datamodules.vision.datasets import ImageNet
+
     val_dataset = ImageNet(split="val")
     print(val_dataset)
 

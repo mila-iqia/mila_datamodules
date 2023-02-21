@@ -73,9 +73,9 @@ def test_all_torchvision_datasets_have_a_test_class(torchvision_dataset_class: t
             if inspect.isclass(v) and issubclass(v, VisionDatasetTests)
         }
 
-    from . import datasets_test, imagenet_test
+    from . import datasets_test, prepare_imagenet_test
 
-    test_modules = [datasets_test, imagenet_test]
+    test_modules = [datasets_test, prepare_imagenet_test]
 
     all_test_classes = {}
     for module in test_modules:
