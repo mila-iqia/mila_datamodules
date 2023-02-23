@@ -25,7 +25,7 @@ from mila_datamodules.utils import (
     _get_key_to_use_for_indexing,
     getitem_with_subclasscheck,
 )
-from mila_datamodules.vision.datasets._binary_mnist import BinaryMNIST
+from mila_datamodules.vision.datasets._binary_mnist import _PatchedBinaryMNIST
 from mila_datamodules.vision.datasets._utils import archives_in_dir
 
 # TODO: Redesign this whole registry idea.
@@ -59,7 +59,7 @@ _dataset_files = {
     tvd.EMNIST: ["EMNIST"],
     # NOTE: This isn't quite true for the original class.
     # pl_bolts.datasets.BinaryMNIST: ["MNIST"],
-    BinaryMNIST: ["MNIST"],
+    _PatchedBinaryMNIST: ["MNIST"],
     pl_bolts.datasets.BinaryMNIST: ["MNIST"],
     pl_bolts.datasets.BinaryEMNIST: ["EMNIST"],
     tvd.FlyingChairs: ["FlyingChairs/data", "FlyingChairs/FlyingChairs_train_val.txt"],
@@ -142,7 +142,7 @@ dataset_roots_per_cluster = {
         # NOTE: BinaryMNIST from pl_bolts.datasets is buggy, and doesn't work out-of-the-box.
         # Our adapted version works though.
         # pl_bolts.datasets.BinaryMNIST,
-        BinaryMNIST: _mila_torchvision_dir,
+        _PatchedBinaryMNIST: _mila_torchvision_dir,
     },
     Cluster.Beluga: {
         tvd.MNIST: "/project/rrp-bengioy/data",
@@ -150,7 +150,7 @@ dataset_roots_per_cluster = {
         tvd.Cityscapes: _beluga_curated_datasets_dir,
         tvd.CocoCaptions: _beluga_curated_datasets_dir,
         tvd.CocoDetection: _beluga_curated_datasets_dir,
-        BinaryMNIST: "/project/rrp-bengioy/data",
+        _PatchedBinaryMNIST: "/project/rrp-bengioy/data",
     },
 }
 """For each cluster, for each type of dataset, the value of `root` to use to load the dataset."""

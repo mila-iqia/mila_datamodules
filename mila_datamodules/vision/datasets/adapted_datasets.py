@@ -122,13 +122,18 @@ class AdaptedDataset(VisionDataset, Generic[VD]):
     original_class: type[VD]
     """The original dataset class that this adapted dataset 'wraps'."""
 
+    def prepare_dataset(self, root: str | None = None, *args, **kwargs) -> str:
+        """Called before the original dataset constructor is called."""
+        raise NotImplementedError
+        # return prepare_dataset(self, root, *args, **kwargs)
+
     def __init__(self, root: str | None = None, *args, **kwargs) -> None:
         if not on_slurm_cluster():
             return super().__init__(root=root, *args, **kwargs)
 
         # Call the optimized dataset preparation routine (which may be as simple as just replacing
         # the `root` parameter) before actually calling __init__ with the original dataset.
-        new_root = prepare_dataset(self, root=root, *args, **kwargs)
+        new_root = self.prepare_dataset(root=root, *args, **kwargs)
 
         logger.info(f"New root for {self.original_class.__name__}: {new_root} ({root=})")
         if root is not None and new_root != root:

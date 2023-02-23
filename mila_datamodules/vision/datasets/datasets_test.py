@@ -156,11 +156,11 @@ class TestCocoCaptions(VisionDatasetTests[tvd.CocoCaptions]):
 
 # NOTE: Here the 'original class' is already in `mila_datamodules.datasets.binary_mnist` because
 # we include fixes for bugs in the base class (nothing to do with the clusters though)
-class TestBinaryMNIST(ReadFromRoot[_binary_mnist.BinaryMNIST]):
+class TestBinaryMNIST(ReadFromRoot[_binary_mnist._PatchedBinaryMNIST]):
     pass
 
 
-class TestBinaryEMNIST(ReadFromRoot[_binary_mnist.BinaryEMNIST]):
+class TestBinaryEMNIST(ReadFromRoot[_binary_mnist._PatchedBinaryEMNIST]):
     @pytest.fixture(params=["byclass", "bymerge"])
     def split(self, request: _FixtureRequest[str]) -> str:
         return request.param

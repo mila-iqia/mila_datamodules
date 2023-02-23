@@ -6,11 +6,10 @@ from torchvision.datasets import MNIST as _MNIST
 from mila_datamodules.clusters import CURRENT_CLUSTER
 from mila_datamodules.clusters.cluster import Cluster
 
-# TODO: The `dataset_files` entry for MNIST is actually wrong in the case of the Beluga cluster!
-# TODO: Would it be better to just fix the naming issue / create symlinks on Beluga instead?
-
 
 class MNIST(_MNIST):
+    # FIXME: Unfortunate that we need to do this..
+    # Fixes a mismatch in the dataset file names for the Beluga cluster.
     @property
     def folder_name(self):
         cls_name = self.__class__.__name__

@@ -16,69 +16,96 @@ from __future__ import annotations
 
 import torchvision.datasets
 
-from ._binary_mnist import BinaryEMNIST, BinaryMNIST
-from ._mnist import MNIST
-from .adapted_datasets import AdaptedDataset, adapt_dataset
-from .prepare_dataset import prepare_dataset
-
-# NOTE: These here use "Patched" versions of the datasets.
-Caltech101 = adapt_dataset(torchvision.datasets.Caltech101)
-Caltech256 = adapt_dataset(torchvision.datasets.Caltech256)
-CelebA = adapt_dataset(torchvision.datasets.CelebA)
-Cityscapes = adapt_dataset(torchvision.datasets.Cityscapes)
-CIFAR10 = adapt_dataset(torchvision.datasets.CIFAR10)
-CIFAR100 = adapt_dataset(torchvision.datasets.CIFAR100)
-FashionMNIST = adapt_dataset(torchvision.datasets.FashionMNIST)
-INaturalist = adapt_dataset(torchvision.datasets.INaturalist)
-Places365 = adapt_dataset(torchvision.datasets.Places365)
-STL10 = adapt_dataset(torchvision.datasets.STL10)
-SVHN = adapt_dataset(torchvision.datasets.SVHN)
-
-EMNIST = adapt_dataset(torchvision.datasets.EMNIST)
-CocoDetection = adapt_dataset(torchvision.datasets.CocoDetection)
-CocoCaptions = adapt_dataset(torchvision.datasets.CocoCaptions)
+from ._binary_mnist import _PatchedBinaryEMNIST, _PatchedBinaryMNIST
+from ._mnist import MNIST as _PatchedMnist
+from .adapted_datasets import AdaptedDataset
+from .prepare_dataset import (
+    make_symlinks_to_archives_in_tempdir,
+    read_from_datasets_directory,
+)
+from .prepare_imagenet import prepare_imagenet_dataset
 
 
-MNIST = adapt_dataset(MNIST)
-BinaryMNIST = adapt_dataset(BinaryMNIST)
-BinaryEMNIST = adapt_dataset(BinaryEMNIST)
-
-""" TODO: (@lebrice): Chat with @abergeron about this:
-
-1. `prepare_dataset` is a generic function with a "handler" for different types of datasets, e.g.
-  - a general-purpose handler for ImageFolder datasets,
-  - another more specific handler for ImageNet.
-
-2. AdaptedDataset is a dummy base class that basically only modifies the `__init__` of the
-dataset, by making its 'root' argument optional, and launches a "dataset preparation" routine
-before calling the actual __init__ for the dataset, depending on the current cluster.
-
-  - Currently, AdaptedDataset just calls `prepare_dataset`, using the un-initialized dataset object
-    to dispatch based on the type.
+class ReadFromDatasetsDirectory(AdaptedDataset):
+    prepare_dataset = read_from_datasets_directory
 
 
-Questions:
-- Are there perhaps better / more "pythonic" ways of "patching" the datasets, while preserving 100%
-the same API as the original dataset class?
-
-Goals:
-1. One-line change:
-
-```python
-from torchvision.datasets import ImageNet
-from mila_datamodules.vision.datasets import ImageNet
-```
+class LoadFromLinkedArchivesInSlurmTmpdir(AdaptedDataset):
+    prepare_dataset = make_symlinks_to_archives_in_tempdir
 
 
-- Do I actually need a "registry" listing all the stored datasets on all the clusters?
-    - If not, then what are the alternatives? What do they look like?
-    - If so, how much / what kind of information do I minimally require?
-"""
+class ImageNet(AdaptedDataset, torchvision.datasets.ImageNet):
+    prepare_dataset = prepare_imagenet_dataset
 
 
-# Import the `prepare_imagenet_dataset` function, so the handler gets registered for the generic
-# `prepare_dataset` function that is called in `adapt_dataset`.
-from .prepare_imagenet import prepare_imagenet_dataset  # noqa: E402
+class MNIST(ReadFromDatasetsDirectory, _PatchedMnist):
+    pass
 
-ImageNet = adapt_dataset(torchvision.datasets.ImageNet)
+
+class FashionMNIST(ReadFromDatasetsDirectory, torchvision.datasets.FashionMNIST):
+    pass
+
+
+class CIFAR10(ReadFromDatasetsDirectory, torchvision.datasets.CIFAR10):
+    pass
+
+
+class CIFAR100(ReadFromDatasetsDirectory, torchvision.datasets.CIFAR100):
+    pass
+
+
+class Caltech101(LoadFromLinkedArchivesInSlurmTmpdir, torchvision.datasets.Caltech101):
+    pass
+
+
+class Caltech256(LoadFromLinkedArchivesInSlurmTmpdir, torchvision.datasets.Caltech256):
+    pass
+
+
+class CelebA(LoadFromLinkedArchivesInSlurmTmpdir, torchvision.datasets.CelebA):
+    pass
+
+
+class Cityscapes(LoadFromLinkedArchivesInSlurmTmpdir, torchvision.datasets.Cityscapes):
+    pass
+
+
+class INaturalist(LoadFromLinkedArchivesInSlurmTmpdir, torchvision.datasets.INaturalist):
+    pass
+
+
+class Places365(LoadFromLinkedArchivesInSlurmTmpdir, torchvision.datasets.Places365):
+    pass
+
+
+class STL10(AdaptedDataset, torchvision.datasets.STL10):
+    # TODO
+    pass
+
+
+class SVHN(AdaptedDataset, torchvision.datasets.SVHN):
+    # TODO
+    pass
+
+
+class EMNIST(ReadFromDatasetsDirectory, torchvision.datasets.EMNIST):
+    pass
+
+
+class CocoDetection(LoadFromLinkedArchivesInSlurmTmpdir, torchvision.datasets.CocoDetection):
+    pass
+
+
+class CocoCaptions(LoadFromLinkedArchivesInSlurmTmpdir, torchvision.datasets.CocoCaptions):
+    pass
+
+
+class BinaryMNIST(ReadFromDatasetsDirectory, _PatchedBinaryMNIST):
+    pass
+
+
+class BinaryEMNIST(ReadFromDatasetsDirectory, _PatchedBinaryEMNIST):
+    pass
+
+
 # todo: Add the other datasets here.

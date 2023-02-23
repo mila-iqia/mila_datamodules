@@ -10,7 +10,7 @@ from pl_bolts.datasets import BinaryMNIST as _BinaryMNIST
 # TODO: Reformulate this as just MNIST + a transform?
 
 
-class BinaryMNIST(_BinaryMNIST):
+class _PatchedBinaryMNIST(_BinaryMNIST):
     """Fixes 2 bugs:
 
     1.  Looks for the data in a `BinaryMNIST` folder, which is totally uncessary. Could reuse the
@@ -38,7 +38,7 @@ class BinaryMNIST(_BinaryMNIST):
         return _fixed_getitem(self, idx)
 
 
-class BinaryEMNIST(_BinaryEMNIST):
+class _PatchedBinaryEMNIST(_BinaryEMNIST):
     @property
     def raw_folder(self) -> str:
         # Note: This reuses the data from EMNIST. Base class would look for a `BinaryEMNIST` folder.
@@ -53,7 +53,7 @@ class BinaryEMNIST(_BinaryEMNIST):
         return _fixed_getitem(self, idx)
 
 
-def _fixed_getitem(dataset: BinaryMNIST | BinaryEMNIST, idx: int):
+def _fixed_getitem(dataset: _PatchedBinaryMNIST | _PatchedBinaryEMNIST, idx: int):
     """
     Args:
         index (int): Index
