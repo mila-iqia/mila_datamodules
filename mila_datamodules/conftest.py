@@ -105,7 +105,11 @@ def scratch_data_dir(tmp_path_factory: pytest.TempPathFactory):
 
     if fake_scratch_data_dir.exists():
         # Make sure it's completely empty.
-        shutil.rmtree(fake_scratch_data_dir)
+        # BUG: This may fail when running multiple tests in parallel.
+        try:
+            shutil.rmtree(fake_scratch_data_dir)
+        except FileNotFoundError as err:
+            pass
     # NOTE: exist_ok here because we might be parallelizing the tests with multiple workers.
     fake_scratch_data_dir.mkdir(parents=False, exist_ok=True)
 
