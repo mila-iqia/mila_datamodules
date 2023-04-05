@@ -15,7 +15,7 @@ from typing_extensions import Concatenate, ParamSpec
 from mila_datamodules.clusters.cluster import Cluster
 from mila_datamodules.clusters.utils import on_slurm_cluster
 from mila_datamodules.errors import get_github_issue_url
-from mila_datamodules.registry import is_stored_on_cluster
+from mila_datamodules.registry import get_original_dataset_class, is_stored_on_cluster
 from mila_datamodules.vision.datasets.prepare_dataset import prepare_dataset
 
 # TODOS:
@@ -76,42 +76,42 @@ def _cache(fn: C) -> C:
 # TODO: Need to turn this back on so the adapted dataset classes can be pickled.
 
 
-def __getattr__(name: str) -> type[AdaptedDataset | VisionDataset]:
-    pass
+# def __getattr__(name: str) -> type[AdaptedDataset | VisionDataset]:
+#     pass
 
-    matching_dataset_class = getattr(torchvision.datasets, name, None)
-    if inspect.isclass(matching_dataset_class) and issubclass(
-        matching_dataset_class, VisionDataset
-    ):
-        matching_dataset_class = matching_dataset_class
-        current_cluster: Cluster | None = Cluster.current()
-        # note: Do nothing if we don't have this dataset on the cluster?
-        if not is_stored_on_cluster(matching_dataset_class):
-            warnings.warn(
-                UserWarning(
-                    f"Not dynamically adapting dataset class {matching_dataset_class}, since "
-                    + (
-                        f"it is not detected as being stored on the {current_cluster.name} cluster. "
-                        if current_cluster
-                        else "this is apparently not being executed on a SLURM cluster. "
-                    )
-                    + "Returning the class from torchvision instead. If you believe this is a "
-                    "mistake, please make an issue on the mila_datamodules repo. at "
-                    + get_github_issue_url(
-                        dataset_name=matching_dataset_class.__name__,
-                        cluster_name=current_cluster.name if current_cluster else "local",
-                    )
-                )
-            )
-            return matching_dataset_class
-        warnings.warn(
-            UserWarning(
-                f"Dynamically creating an adapter for dataset class {matching_dataset_class}, which "
-                f"is not explicitly supported on this cluster. Your mileage may vary."
-            )
-        )
-        return adapt_dataset(matching_dataset_class)
-    raise AttributeError(name)
+#     matching_dataset_class = getattr(torchvision.datasets, name, None)
+#     if inspect.isclass(matching_dataset_class) and issubclass(
+#         matching_dataset_class, VisionDataset
+#     ):
+#         matching_dataset_class = matching_dataset_class
+#         current_cluster: Cluster | None = Cluster.current()
+#         # note: Do nothing if we don't have this dataset on the cluster?
+#         if not is_stored_on_cluster(matching_dataset_class):
+#             warnings.warn(
+#                 UserWarning(
+#                     f"Not dynamically adapting dataset class {matching_dataset_class}, since "
+#                     + (
+#                         f"it is not detected as being stored on the {current_cluster.name} cluster. "
+#                         if current_cluster
+#                         else "this is apparently not being executed on a SLURM cluster. "
+#                     )
+#                     + "Returning the class from torchvision instead. If you believe this is a "
+#                     "mistake, please make an issue on the mila_datamodules repo. at "
+#                     + get_github_issue_url(
+#                         dataset_name=matching_dataset_class.__name__,
+#                         cluster_name=current_cluster.name if current_cluster else "local",
+#                     )
+#                 )
+#             )
+#             return matching_dataset_class
+#         warnings.warn(
+#             UserWarning(
+#                 f"Dynamically creating an adapter for dataset class {matching_dataset_class}, which "
+#                 f"is not explicitly supported on this cluster. Your mileage may vary."
+#             )
+#         )
+#         return adapt_dataset(matching_dataset_class)
+#     raise AttributeError(name)
 
 
 # TODO: This 'VD' typevar here is actually not quite correct. We don't need to be adapting a
@@ -134,8 +134,9 @@ class AdaptedDataset(VisionDataset, Generic[VD]):
         # Call the optimized dataset preparation routine (which may be as simple as just replacing
         # the `root` parameter) before actually calling __init__ with the original dataset.
         new_root = self.prepare_dataset(root=root, *args, **kwargs)
-
-        logger.info(f"New root for {self.original_class.__name__}: {new_root} ({root=})")
+        assert new_root is not None
+        assert new_root != "None"
+        logger.info(f"New root for {type(self).__name__}: {new_root} ({root=})")
         if root is not None and new_root != root:
             warnings.warn(
                 RuntimeWarning(
@@ -176,4 +177,7 @@ from mila_datamodules.vision.datasets.prepare_dataset import prepare_dataset  # 
 
 @prepare_dataset.register(AdaptedDataset)
 def _dispatch_adapted_dataset(dataset: AdaptedDataset[VD], *args, **kwargs):
-    return prepare_dataset(dataset.original_class, *args, **kwargs)
+    raise RuntimeError(
+        "You should not pass wrapped dataset classes to `prepare_dataset`. "
+        "Use the original dataset class instead."
+    )

@@ -15,7 +15,8 @@ from typing_extensions import Concatenate, ParamSpec
 from mila_datamodules.clusters import get_slurm_tmpdir
 from mila_datamodules.clusters.cluster import Cluster
 from mila_datamodules.registry import (
-    files_to_use_for_dataset,
+    files_to_symlink_in_slurm_tmpdir_for_dataset,
+    get_original_dataset_class,
     is_stored_on_cluster,
     locate_dataset_root_on_cluster,
 )
@@ -55,20 +56,22 @@ def prepare_dataset(
     been called yet.
     """
     example = textwrap.dedent(
-        """\
-        @prepare_dataset_before_init.register(MyDataset)
-        def setup_my_dataset(dataset: MyDataset, root: str | None = None, *args, **kwargs) -> str:
-            ''' prepares the optimal dataset folder and returns its location to be used as 'root'.
+        f'''\
+        @{prepare_dataset.__name__}.register(MyDataset)
+        def prepare_my_dataset(dataset: MyDataset, *args, **kwargs) -> str:
+            """Prepares the optimal dataset folder and returns where to read it from later.
+            
+            *args and **kwargs are the arguments that would be passed to the dataset constructor.
+            This can be used for example to know which dataset split to prepare.
 
             This should ideally extract / copy / symlink stuff into SLURM_TMPDIR, so that loading
             the dataset can be very quick later.
-            '''
-        """
+            """
+        '''
     )
     raise NotImplementedError(
         f"Don't have a registered way to prepare the dataset {type(dataset).__name__}!\n"
-        f"Consider registering a function with @prepare_dataset_before_init.register, like so:\n\n"
-        + example
+        f"Consider registering a function with @prepare_dataset.register, like so:\n\n" + example
     )
 
 
@@ -109,6 +112,7 @@ def read_from_datasets_directory(
     return downloaded_dataset_root
 
 
+@prepare_dataset.register(tvd.Cityscapes)
 @prepare_dataset.register(tvd.Places365)
 @prepare_dataset.register(tvd.ImageFolder)
 def make_symlinks_to_archives_in_tempdir(
@@ -122,16 +126,18 @@ def make_symlinks_to_archives_in_tempdir(
     set to True!
     """
     dataset_class = type(dataset)
+    dataset_class = get_original_dataset_class(dataset_class)
     cluster = Cluster.current_or_error()
 
     fast_data_dir = get_slurm_tmpdir() / "data" / dataset_class.__name__
     fast_data_dir.parent.mkdir(exist_ok=True)
     fast_data_dir.mkdir(exist_ok=True)
 
-    files = files_to_use_for_dataset(
+    files = files_to_symlink_in_slurm_tmpdir_for_dataset(
         dataset_class, cluster=cluster, *constructor_args, **constructor_kwargs
     )
-    assert files
+    assert files, dataset_class
+
     for path_relative_to_storage_dir, file_in_network_storage in files.items():
         # TODO: Do we want to preserve the directory structure of the files? Or flatten things?
         # For now, I'll try a flat structure.

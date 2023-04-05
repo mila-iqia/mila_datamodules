@@ -122,11 +122,12 @@ _beluga_curated_datasets_dir = "/project/rpp-bengioy/data/curated"
 # things.
 # Add the known dataset locations on the mila cluster.
 
-dataset_roots_per_cluster = {
+dataset_roots_per_cluster: dict[Cluster, dict[type[Dataset], str]] = {
     Cluster.Mila: {
         tvd.MNIST: _mila_torchvision_dir,
         tvd.MNIST: _mila_torchvision_dir,
         tvd.CIFAR10: _mila_torchvision_dir,
+        tvd.CIFAR100: _mila_torchvision_dir,
         tvd.Caltech101: _mila_torchvision_dir,
         tvd.Caltech256: _mila_torchvision_dir,
         tvd.CelebA: _mila_torchvision_dir,
@@ -169,7 +170,10 @@ def _rel_paths_and_paths(
 def list_archives_in(
     archive_dir: str | Path | list[str] | list[Path], recurse: bool = False
 ) -> Callable[[], Iterable[tuple[str, Path]]]:
-    """Function that, when invoked, lists out the archives in the given directory."""
+    """Function that, when invoked, lists out the archives in the given directory.
+
+    Returns the relative path of the archive with respect to `archive_dir` as well as the absolute path.
+    """
     if isinstance(archive_dir, (str, Path)):
         archive_dirs = [archive_dir]
     else:
@@ -184,7 +188,9 @@ def list_archives_in(
     return _list_archives
 
 
-_files_to_use_for_dataset: dict[type, dict[Cluster, Callable[[], Iterable[tuple[str, Path]]]]] = {
+_files_to_symlink_in_slurm_tmpdir_for_dataset: dict[
+    type, dict[Cluster, Callable[[], Iterable[tuple[str, Path]]]]
+] = {
     tvd.Places365: {
         Cluster.Mila: list_archives_in(
             [
@@ -197,35 +203,97 @@ _files_to_use_for_dataset: dict[type, dict[Cluster, Callable[[], Iterable[tuple[
         Cluster.Mila: list_archives_in("/network/datasets/imagenet"),
         Cluster.Beluga: list_archives_in("/project/rpp-bengioy/data/curated/imagenet/"),
     },
+    tvd.Cityscapes: {
+        Cluster.Mila: list_archives_in("/network/datasets/cityscapes"),
+    },
 }
 """Dictionary that gives, for each dataset type, for each cluster, a function that returns all the
 files and/or archives that should be copied over to the SLURM_TMPDIR before the dataset is read
 from there.
 
+Returns the relative paths of the files with respect to their root dir as well as their absolute
+paths.
+The relative path is provided so that the structure can be preserved.
+
 This is so that torchvision then extracts the files from the archives and reads them from there.
 """
 
 
-def files_to_use_for_dataset(
-    dataset: Callable[P, Dataset],
-    cluster: Cluster,
-    *constructor_args: P.args,
-    **constructor_kwargs: P.kwargs,
-) -> dict[str, Path] | None:
-    """Returns the files that should be moved for the given dataset type on the current cluster.
+def get_original_dataset_class(
+    adapted_dataset_class: type[AdaptedDataset] | type[Dataset],
+) -> type[Dataset]:
+    """When given a subclass of AdaptedDataset, returns the original dataset class."""
+    from mila_datamodules.vision.datasets.adapted_datasets import AdaptedDataset
 
-    Note: This is only really applicable to datasets that should be read from archives, e.g.
-    ImageNet.
+    if not issubclass(adapted_dataset_class, AdaptedDataset):
+        return adapted_dataset_class
+
+    assert inspect.isclass(adapted_dataset_class), adapted_dataset_class
+    assert issubclass(adapted_dataset_class, AdaptedDataset), adapted_dataset_class
+
+    dataset_class = adapted_dataset_class
+    for dataset_class in dataset_class.mro():
+        if issubclass(dataset_class, Dataset) and not issubclass(dataset_class, AdaptedDataset):
+            return dataset_class
+    raise RuntimeError(
+        f"Couldn't find the original dataset class for adapted dataset class {dataset_class}!"
+    )
+    return dataset_class
+
+
+def files_to_symlink_in_slurm_tmpdir_for_dataset(
+    dataset: type[Dataset],
+    cluster: Cluster,
+    *constructor_args,
+    **constructor_kwargs,
+) -> dict[str, Path] | None:
+    """Returns the files that should be have symlinks made in SLURM_TMPDIR for the given dataset
+    type on the current cluster.
+
+    NOTE: For all datasets that are read to memory directly (e.g. MNIST, CIFAR10, etc.) or
+    that are created by unpacking an archive containing lots of small files (e.g. ImageNet), it is
+    best to create symlinks to these files or archives in SLURM_TMPDIR:
+    - If the dataset is read to memory directly, then the symlinks will be followed and the files
+      are read to memory.
+    - If the dataset is an archive dataset, then the symlinks will be followed and the archives
+      appear (from the perspective of e.g. torchvision) to be already in SLURM_TMPDIR. The library
+      then simply extracts them in SLURM_TMPDIR.
+
+    Copying lots of small files from $SCRATCH to $SLURM_TMPDIR should be avoided whenever possible.
     """
     from mila_datamodules.vision.datasets.adapted_datasets import AdaptedDataset
 
-    if inspect.isclass(dataset) and issubclass(dataset, AdaptedDataset):
-        dataset = dataset.original_class
-    assert inspect.isclass(dataset)
-    files_per_cluster = getitem_with_subclasscheck(
-        potential_classes=_files_to_use_for_dataset, key=dataset, default=None
+    assert not issubclass(dataset, AdaptedDataset), "Shouldn't have a wrapped dataset class here."
+
+    if dataset in _files_to_symlink_in_slurm_tmpdir_for_dataset:
+        if cluster not in _files_to_symlink_in_slurm_tmpdir_for_dataset[dataset]:
+            raise UnsupportedDatasetError(
+                dataset,
+                cluster=cluster,
+                message=(
+                    f"Archives are normally used to make this dataset, but we don't know where to "
+                    f"find them on the {cluster} cluster."
+                ),
+            )
+        # We have archives used to create this dataset on this cluster.
+        return dict(_files_to_symlink_in_slurm_tmpdir_for_dataset[dataset][cluster]())
+
+    if dataset not in _dataset_files:
+        # We don't know which files are required for this dataset.
+        raise UnsupportedDatasetError(dataset, cluster=cluster)
+
+    files_required_for_creating_dataset = _dataset_files[dataset]
+
+    archives_per_cluster = getitem_with_subclasscheck(
+        potential_classes=_files_to_symlink_in_slurm_tmpdir_for_dataset,
+        key=dataset,
+        default=None,
     )
-    if files_per_cluster is None:
+    if archives_per_cluster is None:
+        raise UnsupportedDatasetError(
+            dataset=dataset,
+            cluster=cluster,
+        )
         logger.debug(f"We don't know which files should be copied for {dataset} yet.")
         return None
 
@@ -285,81 +353,6 @@ def is_supported_dataset(dataset_type: type) -> bool:
         return False
 
 
-def files_needed(dataset_class: type, cluster: Cluster) -> list[Path] | None:
-    """Returns the files that should be copied (or symlinked) to SLURM_TMPDIR to load this dataset.
-
-    TODO: Should return 'live' paths, and prioritize using archives when available on the current
-    cluster.
-    """
-    returned_files: list[Path] = []
-
-    archives = _archives_required_for(dataset_class=dataset_class, cluster=cluster)
-    if archives:
-        returned_files.extend(archives)
-
-    # TODO: rework the _archives_required and files_required dicts. It should just give back, for
-    # a given cluster and dataset, what files (archives preferably) should be copied / symlinked
-    # to SLURM_TMPDIR to create the dataset.
-
-    root = locate_dataset_root_on_cluster(dataset_cls=dataset_class, cluster=cluster)
-    if root is None:
-        return archives
-    files = files_required_for(dataset_type=dataset_class)
-    for file in files:
-        filepath = Path(root) / file
-        returned_files.append(filepath)
-
-    # double-check that we actually have all the files we're saying are needed.
-    for file in returned_files:
-        if not file.exists():
-            # Create a better error (e.g. a RegistryMismatch error)?
-            raise FileNotFoundError(
-                f"Internal error: File {file} is supposed to exist according to our registry!"
-            )
-    return returned_files
-
-
-def files_required_for(dataset_type: type) -> list[str]:
-    # TODO: Would be nice if this actually returned 'live' Path objects for the current cluster!
-    try:
-        return getitem_with_subclasscheck(_dataset_files, key=dataset_type)
-    except KeyError as exc:
-        pass
-
-    files_to_copy = files_to_use_for_dataset(dataset_type=dataset_type)
-    if files_to_copy:
-        return files_to_copy
-
-    error = UnsupportedDatasetError(
-        dataset=dataset_type,
-    )
-
-    folders = _get_folders_from_docstring(dataset_type)
-    if folders:
-        return folders
-    raise error
-
-
-def _archives_required_for(
-    dataset_class: type, cluster: Cluster | None = Cluster.current()
-) -> list[Path] | None:
-    if cluster is None:
-        raise NotImplementedError(
-            f"Can't tell which archives are required for dataset {dataset_class} on local machines!"
-        )
-    try:
-        archive_paths = getitem_with_subclasscheck(
-            dataset_archives_locations_per_cluster[cluster], key=dataset_class
-        )
-        # TODO: Maybe return the actual archive type to use?
-        return [Path(archive_path) for archive_path in archive_paths]
-    except KeyError:
-        logger.debug(
-            f"Don't know what archives are present on cluster {cluster} for dataset {dataset_class}!"
-        )
-        return None
-
-
 # TODO: How about we adopt a de-centralized kind of registry, a bit like gym?
 # In each dataset module, we could have a `mila_datamodules.register(name, locations={Mila: ...})`?
 
@@ -401,7 +394,7 @@ def is_stored_on_cluster(dataset_cls: type, cluster: Cluster | None = CURRENT_CL
         # No way to check if the dataset is stored on the local machine.
         return False
 
-    files_to_copy = files_to_use_for_dataset(dataset_cls, cluster=cluster)
+    files_to_copy = files_to_symlink_in_slurm_tmpdir_for_dataset(dataset_cls, cluster=cluster)
     if files_to_copy is None:
         logger.debug(
             f"Don't know what files to copy for dataset {dataset_cls} on cluster {cluster}. "
@@ -437,7 +430,7 @@ def is_stored_on_cluster(dataset_cls: type, cluster: Cluster | None = CURRENT_CL
 
 
 def locate_dataset_root_on_cluster(
-    dataset_cls: type | Callable[..., Dataset],
+    dataset_cls: type[Dataset],
     cluster: Cluster | None = CURRENT_CLUSTER,
     default: str | None = None,
 ) -> str:
@@ -481,8 +474,10 @@ def locate_dataset_root_on_cluster(
         # f"cluster, 🙏 please make an issue at {github_issue_url} to add it to the registry! 🙏"
         # )
 
-    dataset_root = dataset_roots_per_cluster[cluster].get(dataset_cls)
-    if dataset_cls is None:
+    dataset_root: str | None = getitem_with_subclasscheck(
+        dataset_roots_per_cluster[cluster], dataset_cls, default=None
+    )
+    if dataset_cls is None or dataset_root is None:
         # Unsupported dataset?
         raise DatasetNotFoundOnClusterError(dataset=dataset_cls, cluster=cluster)
         # raise NotImplementedError(
@@ -490,6 +485,7 @@ def locate_dataset_root_on_cluster(
         #     f"If you do know where it can be found on {cluster_name}, or on any other "
         #     f"cluster, 🙏 please make an issue at {github_issue_url} to add it to the registry! 🙏"
         # )
+
     return str(dataset_root)
 
 

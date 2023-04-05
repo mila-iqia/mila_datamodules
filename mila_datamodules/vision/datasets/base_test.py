@@ -20,7 +20,7 @@ from mila_datamodules.clusters import CURRENT_CLUSTER, Cluster
 from mila_datamodules.clusters.utils import get_scratch_dir
 from mila_datamodules.conftest import seeded
 from mila_datamodules.registry import (
-    files_to_use_for_dataset,
+    files_to_symlink_in_slurm_tmpdir_for_dataset,
     is_stored_on_cluster,
     locate_dataset_root_on_cluster,
 )
@@ -113,7 +113,7 @@ class VisionDatasetTests(Generic[VisionDatasetType]):
     _bound: ClassVar[type[Dataset]] = tvd.VisionDataset
     required_on_all_clusters: ClassVar[bool] = False
 
-    @pytest.fixture()
+    @pytest.fixture(scope="class")
     def dataset_kwargs(self) -> dict[str, Any]:
         """Fixture that returns the kwargs that should be passed to the dataset constructor.
 
@@ -357,8 +357,7 @@ class LoadsFromArchives(VisionDatasetTests[VisionDatasetType]):
         self, dataset_kwargs: dict[str, Any], tmp_path_factory: pytest.TempPathFactory
     ):
         bad_root = tmp_path_factory.mktemp("bad_root")
-        adapted_dataset_class = self.adapted_dataset_cls
-        new_root = prepare_dataset(adapted_dataset_class, root=str(bad_root), **dataset_kwargs)
+        new_root = prepare_dataset(self.dataset_cls, root=str(bad_root), **dataset_kwargs)
         assert not list(bad_root.iterdir())
         return new_root
 
@@ -373,10 +372,9 @@ class LoadsFromArchives(VisionDatasetTests[VisionDatasetType]):
 
         adapted_dataset_class = self.adapted_dataset_cls
         bad_root = tmp_path / "bad_root"
-        files_to_copy = files_to_use_for_dataset(
-            adapted_dataset_class.original_class,
+        files_to_copy = files_to_symlink_in_slurm_tmpdir_for_dataset(
+            self.dataset_cls,
             cluster=Cluster.current_or_error(),
-            root=str(bad_root),
         )
         assert files_to_copy
         new_root = prepared_dataset_location

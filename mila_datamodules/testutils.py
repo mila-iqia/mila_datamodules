@@ -36,7 +36,7 @@ def only_runs_on_clusters(*cluster: Cluster):
     """Only runs the test or test param when we're on that cluster or one of these clusters."""
     clusters = list(cluster)
     if clusters:
-        condition = (Cluster.current() not in clusters,)
+        condition = Cluster.current() not in clusters
         reason = f"Test only runs on {'|'.join(c.name for c in clusters)} clusters"
     else:
         condition = Cluster.current() is not None
@@ -50,6 +50,7 @@ def param_only_runs_on_clusters(*params, clusters: Sequence[Cluster] = ()):
 
 
 def param_only_runs_on_cluster(*params, cluster: Cluster):
+    """This test parameter should only be run on the given cluster."""
     return param_only_runs_on_clusters(*params, clusters=[cluster])
 
 

@@ -61,15 +61,15 @@ class TestCIFAR100(ReadFromRoot[tvd.CIFAR100], DownloadableDatasetTests, Require
 
 
 class TestCityscapes(LoadsFromArchives[tvd.Cityscapes], Required):
-    @pytest.fixture(params=["fine", "coarse"])
+    @pytest.fixture(scope="class", params=["fine", "coarse"])
     def mode(self, request) -> str:
         return request.param
 
-    @pytest.fixture(params=["instance", "semantic", "polygon", "color"])
+    @pytest.fixture(scope="class", params=["instance", "semantic", "polygon", "color"])
     def target_type(self, request: _FixtureRequest[str]) -> str:
         return request.param
 
-    @pytest.fixture()
+    @pytest.fixture(scope="class")
     def dataset_kwargs(self, mode: str, target_type: str) -> dict[str, Any]:
         return dict(mode=mode, target_type=target_type)
 
@@ -79,6 +79,7 @@ class TestINaturalist(
     DownloadableDatasetTests,
 ):
     @pytest.fixture(
+        scope="class",
         params=[
             unsupported_variant("2017", Cluster.Mila),
             unsupported_variant("2018", Cluster.Mila),
@@ -86,45 +87,46 @@ class TestINaturalist(
             "2021_train",
             "2021_train_mini",
             "2021_valid",
-        ]
+        ],
     )
     def version(self, request: _FixtureRequest[str]) -> str:
         return request.param
 
-    @pytest.fixture()
+    @pytest.fixture(scope="class")
     def dataset_kwargs(self, version: str) -> dict[str, Any]:
         return dict(version=version)
 
 
 class TestPlaces365(LoadsFromArchives[tvd.Places365], DownloadableDatasetTests):
     @pytest.fixture(
-        params=["train-standard", unsupported_variant("train-challenge", Cluster.Mila), "val"]
+        scope="class",
+        params=["train-standard", unsupported_variant("train-challenge", Cluster.Mila), "val"],
     )
     def split(self, request: _FixtureRequest[str]) -> str:
         return request.param
 
-    @pytest.fixture
+    @pytest.fixture(scope="class")
     def dataset_kwargs(self, split: str) -> dict[str, Any]:
         return dict(split=split)
 
 
 class TestSTL10(VisionDatasetTests[tvd.STL10]):
-    @pytest.fixture(params=["train", "test", "unlabeled", "train+unlabeled"])
+    @pytest.fixture(scope="class", params=["train", "test", "unlabeled", "train+unlabeled"])
     def split(self, request: _FixtureRequest[str]) -> str:
         return request.param
 
-    @pytest.fixture
+    @pytest.fixture(scope="class")
     def dataset_kwargs(self, split: str) -> dict[str, Any]:
         return dict(split=split)
 
 
 @coco_required
 class TestCocoDetection(VisionDatasetTests[tvd.CocoDetection]):
-    @pytest.fixture(params=["train", "val"])
+    @pytest.fixture(scope="class", params=["train", "val"])
     def split(self, request: _FixtureRequest[str]) -> str:
         return request.param
 
-    @pytest.fixture
+    @pytest.fixture(scope="class")
     def dataset_kwargs(self, split: str) -> dict[str, Any]:
         return dict(
             split=split,
@@ -138,11 +140,11 @@ class TestCocoDetection(VisionDatasetTests[tvd.CocoDetection]):
 
 @coco_required
 class TestCocoCaptions(VisionDatasetTests[tvd.CocoCaptions]):
-    @pytest.fixture(params=["train", "val"])
+    @pytest.fixture(scope="class", params=["train", "val"])
     def split(self, request: _FixtureRequest[str]) -> str:
         return request.param
 
-    @pytest.fixture
+    @pytest.fixture(scope="class")
     def dataset_kwargs(self, split: str) -> dict[str, Any]:
         return dict(
             split=split,
@@ -161,11 +163,11 @@ class TestBinaryMNIST(ReadFromRoot[_binary_mnist._PatchedBinaryMNIST]):
 
 
 class TestBinaryEMNIST(ReadFromRoot[_binary_mnist._PatchedBinaryEMNIST]):
-    @pytest.fixture(params=["byclass", "bymerge"])
+    @pytest.fixture(scope="class", params=["byclass", "bymerge"])
     def split(self, request: _FixtureRequest[str]) -> str:
         return request.param
 
-    @pytest.fixture
+    @pytest.fixture(scope="class")
     def dataset_kwargs(self, split: str) -> dict[str, Any]:
         return dict(split=split)
 
