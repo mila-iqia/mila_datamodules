@@ -1,17 +1,16 @@
 from __future__ import annotations
-from argparse import ArgumentParser
-import os
-from pathlib import Path
-import shutil
-from typing import Callable, Generic, Sequence, TypeVar
-from typing_extensions import ParamSpec, Concatenate
+
 import inspect
-from simple_parsing import field
+import os
+import shutil
+from pathlib import Path
+from typing import Callable, Generic, Sequence, TypeVar
 
-from mila_datamodules.clusters.cluster import Cluster
 import torchvision.datasets as tvd
+from typing_extensions import Concatenate, ParamSpec
 
-from mila_datamodules.cli.utils import runs_on_local_main_process_first, is_local_main
+from mila_datamodules.cli.utils import is_local_main, runs_on_local_main_process_first
+from mila_datamodules.clusters.cluster import Cluster
 
 # from simple_parsing import ArgumentParser
 SLURM_TMPDIR = Path(os.environ["SLURM_TMPDIR"])
@@ -144,62 +143,55 @@ class CopyTree(PrepareVisionDataset[VD, P]):
         return super()(root, *constructor_args, **constructor_kwargs)
 
 
+# NOTE: For some datasets, we have datasets stored in folders with the same structure. This here is
+# only really used to prevent repeating a bit of code in the dictionary below.
+# TODO: Find an exception to this rule and design this dict with that in mind.
+standardized_torchvision_dataset_dirs = {
+    Cluster.Mila: "/network/datasets",
+    Cluster.Beluga: "/project/rpp-bengioy/data/curated",
+}
+
 prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareVisionDataset]] = {
     tvd.MNIST: {
         # On the Mila and Beluga cluster we have archives which are extracted into 4 "raw" binary
         # files. We do need to match the expected directory structure of the torchvision MNIST
         # dataset though.
         # NOTE: On Beluga, we also have the MNIST 'raw' files in /project/rpp-bengioy/data/MNIST/raw, no archives.
-        Cluster.Mila: SymlinkArchives(
+        cluster: SymlinkArchives(
             tvd.MNIST,
             {
                 f"MNIST/raw/{archive.name}": archive
-                for archive in Path("/network/datasets/mnist").glob("*.gz")
+                for archive in Path(f"{dataset_folder}/mnist").glob("*.gz")
             },
-        ),
-        Cluster.Beluga: SymlinkArchives(
-            tvd.MNIST,
-            {
-                f"MNIST/raw/{archive.name}": archive
-                for archive in Path("/project/rpp-bengioy/data/curated/mnist").glob("*.gz")
-            },
-        ),
+        )
+        for cluster, dataset_folder in standardized_torchvision_dataset_dirs.items()
     },
     tvd.CIFAR10: {
-        Cluster.Mila: SymlinkArchives(
+        cluster: SymlinkArchives(
             tvd.CIFAR10,
-            {"cifar-10-python.tar.gz": "/network/datasets/cifar10/cifar-10-python.tar.gz"},
-        ),
-        Cluster.Beluga: SymlinkArchives(
-            tvd.CIFAR10,
-            {
-                "cifar-10-python.tar.gz": "/project/rpp-bengioy/data/curated/cifar10/cifar-10-python.tar.gz",
-            },
-        ),
+            {"cifar-10-python.tar.gz": f"{dataset_folder}/cifar10/cifar-10-python.tar.gz"},
+        )
+        for cluster, dataset_folder in standardized_torchvision_dataset_dirs.items()
     },
     tvd.CIFAR100: {
-        Cluster.Mila: SymlinkArchives(
+        cluster: SymlinkArchives(
             tvd.CIFAR100,
-            {"cifar-100-python.tar.gz": "/network/datasets/cifar100/cifar-100-python.tar.gz"},
-        ),
-        Cluster.Beluga: SymlinkArchives(
-            tvd.CIFAR100,
-            {
-                "cifar-100-python.tar.gz": "/project/rpp-bengioy/data/curated/cifar100/cifar-100-python.tar.gz",
-            },
-        ),
+            {"cifar-100-python.tar.gz": f"{dataset_folder}/cifar100/cifar-100-python.tar.gz"},
+        )
+        for cluster, dataset_folder in standardized_torchvision_dataset_dirs.items()
     },
     tvd.ImageNet: {
         # TODO: Write a customized `PrepareVisionDataset` for ImageNet that uses Olexa's magic tar
         # command.
-        Cluster.Mila: SymlinkArchives(
+        cluster: SymlinkArchives(
             tvd.ImageNet,
             {
-                "ILSVRC2012_devkit_t12.tar.gz": "/network/datasets/imagenet/ILSVRC2012_devkit_t12.tar.gz",
-                "ILSVRC2012_img_train.tar": "/network/datasets/imagenet/ILSVRC2012_img_train.tar",
-                "ILSVRC2012_img_val.tar": "/network/datasets/imagenet/ILSVRC2012_img_val.tar",
+                "ILSVRC2012_devkit_t12.tar.gz": f"{dataset_folder}/imagenet/ILSVRC2012_devkit_t12.tar.gz",
+                "ILSVRC2012_img_train.tar": f"{dataset_folder}/imagenet/ILSVRC2012_img_train.tar",
+                "ILSVRC2012_img_val.tar": f"{dataset_folder}/imagenet/ILSVRC2012_img_val.tar",
             },
-        ),
+        )
+        for cluster, dataset_folder in standardized_torchvision_dataset_dirs.items()
     },
 }
-""" Dataset preparation functions per dataset type, per cluster. """
+"""Dataset preparation functions per dataset type, per cluster."""
