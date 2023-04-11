@@ -1,6 +1,7 @@
 """GLUEDataModule from the PL + HuggingFace example.
 
-https://pytorch-lightning.readthedocs.io/en/stable/notebooks/lightning_examples/text-transformers.html
+https://pytorch-lightning.readthedocs.io/en/stable/notebooks/lightning_examples/text-
+transformers.html
 """
 from __future__ import annotations
 
@@ -28,7 +29,6 @@ Task = Literal[
 
 
 class GlueDataModule(LightningDataModule):
-
     task_text_field_map: dict[Task, list[str]] = {
         "cola": ["sentence"],
         "sst2": ["sentence"],

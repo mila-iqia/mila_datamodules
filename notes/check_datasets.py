@@ -6,7 +6,7 @@ from collections import defaultdict
 import cv2  # noqa
 from torchvision.datasets import VisionDataset
 
-from mila_datamodules.registry import get_dataset_root
+from mila_datamodules.registry import locate_dataset_root_on_cluster
 
 successes = []
 failures = defaultdict(list)
@@ -14,7 +14,7 @@ for dataset_class in VisionDataset.__subclasses__():
     k = dataset_class.__qualname__
     print(k)
     try:
-        dataset_root = get_dataset_root(dataset_class)
+        dataset_root = locate_dataset_root_on_cluster(dataset_class)
         dataset = dataset_class(str(dataset_root))
     except Exception as err:
         exception_str = f"{type(err).__name__}('{err}')"

@@ -37,8 +37,8 @@ class _TransformsFix(pytorch_lightning.LightningDataModule):
         self.test_transforms = test_transforms
 
 
-_pl_version = tuple(map(int, pytorch_lightning.__version__.split(".")))
-_bolts_version = tuple(map(int, pl_bolts.__version__.split(".")))
+_pl_version = tuple(map(int, pytorch_lightning.__version__.split(".")[:3]))
+_bolts_version = tuple(map(int, pl_bolts.__version__.split(".")[:3]))
 
 
 class VisionDataModule(

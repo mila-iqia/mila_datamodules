@@ -19,7 +19,7 @@ else:
     from .cifar10 import CIFAR10DataModule
     from .cityscapes import CityscapesDataModule
     from .fashion_mnist import FashionMNISTDataModule
-    from .imagenet import ImagenetDataModule, ImagenetFfcvDataModule
+    from .imagenet import ImagenetDataModule
     from .mnist import (
         BinaryEMNISTDataModule,
         BinaryMNISTDataModule,
@@ -32,3 +32,4 @@ else:
 # New additions:
 from .cifar100 import CIFAR100DataModule
 from .coco import CocoCaptionsDataModule
+from .imagenet import ImagenetFfcvDataModule

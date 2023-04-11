@@ -6,44 +6,106 @@ on the current cluster.
 They might also silently first copy the dataset to SLURM_TMPDIR before reading it, depending on the
 size of the dataset.
 
-NOTE: These wrappers don't do anything when this is ran outside a SLURM cluster.
+NOTE: These wrappers don't do anything when outside a SLURM cluster.
+
+TODO: For some of these datasets that have other required arguments, perhaps we could add "good"
+default values for some of them? (Currently doing that in the VisionDataModule associated with
+this dataset).
 """
 from __future__ import annotations
 
-import pl_bolts.datasets
 import torchvision.datasets
 
-from .adapted_datasets import adapt_dataset
-from .binary_mnist import BinaryEMNIST, BinaryMNIST
-from .caltech101 import Caltech101
+from ._binary_mnist import _PatchedBinaryEMNIST, _PatchedBinaryMNIST
+from ._mnist import MNIST as _PatchedMnist
+from .adapted_datasets import AdaptedDataset
+from .prepare_dataset import (
+    make_symlinks_to_archives_in_tempdir,
+    read_from_datasets_directory,
+)
+from .prepare_imagenet import prepare_imagenet_dataset
 
-MNIST = adapt_dataset(torchvision.datasets.MNIST)
-CIFAR10 = adapt_dataset(torchvision.datasets.CIFAR10)
-CIFAR100 = adapt_dataset(torchvision.datasets.CIFAR100)
-FashionMNIST = adapt_dataset(torchvision.datasets.FashionMNIST)
 
-Caltech101 = adapt_dataset(Caltech101)
-# Caltech101 = adapt_dataset(torchvision.datasets.Caltech101)
+class ReadFromDatasetsDirectory(AdaptedDataset):
+    prepare_dataset = read_from_datasets_directory
 
-Caltech256 = adapt_dataset(torchvision.datasets.Caltech256)
-CelebA = adapt_dataset(torchvision.datasets.CelebA)
-Cityscapes = adapt_dataset(torchvision.datasets.Cityscapes)
-INaturalist = adapt_dataset(torchvision.datasets.INaturalist)
-Places365 = adapt_dataset(torchvision.datasets.Places365)
-STL10 = adapt_dataset(torchvision.datasets.STL10)
-SVHN = adapt_dataset(torchvision.datasets.SVHN)
-# TODO: For some of these datasets that have other required arguments, perhaps we could add "good"
-# default values for some of them?
-# e.g. EMNIST: split="mnist"
-#     CocoCaptions: annFile=/wherever_its_stored/annotations/captions_train2017.json
-CocoDetection = adapt_dataset(torchvision.datasets.CocoDetection)
-CocoCaptions = adapt_dataset(torchvision.datasets.CocoCaptions)
 
-EMNIST = adapt_dataset(torchvision.datasets.EMNIST)
+class LoadFromLinkedArchivesInSlurmTmpdir(AdaptedDataset):
+    prepare_dataset = make_symlinks_to_archives_in_tempdir
 
-BinaryMNIST = adapt_dataset(BinaryMNIST)
-BinaryEMNIST = adapt_dataset(BinaryEMNIST)
-# BinaryMNIST = adapt_dataset(pl_bolts.datasets.BinaryMNIST)
-# BinaryEMNIST = adapt_dataset(pl_bolts.datasets.BinaryEMNIST)
+
+class ImageNet(AdaptedDataset, torchvision.datasets.ImageNet):
+    prepare_dataset = prepare_imagenet_dataset
+
+
+class MNIST(ReadFromDatasetsDirectory, _PatchedMnist):
+    pass
+
+
+class FashionMNIST(ReadFromDatasetsDirectory, torchvision.datasets.FashionMNIST):
+    pass
+
+
+class CIFAR10(ReadFromDatasetsDirectory, torchvision.datasets.CIFAR10):
+    pass
+
+
+class CIFAR100(ReadFromDatasetsDirectory, torchvision.datasets.CIFAR100):
+    pass
+
+
+class Caltech101(LoadFromLinkedArchivesInSlurmTmpdir, torchvision.datasets.Caltech101):
+    pass
+
+
+class Caltech256(LoadFromLinkedArchivesInSlurmTmpdir, torchvision.datasets.Caltech256):
+    pass
+
+
+class CelebA(LoadFromLinkedArchivesInSlurmTmpdir, torchvision.datasets.CelebA):
+    pass
+
+
+class Cityscapes(LoadFromLinkedArchivesInSlurmTmpdir, torchvision.datasets.Cityscapes):
+    pass
+
+
+class INaturalist(LoadFromLinkedArchivesInSlurmTmpdir, torchvision.datasets.INaturalist):
+    pass
+
+
+class Places365(LoadFromLinkedArchivesInSlurmTmpdir, torchvision.datasets.Places365):
+    pass
+
+
+class STL10(AdaptedDataset, torchvision.datasets.STL10):
+    # TODO
+    pass
+
+
+class SVHN(AdaptedDataset, torchvision.datasets.SVHN):
+    # TODO
+    pass
+
+
+class EMNIST(ReadFromDatasetsDirectory, torchvision.datasets.EMNIST):
+    pass
+
+
+class CocoDetection(LoadFromLinkedArchivesInSlurmTmpdir, torchvision.datasets.CocoDetection):
+    pass
+
+
+class CocoCaptions(LoadFromLinkedArchivesInSlurmTmpdir, torchvision.datasets.CocoCaptions):
+    pass
+
+
+class BinaryMNIST(ReadFromDatasetsDirectory, _PatchedBinaryMNIST):
+    pass
+
+
+class BinaryEMNIST(ReadFromDatasetsDirectory, _PatchedBinaryEMNIST):
+    pass
+
 
 # todo: Add the other datasets here.

@@ -17,6 +17,8 @@ from pl_bolts.datasets import UnlabeledImagenet
 from torch import Tensor, distributed, nn
 from torch.utils.data import DataLoader
 
+from mila_datamodules.clusters import get_scratch_dir
+
 try:
     import ffcv.transforms
     from ffcv.fields import IntField, RGBImageField
@@ -34,8 +36,6 @@ if typing.TYPE_CHECKING:
     from ffcv.fields import Field
     from ffcv.pipeline.operation import Operation
 
-from mila_datamodules.clusters import SCRATCH
-
 from .imagenet import ImagenetDataModule
 
 # FIXME: I don't like hard-coded values.
@@ -51,18 +51,18 @@ class DatasetWriterConfig:
     """Max image side length."""
 
     num_workers: int = field(default=16, hash=False)
-    """ Number of workers to use. """
+    """Number of workers to use."""
 
     chunk_size: int = 100
-    """ Chunk size for writing. """
+    """Chunk size for writing."""
 
     write_mode: Literal["raw", "smart", "jpg"] = "smart"
 
     jpeg_quality: int = 90
-    """ Quality of JPEG images. """
+    """Quality of JPEG images."""
 
     subset: int = -1
-    """ How many images to use (-1 for all). """
+    """How many images to use (-1 for all)."""
 
     compress_probability: float | None = None
 
@@ -82,43 +82,47 @@ class DatasetWriterConfig:
 
 class FfcvLoaderConfig(TypedDict, total=False):
     os_cache: bool
-    """ Leverages the operating system for caching purposes. This is beneficial when there is
-    enough memory to cache the dataset and/or when multiple processes on the same machine training
-    using the same dataset. See https://docs.ffcv.io/performance_guide.html for more information.
+    """Leverages the operating system for caching purposes.
+
+    This is beneficial when there is enough memory to cache the dataset and/or when multiple
+    processes on the same machine training using the same dataset. See
+    https://docs.ffcv.io/performance_guide.html for more information.
     """
 
     order: TraversalOrder
-    """Traversal order, one of: SEQUENTIAL, RANDOM, QUASI_RANDOM
-    QUASI_RANDOM is a random order that tries to be as uniform as possible while minimizing the
-    amount of data read from the disk. Note that it is mostly useful when `os_cache=False`.
-    Currently unavailable in distributed mode.
+    """Traversal order, one of: SEQUENTIAL, RANDOM, QUASI_RANDOM QUASI_RANDOM is a random order
+    that tries to be as uniform as possible while minimizing the amount of data read from the disk.
+
+    Note that it is mostly useful when `os_cache=False`. Currently unavailable in distributed mode.
     """
 
     distributed: bool
-    """For distributed training (multiple GPUs). Emulates the behavior of DistributedSampler from
-    PyTorch.
+    """For distributed training (multiple GPUs).
+
+    Emulates the behavior of DistributedSampler from PyTorch.
     """
 
     seed: int
     """Random seed for batch ordering."""
 
     indices: Sequence[int]
-    """Subset of dataset by filtering only some indices. """
+    """Subset of dataset by filtering only some indices."""
 
     custom_fields: Mapping[str, type[Field]]
     """Dictionary informing the loader of the types associated to fields that are using a custom
-    type.
-    """
+    type."""
 
     drop_last: bool
     """Drop non-full batch in each iteration."""
 
     batches_ahead: int
-    """Number of batches prepared in advance; balances latency and memory. """
+    """Number of batches prepared in advance; balances latency and memory."""
 
     recompile: bool
-    """Recompile every iteration. This is necessary if the implementation of some augmentations
-    are expected to change during training.
+    """Recompile every iteration.
+
+    This is necessary if the implementation of some augmentations are expected to change during
+    training.
     """
 
 
@@ -128,16 +132,19 @@ class ImageResolutionConfig:
     dataset."""
 
     min_res: int = 160
-    """the minimum (starting) resolution"""
+    """The minimum (starting) resolution."""
 
     max_res: int = 224
-    """the maximum (final) resolution"""
+    """The maximum (final) resolution."""
 
     end_ramp: int = 0
-    """ when to stop interpolating resolution. Set to 0 to disable this feature. """
+    """when to stop interpolating resolution.
+
+    Set to 0 to disable this feature.
+    """
 
     start_ramp: int = 0
-    """ when to start interpolating resolution """
+    """When to start interpolating resolution."""
 
     def get_resolution(self, epoch: int | None) -> int:
         """Copied over from the FFCV example, where they ramp up the resolution during training.
@@ -314,7 +321,7 @@ class ImagenetFfcvDataModule(ImagenetDataModule):
         if _done_file(ffcv_file).exists():
             return
         writer_hash = writer_config.get_hash()
-        ffcv_file_on_scratch = SCRATCH / "imagenet" / f"{writer_hash}_{split}.ffcv"
+        ffcv_file_on_scratch = get_scratch_dir() / "imagenet" / f"{writer_hash}_{split}.ffcv"
         if ffcv_file_on_scratch.exists():
             print(
                 f"Copying existing ffcv file from SCRATCH to SLURM_TMPDIR "

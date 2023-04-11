@@ -12,11 +12,11 @@ from torchvision.datasets import CocoCaptions, VisionDataset
 from torchvision.io.image import read_image
 from torchvision.transforms import Compose, ToTensor
 
-from mila_datamodules.clusters import SLURM_TMPDIR, Cluster
+from mila_datamodules.clusters import Cluster, get_slurm_tmpdir
 from mila_datamodules.vision import VisionDataModule
 
 coco_archives_root = {Cluster.Mila: "/network/datasets/coco/2017"}
-""" Path on each cluster where the 'train2017.zip' and 'val2017.zip' archives are stored. """
+"""Path on each cluster where the 'train2017.zip' and 'val2017.zip' archives are stored."""
 
 
 captions_train_annFile_location = {
@@ -84,7 +84,7 @@ class CocoCaptionsDataModule(VisionDataModule):
         )
         # TODO: Raise a warning if the user attempts to pass a data dir value not under SLURM_TMPDIR.
         # If the user passes a different directory in SLURM_TMPDIR, then use it.
-        self.data_dir = Path(SLURM_TMPDIR) / "coco"
+        self.data_dir = Path(data_dir or get_slurm_tmpdir() / "coco")
         self.dataset_train: Dataset[tuple[Tensor, list[tuple[str]]]] | None = None
         self.dataset_val: Dataset[tuple[Tensor, list[tuple[str]]]] | None = None
         self.dataset_test: Dataset[tuple[Tensor, list[tuple[str]]]] | None = None
@@ -94,10 +94,11 @@ class CocoCaptionsDataModule(VisionDataModule):
         """Extracts the COCO archives into `self.data_dir` (SLURM_TMPDIR/coco by default)."""
         cluster = Cluster.current()
         if cluster not in coco_archives_root:
+            cluster_name = cluster.name if cluster else "local"
             github_issue_url = (
                 f"https://github.com/lebrice/mila_datamodules/issues/new?"
-                f"labels={cluster.name}&template=feature_request.md&"
-                f"title=Feature%20request:%20COCO%20on%20{cluster.name}%20cluster"
+                f"labels={cluster_name}&template=feature_request.md&"
+                f"title=Feature%20request:%20COCO%20on%20{cluster_name}%20cluster"
             )
             raise NotImplementedError(
                 f"Don't know in which directory to get the '[train,val,test]2017.zip' archives "

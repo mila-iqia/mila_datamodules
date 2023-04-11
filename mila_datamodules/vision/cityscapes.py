@@ -8,9 +8,9 @@ from pl_bolts.datamodules import CityscapesDataModule as _CityscapesDataModule
 from torch import nn
 from torchvision.datasets import Cityscapes
 
-from mila_datamodules.clusters import SCRATCH
 from mila_datamodules.clusters.cluster import Cluster
-from mila_datamodules.registry import get_dataset_root
+from mila_datamodules.clusters.utils import get_scratch_dir
+from mila_datamodules.registry import locate_dataset_root_on_cluster
 
 from .vision_datamodule import _TransformsFix
 
@@ -21,7 +21,7 @@ from .vision_datamodule import _TransformsFix
 class CityscapesDataModule(_CityscapesDataModule, _TransformsFix):
     def __init__(
         self,
-        data_dir: str | None = None,
+        data_dir: str | None,
         quality_mode: str = "fine",
         target_type: str = "instance",
         num_workers: int = 0,
@@ -34,7 +34,7 @@ class CityscapesDataModule(_CityscapesDataModule, _TransformsFix):
         val_transforms: Callable | nn.Module | None = None,
         test_transforms: Callable | nn.Module | None = None,
     ) -> None:
-        data_dir = data_dir or str(SCRATCH / "data")
+        data_dir = data_dir or str(get_scratch_dir() / "data")
         super().__init__(
             data_dir=data_dir,
             quality_mode=quality_mode,
@@ -51,7 +51,7 @@ class CityscapesDataModule(_CityscapesDataModule, _TransformsFix):
         )
 
     def prepare_data(self):
-        cityscapes_dir_location = get_dataset_root(Cityscapes)
+        cityscapes_dir_location = locate_dataset_root_on_cluster(Cityscapes)
         if cityscapes_dir_location is None:
             raise NotImplementedError(
                 f"Don't know where cityscapes data is located in cluster {Cluster.current()}"

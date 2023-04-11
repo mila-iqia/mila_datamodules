@@ -1,4 +1,5 @@
 import itertools
+from importlib.util import find_spec
 from typing import ClassVar
 
 import pytest
@@ -8,7 +9,12 @@ from .coco import CocoCaptionsDataModule
 from .vision_datamodule import VisionDataModule
 from .vision_datamodule_test import VisionDataModuleTests
 
+PYCOCOTOOLS_INSTALLED = find_spec("pycocotools") is not None
 
+coco_required = pytest.mark.xfail(not PYCOCOTOOLS_INSTALLED, reason="pycocotools isn't installed")
+
+
+@coco_required
 @pytest.mark.timeout(300)
 class TestCoco(VisionDataModuleTests):
     DataModule: ClassVar[type[VisionDataModule]] = CocoCaptionsDataModule
