@@ -4,6 +4,7 @@ from __future__ import annotations
 import functools
 import inspect
 import textwrap
+import typing
 import warnings
 from logging import getLogger as get_logger
 from pathlib import Path
@@ -27,6 +28,9 @@ from mila_datamodules.utils import (
 )
 from mila_datamodules.vision.datasets._binary_mnist import _PatchedBinaryMNIST
 from mila_datamodules.vision.datasets._utils import archives_in_dir
+
+if typing.TYPE_CHECKING:
+    from mila_datamodules.vision.datasets.adapted_datasets import AdaptedDataset
 
 # TODO: Redesign this whole registry idea.
 
@@ -172,7 +176,8 @@ def list_archives_in(
 ) -> Callable[[], Iterable[tuple[str, Path]]]:
     """Function that, when invoked, lists out the archives in the given directory.
 
-    Returns the relative path of the archive with respect to `archive_dir` as well as the absolute path.
+    Returns the relative path of the archive with respect to `archive_dir` as well as the absolute
+    path.
     """
     if isinstance(archive_dir, (str, Path)):
         archive_dirs = [archive_dir]
@@ -282,8 +287,6 @@ def files_to_symlink_in_slurm_tmpdir_for_dataset(
         # We don't know which files are required for this dataset.
         raise UnsupportedDatasetError(dataset, cluster=cluster)
 
-    files_required_for_creating_dataset = _dataset_files[dataset]
-
     archives_per_cluster = getitem_with_subclasscheck(
         potential_classes=_files_to_symlink_in_slurm_tmpdir_for_dataset,
         key=dataset,
@@ -294,17 +297,15 @@ def files_to_symlink_in_slurm_tmpdir_for_dataset(
             dataset=dataset,
             cluster=cluster,
         )
-        logger.debug(f"We don't know which files should be copied for {dataset} yet.")
-        return None
 
-    if cluster not in files_per_cluster:
+    if cluster not in _files_to_symlink_in_slurm_tmpdir_for_dataset:
         warnings.warn(
             RuntimeWarning(
                 f"We don't know which files should be copied for {dataset} on {cluster} yet"
             )
         )
         return None
-    return dict(files_per_cluster[cluster]())
+    return dict(_files_to_symlink_in_slurm_tmpdir_for_dataset[dataset][cluster]())
 
 
 # Probably remove this?

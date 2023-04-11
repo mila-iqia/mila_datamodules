@@ -1,19 +1,11 @@
 from __future__ import annotations
-from argparse import ArgumentParser
+
 import os
+from argparse import ArgumentParser
 from pathlib import Path
-import shutil
-from typing import Callable, Generic, Sequence, TypeVar
-from typing_extensions import ParamSpec, Concatenate
-import inspect
-from simple_parsing import field
-
-from mila_datamodules.clusters.cluster import Cluster
-import torchvision.datasets as tvd
-
-from mila_datamodules.cli.utils import runs_on_local_main_process_first, is_local_main
 
 from mila_datamodules.cli.prepare_torchvision import prepare_torchvision_datasets
+from mila_datamodules.clusters.cluster import Cluster
 
 SLURM_TMPDIR = Path(os.environ["SLURM_TMPDIR"])
 

@@ -30,5 +30,5 @@ class TestCoco(VisionDataModuleTests):
             # TODO: Should we make this y 'cleaner', e.g. by making it into a list[str] ?
             y: list[tuple[str]]
             assert isinstance(y, list)
-            assert all(isinstance(y_i, tuple) for y_i in y)
-            assert all(isinstance(y_i_j, str) for y_i in y for y_i_j in y_i)
+            assert all(isinstance(y_i, list) for y_i in y), y
+            assert all([isinstance(y_i_j, str) for y_i in y for y_i_j in y_i]), y

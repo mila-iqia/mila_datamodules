@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import contextlib
 import functools
 import os
@@ -6,8 +7,8 @@ from typing import Callable, TypeVar
 
 import torch
 import torch.distributed
-from mila_datamodules.clusters.cluster import Cluster
 
+from mila_datamodules.clusters.cluster import Cluster
 
 C = TypeVar("C", bound=Callable)
 

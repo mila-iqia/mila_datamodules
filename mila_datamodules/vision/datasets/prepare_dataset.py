@@ -60,7 +60,7 @@ def prepare_dataset(
         @{prepare_dataset.__name__}.register(MyDataset)
         def prepare_my_dataset(dataset: MyDataset, *args, **kwargs) -> str:
             """Prepares the optimal dataset folder and returns where to read it from later.
-            
+
             *args and **kwargs are the arguments that would be passed to the dataset constructor.
             This can be used for example to know which dataset split to prepare.
 
@@ -81,7 +81,6 @@ def _dispatch_dataset_class(dataset_type: type[VisionDataset], *args, **kwargs):
     return prepare_dataset.dispatch(dataset_type)(fake_instance, *args, **kwargs)
 
 
-@prepare_dataset.register(tvd.CIFAR10)
 @prepare_dataset.register(tvd.CIFAR100)
 @prepare_dataset.register(tvd.MNIST)
 @prepare_dataset.register(tvd.FashionMNIST)
@@ -112,6 +111,7 @@ def read_from_datasets_directory(
     return downloaded_dataset_root
 
 
+@prepare_dataset.register(tvd.CIFAR10)
 @prepare_dataset.register(tvd.Cityscapes)
 @prepare_dataset.register(tvd.Places365)
 @prepare_dataset.register(tvd.ImageFolder)

@@ -3,21 +3,26 @@ from __future__ import annotations
 import itertools
 from typing import ClassVar
 
+import pytest
 from torch import Tensor
 from torch.utils.data import DataLoader
 
 from .vision_datamodule import VisionDataModule
 
+without_internet = pytest.mark.disable_socket
 # TODO: Add marks to skip the ultra slow datamodules unless a --slow argument is passed to pytest?
 # TODO: Create a slurm job that runs these unit tests.
 
 
+@without_internet
 class VisionDataModuleTests:
     """Set of unit tests for vision datamodules."""
 
     DataModule: ClassVar[type[VisionDataModule]]
 
     def test_datamodule_creation(self):
+        # BUG: Need to pass the Generator to the dataloader, otherwise the batches change between
+        # runs.
         datamodule = self.DataModule()
         # TODO: If we don't know where the dataset is stored, but it's simple to download, then
         # maybe we should just let it download itself into SCRATCH first, then copy to slurm

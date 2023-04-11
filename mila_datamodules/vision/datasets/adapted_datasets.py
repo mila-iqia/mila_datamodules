@@ -2,20 +2,15 @@
 from __future__ import annotations
 
 import functools
-import inspect
 import warnings
 from logging import getLogger as get_logger
 from typing import Callable, Generic, Type, TypeVar, cast
 
-import torchvision.datasets.utils
 from torch.utils.data import Dataset
 from torchvision.datasets import VisionDataset
 from typing_extensions import Concatenate, ParamSpec
 
-from mila_datamodules.clusters.cluster import Cluster
 from mila_datamodules.clusters.utils import on_slurm_cluster
-from mila_datamodules.errors import get_github_issue_url
-from mila_datamodules.registry import get_original_dataset_class, is_stored_on_cluster
 from mila_datamodules.vision.datasets.prepare_dataset import prepare_dataset
 
 # TODOS:

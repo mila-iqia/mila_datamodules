@@ -64,9 +64,9 @@ class UnsupportedDatasetError(NotImplementedError):
                     f"""\
                     We don't know which files are required to load dataset {dataset_name}.
 
-                    If you know which files are expected to be present by the {dataset} class, 
+                    If you know which files are expected to be present by the {dataset} class,
                     add an entry to the '_dataset_files' dictionary at this dataset, like so:
-                    
+
                     ```
                     from mila_datamodules.registry import _dataset_files
                     _dataset_files[{dataset_name}] = ["dataset_data_folder_1", "dataset_file_2", ...]
