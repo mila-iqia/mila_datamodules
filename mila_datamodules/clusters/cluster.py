@@ -56,3 +56,11 @@ class Cluster(enum.Enum):
                 "Please make an issue on the `mila-datamodules` repository."
             )
         return cls[cluster_name.capitalize()]
+
+    @property
+    def internet_access_on_compute_nodes(self) -> bool:
+        # TODO: Double-check that this is the case:
+        if self in (Cluster.Mila, Cluster.Cedar):
+            return True
+        else:
+            return False

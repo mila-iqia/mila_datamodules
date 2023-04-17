@@ -1,9 +1,17 @@
 from __future__ import annotations
 
 import os
-from argparse import ArgumentParser
+from dataclasses import asdict
+
+# from argparse import ArgumentParser
 from pathlib import Path
 
+from simple_parsing import ArgumentParser
+
+from mila_datamodules.cli.prepare_huggingface import (
+    HfDatasetsEnvVariables,
+    prepare_huggingface_datasets,
+)
 from mila_datamodules.cli.prepare_torchvision import prepare_torchvision_datasets
 from mila_datamodules.clusters.cluster import Cluster
 
@@ -40,6 +48,27 @@ def prepare(argv: list[str] | None = None):
         # prepare_dataset_fn.add_arguments(dataset_parser)
         dataset_parser.set_defaults(function=prepare_dataset_fn)
 
+    huggingface_preparation_functions = {
+        dataset_name: prepare_dataset_fns[current_cluster]
+        for dataset_name, prepare_dataset_fns in prepare_huggingface_datasets.items()
+        if current_cluster in prepare_dataset_fns
+    }
+
+    for dataset_name, prepare_dataset_fn in huggingface_preparation_functions.items():
+        dataset_parser = subparsers.add_parser(
+            dataset_name, help=f"Prepare the {dataset_name} dataset from HuggingFace"
+        )
+        dataset_parser.add_arguments(prepare_dataset_fn, dest="function")
+        # dataset_parser.add_argument(
+        #     "name",
+        #     type=str,
+        #     # required=False,
+        #     # positional=True,
+        #     default="",
+        #     help="Dataset config name.",
+        # )
+        # dataset_parser.set_defaults(function=prepare_dataset_fn)
+
     args = parser.parse_args(argv)
 
     args_dict = vars(args)
@@ -47,8 +76,22 @@ def prepare(argv: list[str] | None = None):
     function = args_dict.pop("function")
     kwargs = args_dict
 
-    new_root = function(**kwargs)
-    print(f"The {dataset} dataset can now be read from the following directory: {new_root}")
+    output = function(**kwargs)
+    if isinstance(output, (str, Path)):
+        new_root = output
+        print(f"The {dataset} dataset can now be read from the following directory: {new_root}")
+    else:
+        assert isinstance(output, HfDatasetsEnvVariables)
+        print(
+            "The following environment variables have been set in this process, but will "
+            "probably also need to also be added in the job script:"
+        )
+        for key, value in asdict(output).items():
+            print(f"export {key}={value}")
+
+
+def get_env_variables_to_use():
+    """IDEA: Output only the environment variables that need to be set for the current job."""
 
 
 if __name__ == "__main__":
