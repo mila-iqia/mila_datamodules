@@ -56,8 +56,8 @@ def clear_slurm_tmpdir():
     if slurm_tmpdir.exists() and slurm_tmpdir.is_dir() and len(list(slurm_tmpdir.iterdir())):
         with FileLock(slurm_tmpdir / "data.lock"):
             if (slurm_tmpdir / "data").exists():
-                # NOTE: The `chmod_recursive` doesn't seem to work atm. It's safe to assume we're on Linux,
-                # so this is fine for now.
+                # NOTE: The `chmod_recursive` doesn't seem to work atm. It's safe to assume we're
+                # on Linux, so this is fine for now.
                 os.system(f"chmod --recursive +rwx {slurm_tmpdir}/data")
                 shutil.rmtree(slurm_tmpdir / "data")
     yield
@@ -85,7 +85,7 @@ def scratch_data_dir(tmp_path_factory: pytest.TempPathFactory):
         # BUG: This may fail when running multiple tests in parallel.
         try:
             shutil.rmtree(fake_scratch_data_dir)
-        except FileNotFoundError as err:
+        except FileNotFoundError:
             pass
     # NOTE: exist_ok here because we might be parallelizing the tests with multiple workers.
     fake_scratch_data_dir.mkdir(parents=False, exist_ok=True)
