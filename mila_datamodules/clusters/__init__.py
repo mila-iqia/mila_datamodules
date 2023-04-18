@@ -1,5 +1,3 @@
-import os
-
 from .cluster import Cluster
 from .utils import get_scratch_dir, get_slurm_tmpdir
 
@@ -7,3 +5,10 @@ from .utils import get_scratch_dir, get_slurm_tmpdir
 # and make sure that everything exported by this package reverts back to the exact class / function
 # from the source package.
 CURRENT_CLUSTER = Cluster.current()
+
+__all__ = [
+    "get_scratch_dir",
+    "get_slurm_tmpdir",
+    "Cluster",
+    "CURRENT_CLUSTER",
+]

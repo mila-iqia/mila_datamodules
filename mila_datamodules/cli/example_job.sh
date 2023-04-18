@@ -56,7 +56,7 @@ srun --output=logs/slurm-%j_%t.out \
 
 # Option 2: Add a command that returns the location to read from (e.g. $SLURM_TMPDIR/data/imagenet in this case)
 srun --output=logs/slurm-%j_%t.out \
-    bash -c "python main.py --data_dir=`mila_datamodules get_data_dir imagenet`"
+    bash -c "python main.py --data_dir=$(mila_datamodules get_data_dir imagenet)"
 
 ## ----------------------------------
 ## HuggingFace example (wikitext-103)

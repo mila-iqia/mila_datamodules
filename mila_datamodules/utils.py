@@ -53,7 +53,7 @@ def replace_root(dataset_type: Callable[Concatenate[str, P], D], root: str | Pat
     return wrapped
 
 
-def replace_kwargs(function: Callable[P, OutT], **fixed_arguments):
+def replace_kwargs(function: C, **fixed_arguments) -> C:
     """Returns a callable where the given argument values are fixed.
 
     NOTE: Simply using functools.partial wouldn't work, since passing one of the fixed arguments
@@ -140,14 +140,14 @@ def copytree_with_symlinks(
     pbar = tqdm.tqdm(disable=disable_pbar)
 
     def _copy_fn(src: str, dst: str) -> None:
-        # NOTE: This also overwrites the files in the user directory with symlinks to the same files in
-        # the shared directory. We might not necessarily want to do that.
+        # NOTE: This also overwrites the files in the user directory with symlinks to the same
+        # files in the shared directory. We might not necessarily want to do that.
         # For instance, we might want to do a checksum or something first, to check that they have
         # exactly the same contents.
         src_path = Path(src)
         dst_path = Path(dst)
         rel_s = src_path.relative_to(src_dir_with_files)
-        rel_d = dst_path.relative_to(dst_dir_with_links)
+        # rel_d = dst_path.relative_to(dst_dir_with_links)
 
         if dst_path.exists():
             if dst_path.is_symlink():

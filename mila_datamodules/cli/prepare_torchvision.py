@@ -3,6 +3,7 @@ from __future__ import annotations
 import inspect
 import os
 import shutil
+from logging import getLogger as get_logger
 from pathlib import Path
 from typing import Callable, Generic, Sequence, TypeVar
 
@@ -12,6 +13,7 @@ from typing_extensions import Concatenate, ParamSpec
 from mila_datamodules.cli.utils import is_local_main, runs_on_local_main_process_first
 from mila_datamodules.clusters.cluster import Cluster
 
+logger = get_logger(__name__)
 # from simple_parsing import ArgumentParser
 SLURM_TMPDIR = Path(os.environ["SLURM_TMPDIR"])
 P = ParamSpec("P")
@@ -47,8 +49,9 @@ class PrepareVisionDataset(Generic[VD, P]):
         if "download" in inspect.signature(self.dataset_type).parameters:
             constructor_kwargs["download"] = True
 
-        print(
-            f"Using dataset constructor: {self.dataset_type} with args {constructor_args}, and kwargs {constructor_kwargs}"
+        logger.debug(
+            f"Using dataset constructor: {self.dataset_type} with args {constructor_args}, and "
+            f"kwargs {constructor_kwargs}"
         )
         dataset_instance = self.dataset_type(str(root), *constructor_args, **constructor_kwargs)
         if is_local_main():
@@ -156,7 +159,8 @@ prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareVisionDataset]] = 
         # On the Mila and Beluga cluster we have archives which are extracted into 4 "raw" binary
         # files. We do need to match the expected directory structure of the torchvision MNIST
         # dataset though.
-        # NOTE: On Beluga, we also have the MNIST 'raw' files in /project/rpp-bengioy/data/MNIST/raw, no archives.
+        # NOTE: On Beluga, we also have the MNIST 'raw' files in
+        # /project/rpp-bengioy/data/MNIST/raw, no archives.
         cluster: SymlinkArchives(
             tvd.MNIST,
             {
@@ -186,12 +190,12 @@ prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareVisionDataset]] = 
         cluster: SymlinkArchives(
             tvd.ImageNet,
             {
-                "ILSVRC2012_devkit_t12.tar.gz": f"{dataset_folder}/imagenet/ILSVRC2012_devkit_t12.tar.gz",
-                "ILSVRC2012_img_train.tar": f"{dataset_folder}/imagenet/ILSVRC2012_img_train.tar",
-                "ILSVRC2012_img_val.tar": f"{dataset_folder}/imagenet/ILSVRC2012_img_val.tar",
+                "ILSVRC2012_devkit_t12.tar.gz": f"{folder}/imagenet/ILSVRC2012_devkit_t12.tar.gz",
+                "ILSVRC2012_img_train.tar": f"{folder}/imagenet/ILSVRC2012_img_train.tar",
+                "ILSVRC2012_img_val.tar": f"{folder}/imagenet/ILSVRC2012_img_val.tar",
             },
         )
-        for cluster, dataset_folder in standardized_torchvision_dataset_dirs.items()
+        for cluster, folder in standardized_torchvision_dataset_dirs.items()
     },
 }
 """Dataset preparation functions per dataset type, per cluster."""

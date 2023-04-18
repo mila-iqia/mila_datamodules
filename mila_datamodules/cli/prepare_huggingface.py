@@ -94,7 +94,7 @@ class PrepareWikitext:
         return self.env_vars_to_set()
 
     def env_vars_to_set(self) -> HfDatasetsEnvVariables:
-        """IDEA: Write a method that can be called to just get the environment variables to print."""
+        """IDEA: Write a method that can be called to just get the environment variables."""
         offline_bit = 0 if Cluster.current_or_error().internet_access_on_compute_nodes else 1
         return HfDatasetsEnvVariables(
             HF_HOME=f"{SCRATCH}/cache/huggingface",

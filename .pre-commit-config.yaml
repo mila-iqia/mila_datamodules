@@ -34,6 +34,13 @@ repos:
         args: [--line-length, "99"]
         require_serial: true
 
+  - repo: https://github.com/charliermarsh/ruff-pre-commit
+    # Ruff version.
+    rev: 'v0.0.261'
+    hooks:
+      - id: ruff
+        args: ['--line-length', '99', '--select=E,F']
+        require_serial: true
 
   # python import sorting
   - repo: https://github.com/PyCQA/isort
