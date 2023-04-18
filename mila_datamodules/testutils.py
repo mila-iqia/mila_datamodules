@@ -3,33 +3,31 @@ from __future__ import annotations
 from typing import Sequence
 
 import pytest
-from torch.utils.data import Dataset
 
-from mila_datamodules.clusters import CURRENT_CLUSTER
 from mila_datamodules.clusters.cluster import Cluster
 from mila_datamodules.clusters.utils import on_slurm_cluster
-from mila_datamodules.registry import is_stored_on_cluster
+
+# from mila_datamodules.registry import is_stored_on_cluster
+
+# def skip_if_not_stored_on_current_cluster(dataset: type[Dataset]):
+#     return pytest.mark.skipif(
+#         not is_stored_on_cluster(dataset, CURRENT_CLUSTER),
+#         reason=f"Dataset isn't stored on {CURRENT_CLUSTER} cluster.",
+#     )
 
 
-def skip_if_not_stored_on_current_cluster(dataset: type[Dataset]):
-    return pytest.mark.skipif(
-        not is_stored_on_cluster(dataset, CURRENT_CLUSTER),
-        reason=f"Dataset isn't stored on {CURRENT_CLUSTER} cluster.",
-    )
+# def xfail_if_not_stored_on_current_cluster(dataset: type[Dataset]):
+#     return pytest.mark.xfail(
+#         condition=not is_stored_on_cluster(dataset, CURRENT_CLUSTER),
+#         reason=f"Dataset isn't stored on {CURRENT_CLUSTER} cluster.",
+#     )
 
 
-def xfail_if_not_stored_on_current_cluster(dataset: type[Dataset]):
-    return pytest.mark.xfail(
-        condition=not is_stored_on_cluster(dataset, CURRENT_CLUSTER),
-        reason=f"Dataset isn't stored on {CURRENT_CLUSTER} cluster.",
-    )
-
-
-def run_only_if_not_stored_on_current_cluster(dataset: type[Dataset]):
-    return pytest.mark.skipif(
-        is_stored_on_cluster(dataset, CURRENT_CLUSTER),
-        reason=f"Dataset is stored on {CURRENT_CLUSTER} cluster.",
-    )
+# def run_only_if_not_stored_on_current_cluster(dataset: type[Dataset]):
+#     return pytest.mark.skipif(
+#         is_stored_on_cluster(dataset, CURRENT_CLUSTER),
+#         reason=f"Dataset is stored on {CURRENT_CLUSTER} cluster.",
+#     )
 
 
 def only_runs_on_clusters(*cluster: Cluster):

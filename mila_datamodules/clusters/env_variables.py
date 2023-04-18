@@ -117,7 +117,9 @@ def in_ddp_context() -> bool:
 
 
 @functools.cache
-def setup_slurm_env_variables(vars_to_ignore: Sequence[str] = ()) -> SlurmEnvVariables:
+def run_job_step_to_get_slurm_env_variables(
+    vars_to_ignore: Sequence[str] = (),
+) -> SlurmEnvVariables:
     """Sets the slurm-related environment variables inside `os.environ` if they are not set.
 
     Executes `env | grep SLURM` inside a `srun --pty /bin/bash` sub-command (assuming that no other

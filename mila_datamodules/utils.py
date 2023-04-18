@@ -6,13 +6,12 @@ import os
 import shutil
 from logging import getLogger as get_logger
 from pathlib import Path
-from typing import Any, Callable, Mapping, Sequence, TypeVar, overload
+from typing import Callable, Sequence, TypeVar
 
 import tqdm
 from torch.utils.data import Dataset
 from typing_extensions import Concatenate, ParamSpec
 
-from mila_datamodules.clusters.env_variables import setup_slurm_env_variables
 from mila_datamodules.clusters.utils import on_slurm_cluster
 
 logger = get_logger(__name__)
@@ -34,8 +33,8 @@ def in_job_process_without_slurm_env_vars() -> bool:
 
 # Load the SLURM environment variables into the current environment, if we're running inside a job
 # but don't have the SLURM variables set.
-if in_job_process_without_slurm_env_vars():
-    setup_slurm_env_variables()
+# if in_job_process_without_slurm_env_vars():
+#     setup_slurm_env_variables()
 
 
 def all_files_exist(
@@ -110,7 +109,10 @@ def copy_fn(src: str | Path, dest: str | Path):
 
 
 def chmod_recursive(path: str | Path, mode: int):
-    """Sets the mode of a file/dir and all its subdirectories and files to `mode`."""
+    """Sets the mode of a file/dir and all its subdirectories and files to `mode`.
+
+    TODO: Doesn't seem to be completely working.
+    """
     path = Path(path).resolve()
     for root, dirs, files in os.walk(path):
         for d in dirs:
@@ -123,100 +125,6 @@ def extract_archive(archive_path: str | Path, dest: str | Path):
     """Extracts an archive to `dest` and sets the mode of all extracted files to 644."""
     shutil.unpack_archive(archive_path, dest)
     chmod_recursive(dest, 0o644)
-
-
-def copy_dataset_files(
-    files_to_copy: Sequence[str | Path], source_dir: str | Path, dest_dir: str | Path
-) -> None:
-    """TODO: If the file is an archive, extract it into the destination directory, rather than
-    copy the files? (see https://github.com/lebrice/mila_datamodules/issues/4).
-    """
-    source_dir = Path(source_dir)
-    dest_dir = Path(dest_dir)
-
-    assert all_files_exist(files_to_copy, base_dir=source_dir)
-
-    for source_file in files_to_copy:
-        source_path = source_dir / source_file
-        destination_path = dest_dir / source_file
-        destination_path.parent.mkdir(parents=True, exist_ok=True)
-
-        if source_path.is_dir():
-            print(f"Copying {source_path} -> {destination_path}")
-            # Copy the folder over.
-            # TODO: Getting a weird error with CIFAR100. Seems to also be related to SCRATCH
-            # directory contents.
-            destination_path.mkdir(parents=True, exist_ok=True)
-            # TODO: Check that this doesn't overwrite existing files.
-            # TODO: Test this out with symlinks?
-            shutil.copytree(
-                src=source_path,
-                dst=destination_path,
-                symlinks=False,
-                dirs_exist_ok=True,
-                copy_function=copy_fn,
-            )
-        elif source_path.suffix in [".tar", ".zip", ".gz"]:
-            print(f"Extracting {source_path} -> {destination_path}")
-            # Extract the archive.
-            extract_archive(source_path, destination_path)
-
-        elif not destination_path.exists():
-            print(f"Copying {source_path} -> {destination_path}")
-            # Copy the file over.
-            try:
-                copy_fn(source_path, destination_path)
-            except FileExistsError:
-                # Weird. Getting a FileExistsError for SVHN, even though we checked that the
-                # destination path didn't already exist...
-                pass
-
-
-def _get_key_to_use_for_indexing(potential_classes: Mapping[_T, Any], key: _T) -> _T:
-    if key in potential_classes:
-        return key
-    # Return the entry with the same name, if `some_type` is a subclass of it.
-    parent_classes_with_same_name = [
-        cls for cls in potential_classes if cls.__name__ == key.__name__ and issubclass(key, cls)
-    ]
-    if len(parent_classes_with_same_name) == 0:
-        # Can't find a key to use.
-        raise KeyError(key)
-    elif len(parent_classes_with_same_name) > 1:
-        raise ValueError(
-            f"Multiple parent classes with the same name: {parent_classes_with_same_name}"
-        )
-    key = parent_classes_with_same_name[0]
-    return key
-
-
-_V = TypeVar("_V")
-
-_MISSING = object()
-
-
-@overload
-def getitem_with_subclasscheck(potential_classes: Mapping[_T, V], key: _T) -> V:
-    ...
-
-
-@overload
-def getitem_with_subclasscheck(potential_classes: Mapping[_T, V], key: _T, default: _V) -> V | _V:
-    ...
-
-
-def getitem_with_subclasscheck(
-    potential_classes: Mapping[_T, V], key: _T, default: _V = _MISSING
-) -> V | _V:
-    if key in potential_classes:
-        return potential_classes[key]
-    try:
-        key = _get_key_to_use_for_indexing(potential_classes, key=key)
-        return potential_classes[key]
-    except KeyError:
-        if default is not _MISSING:
-            return default  # type: ignore
-        raise
 
 
 def copytree_with_symlinks(

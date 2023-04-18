@@ -12,7 +12,9 @@ from pathlib import Path
 from shutil import which
 from typing import TypeVar
 
-from mila_datamodules.clusters.env_variables import setup_slurm_env_variables
+from mila_datamodules.clusters.env_variables import (
+    run_job_step_to_get_slurm_env_variables,
+)
 
 T = TypeVar("T")
 
@@ -53,7 +55,7 @@ def on_login_node() -> bool:
     return on_slurm_cluster() and not on_compute_node()
 
 
-def in_job_process_without_slurm_env_vars() -> bool:
+def in_job_but_not_in_job_step_so_no_slurm_env_vars() -> bool:
     """Returns `True` if this process is being executed inside another shell of the job (e.g. when
     using `mila code`, the vscode shell doesn't have the SLURM environment variables set)."""
     if not on_slurm_cluster():
@@ -79,8 +81,8 @@ def get_slurm_tmpdir(default: str | Path | None = None) -> Path:
 def _get_env_var(
     var_name: str, default: T | None = None, mock_var_prefix: str = "FAKE_"
 ) -> str | T:
-    if in_job_process_without_slurm_env_vars():
-        setup_slurm_env_variables()
+    if in_job_but_not_in_job_step_so_no_slurm_env_vars():
+        run_job_step_to_get_slurm_env_variables()
     if var_name in os.environ:
         return os.environ[var_name]
     if default is not None:

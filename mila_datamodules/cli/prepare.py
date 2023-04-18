@@ -8,6 +8,18 @@ from pathlib import Path
 
 from simple_parsing import ArgumentParser
 
+from mila_datamodules.clusters.env_variables import (
+    run_job_step_to_get_slurm_env_variables,
+)
+from mila_datamodules.clusters.utils import (
+    in_job_but_not_in_job_step_so_no_slurm_env_vars,
+)
+
+# Load the SLURM environment variables into the current environment, if we're running inside a job
+# but don't have the SLURM variables set.
+if in_job_but_not_in_job_step_so_no_slurm_env_vars():
+    run_job_step_to_get_slurm_env_variables()
+
 from mila_datamodules.cli.prepare_huggingface import (
     HfDatasetsEnvVariables,
     prepare_huggingface_datasets,

@@ -4,9 +4,9 @@ packages = find_namespace_packages(include=["mila_datamodules*"])
 packages += find_namespace_packages(include=["hydra_plugins.*"])
 
 extras_require = {
-    "ffcv": ["ffcv", "numba", "opencv-python"],
-    "hydra": ["hydra-core", "hydra-zen"],
-    "coco": ["pycocotools"],
+    # "ffcv": ["ffcv", "numba", "opencv-python"],
+    # "hydra": ["hydra-core", "hydra-zen"],
+    # "coco": ["pycocotools"],
     "test": ["pytest-xdist", "pytest-timeout", "pytest-socket", "pytest-regressions"],
 }
 extras_require["all"] = sorted(
@@ -17,7 +17,8 @@ extras_require["all"] = sorted(
         )
     )
 )
-extras_require["no_ffcv"] = list(set(extras_require["all"]) - set(extras_require["ffcv"]))
+if "ffcv" in extras_require:
+    extras_require["no_ffcv"] = list(set(extras_require["all"]) - set(extras_require["ffcv"]))
 
 
 with open("requirements.txt") as f:
@@ -28,7 +29,7 @@ with open("requirements.txt") as f:
 setup(
     name="mila_datamodules",
     version="0.0.1",
-    description="DataModules adapted for the Mila / DRAC SLURM clusters.",
+    description="Optimized dataset preparation for the Mila / DRAC SLURM clusters.",
     author="Fabrice Normandin",
     author_email="normandf@mila.quebec",
     packages=packages,
