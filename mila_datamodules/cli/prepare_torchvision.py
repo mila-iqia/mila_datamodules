@@ -154,9 +154,9 @@ class ExtractArchives(AbstractPrepareVisionDataset[VD, P]):
         ----------
 
         - archives:
-            A list of pair of an archive and a destination's path where the
-            archive should be extracted. The destination's path should be
-            relative.
+            A mapping from an archive name to path where the archive
+            should be extracted (relative to the 'root' dir).
+            The destination paths need to be relative.
         """
         self.archives = [(glob, Path(path)) for glob, path in archives]
 
