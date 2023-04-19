@@ -27,7 +27,6 @@ from mila_datamodules.cli.prepare_huggingface import (
 from mila_datamodules.cli.prepare_torchvision import prepare_torchvision_datasets
 from mila_datamodules.clusters.cluster import Cluster
 
-SLURM_TMPDIR = get_slurm_tmpdir()
 
 current_cluster = Cluster.current_or_error()
 
@@ -54,7 +53,7 @@ def prepare(argv: list[str] | None = None):
         dataset_parser = subparsers.add_parser(
             dataset_name, help=f"Prepare the {dataset_name} dataset"
         )
-        dataset_parser.add_argument("--root", type=Path, default=SLURM_TMPDIR / "datasets")
+        dataset_parser.add_argument("--root", type=Path, default=get_slurm_tmpdir() / "datasets")
         # IDEA: Add a way for the dataset preparation thingy to add its own arguments
         # (e.g. --split='train'/'val')
         # prepare_dataset_fn.add_arguments(dataset_parser)
