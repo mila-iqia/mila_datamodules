@@ -116,8 +116,7 @@ class SymlinkDatasetFiles(AbstractPrepareVisionDataset[VD, P]):
             if entry.is_file():
                 yield entry
             if entry.is_dir():
-                for _f in SymlinkDatasetFiles._recursive_list_files(entry):
-                    yield _f
+                yield from SymlinkDatasetFiles._recursive_list_files(entry)
 
     @runs_on_local_main_process_first
     def __call__(
