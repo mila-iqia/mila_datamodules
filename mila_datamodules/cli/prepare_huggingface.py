@@ -14,10 +14,11 @@ from datasets import DownloadConfig, load_dataset
 from simple_parsing import field
 
 from mila_datamodules.clusters.cluster import Cluster
+from mila_datamodules.clusters.utils import get_scratch_dir, get_slurm_tmpdir
 
 Path().write_text
-SLURM_TMPDIR = Path(os.environ["SLURM_TMPDIR"])
-SCRATCH = Path(os.environ["SCRATCH"])
+SLURM_TMPDIR = get_slurm_tmpdir()
+SCRATCH = get_scratch_dir()
 
 logger = get_logger(__name__)
 

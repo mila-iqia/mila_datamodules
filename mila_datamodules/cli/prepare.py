@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from dataclasses import asdict
 
 # from argparse import ArgumentParser
@@ -12,6 +11,7 @@ from mila_datamodules.clusters.env_variables import (
     run_job_step_to_get_slurm_env_variables,
 )
 from mila_datamodules.clusters.utils import (
+    get_slurm_tmpdir,
     in_job_but_not_in_job_step_so_no_slurm_env_vars,
 )
 
@@ -27,7 +27,7 @@ from mila_datamodules.cli.prepare_huggingface import (
 from mila_datamodules.cli.prepare_torchvision import prepare_torchvision_datasets
 from mila_datamodules.clusters.cluster import Cluster
 
-SLURM_TMPDIR = Path(os.environ["SLURM_TMPDIR"])
+SLURM_TMPDIR = get_slurm_tmpdir()
 
 current_cluster = Cluster.current_or_error()
 

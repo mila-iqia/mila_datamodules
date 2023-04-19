@@ -1,22 +1,22 @@
 from __future__ import annotations
 
 import inspect
-import os
 import shutil
 from logging import getLogger as get_logger
 from pathlib import Path
-from typing import Callable, Generic, Sequence, TypeVar
+from typing import Any, Callable, Generic, Sequence, TypeVar
 
 import torchvision.datasets as tvd
 from typing_extensions import Concatenate, ParamSpec
 
 from mila_datamodules.cli.utils import is_local_main, runs_on_local_main_process_first
 from mila_datamodules.clusters.cluster import Cluster
+from mila_datamodules.clusters.utils import get_slurm_tmpdir
 
 logger = get_logger(__name__)
 # from simple_parsing import ArgumentParser
-SLURM_TMPDIR = Path(os.environ["SLURM_TMPDIR"])
-P = ParamSpec("P")
+SLURM_TMPDIR = get_slurm_tmpdir()
+P = ParamSpec("P", default=Any)
 VD = TypeVar("VD", bound=tvd.VisionDataset)
 C = TypeVar("C", bound=Callable)
 
