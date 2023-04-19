@@ -4,8 +4,9 @@ import pytest
 from torchvision.datasets import VisionDataset
 from typing import Any, Callable
 from pathlib import Path
+import sys
 from typing_extensions import Concatenate, ParamSpec
-
+import torchvision.datasets as tvd
 from mila_datamodules.clusters import CURRENT_CLUSTER
 from mila_datamodules.cli.prepare_torchvision import (
     VD,
@@ -33,7 +34,17 @@ def get_preparation_function(
 
 @pytest.mark.parametrize(
     "dataset_type",
-    list(datasets_to_preparation_function),
+    [
+        pytest.param(
+            dataset,
+            marks=pytest.mark.skipif(
+                "-vvv" not in sys.argv, reason="This dataset takes a long time to prepare."
+            ),
+        )
+        if dataset in (tvd.ImageNet,)
+        else dataset
+        for dataset in datasets_to_preparation_function
+    ],
 )
 def test_prepare_dataset(
     dataset_type: Callable[Concatenate[str, P], VD],
