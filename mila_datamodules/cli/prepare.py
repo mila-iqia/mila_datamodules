@@ -110,7 +110,3 @@ def prepare(args):
 
 def get_env_variables_to_use():
     """IDEA: Output only the environment variables that need to be set for the current job."""
-
-
-if __name__ == "__main__":
-    prepare()
