@@ -92,7 +92,7 @@ class SymlinkDatasetFiles(AbstractPrepareVisionDataset[VD, P]):
             (relative to the 'root' directory) to the actual path to the archive on the cluster.
         """
         if source is not None:
-            source = Path(source).expanduser()
+            source = Path(source).expanduser().resolve()
 
         if source is not None and files is not None:
             self.relative_paths_to_files = {
