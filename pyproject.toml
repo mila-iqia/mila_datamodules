@@ -1,0 +1,36 @@
+[tool.poetry]
+name = "mila-datamodules"
+version = "0.1.0"
+description = "Optimized dataset preparation for the Mila / DRAC SLURM clusters."
+authors = ["Fabrice Normandin <normandf@mila.quebec>"]
+license = "MIT"
+readme = "README.md"
+packages = [{include = "mila_datamodules"}]
+
+[tool.poetry.dependencies]
+python = "^3.9"
+simple-parsing = "^0.1.2"
+filelock = "^3.12.0"
+pydantic = "^1.10.7"
+
+[tool.poetry.group.dev.dependencies]
+black = "^23.3.0"
+ruff = "^0.0.261"
+
+[tool.poetry.group.test.dependencies]
+pytest = "^7.3.1"
+pytest-xdist = "^3.2.1"
+pytest-timeout = "^2.1.0"
+pytest-socket = "^0.6.0"
+pytest-regressions = "^2.4.2"
+
+[tool.black]
+line-length = 99
+
+[tool.ruff]
+line-length = 99
+extend-select = ["I"]
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
