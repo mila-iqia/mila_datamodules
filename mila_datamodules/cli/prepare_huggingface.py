@@ -14,18 +14,19 @@ from datasets import DownloadConfig, load_dataset
 from simple_parsing import field
 
 from mila_datamodules.clusters.cluster import Cluster
+from mila_datamodules.clusters.utils import get_scratch_dir, get_slurm_tmpdir
 
 Path().write_text
-SLURM_TMPDIR = Path(os.environ["SLURM_TMPDIR"])
-SCRATCH = Path(os.environ["SCRATCH"])
 
 logger = get_logger(__name__)
 
 
 @dataclass
 class HfDatasetsEnvVariables:
-    HF_HOME: str | Path = SCRATCH / "cache/huggingface"
-    HF_DATASETS_CACHE: str | Path = SCRATCH / "cache/huggingface/datasets"
+    HF_HOME: str | Path = field(default_factory=lambda: get_scratch_dir() / "cache/huggingface")
+    HF_DATASETS_CACHE: str | Path = field(
+        default_factory=lambda: get_scratch_dir() / "cache/huggingface/datasets"
+    )
 
     # When running on a cluster where compute nodes don't have internet access, we copy what we can
     # from $SCRATCH to $SLURM_TMPDIR, and set these variables to 1 to avoid attempting to
@@ -96,9 +97,10 @@ class PrepareWikitext:
     def env_vars_to_set(self) -> HfDatasetsEnvVariables:
         """IDEA: Write a method that can be called to just get the environment variables."""
         offline_bit = 0 if Cluster.current_or_error().internet_access_on_compute_nodes else 1
+
         return HfDatasetsEnvVariables(
-            HF_HOME=f"{SCRATCH}/cache/huggingface",
-            HF_DATASETS_CACHE=f"{SLURM_TMPDIR}/cache/huggingface/datasets",
+            HF_HOME=f"{get_scratch_dir()}/cache/huggingface",
+            HF_DATASETS_CACHE=f"{get_slurm_tmpdir()}/cache/huggingface/datasets",
             HF_DATASETS_OFFLINE=offline_bit,
         )
 
@@ -112,12 +114,16 @@ def prepare_wikitext(
     with use_variables(HfDatasetsEnvVariables()):
         load_dataset(path, name)
 
-    dataset_dir = SCRATCH / "cache/huggingface/datasets" / path
-    relative_path = dataset_dir.relative_to(SCRATCH)
-    logger.info(f"Copying dataset from {dataset_dir} -> {SLURM_TMPDIR / relative_path}")
+    scratch = get_scratch_dir()
+    slurm_tmpdir = get_slurm_tmpdir()
+
+    dataset_dir = scratch / "cache/huggingface/datasets" / path
+    relative_path = dataset_dir.relative_to(scratch)
+
+    logger.info(f"Copying dataset from {dataset_dir} -> {slurm_tmpdir / relative_path}")
     shutil.copytree(
-        SCRATCH / relative_path,
-        SLURM_TMPDIR / relative_path,
+        scratch / relative_path,
+        slurm_tmpdir / relative_path,
         symlinks=True,  # TODO: Keep symlinks in source dir as symlinks in destination dir?
         dirs_exist_ok=True,
     )
@@ -125,7 +131,7 @@ def prepare_wikitext(
     with use_variables(
         HfDatasetsEnvVariables(
             # HF_HOME=SCRATCH / "cache/huggingface",
-            HF_DATASETS_CACHE=SLURM_TMPDIR / "cache/huggingface/datasets",
+            HF_DATASETS_CACHE=slurm_tmpdir / "cache/huggingface/datasets",
             HF_DATASETS_OFFLINE=1,
         )
     ):
@@ -140,8 +146,8 @@ def prepare_wikitext(
     offline_bit = 0 if cluster.internet_access_on_compute_nodes else 1
 
     return HfDatasetsEnvVariables(
-        HF_HOME=f"{SCRATCH}/cache/huggingface",
-        HF_DATASETS_CACHE=f"{SLURM_TMPDIR}/cache/huggingface/datasets",
+        HF_HOME=f"{scratch}/cache/huggingface",
+        HF_DATASETS_CACHE=f"{slurm_tmpdir}/cache/huggingface/datasets",
         HF_DATASETS_OFFLINE=offline_bit,
     )
 
