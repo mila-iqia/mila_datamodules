@@ -6,8 +6,6 @@ from dataclasses import asdict
 # from argparse import ArgumentParser
 from pathlib import Path
 
-from simple_parsing import ArgumentParser
-
 from mila_datamodules.clusters.env_variables import (
     run_job_step_to_get_slurm_env_variables,
 )
@@ -36,9 +34,7 @@ current_cluster = Cluster.current_or_error()
 # extracted version can be found, or we could download the archive in $SCRATCH.
 
 
-def prepare(argv: list[str] | None = None):
-    parser = ArgumentParser()
-
+def add_prepare_arguments(parser):
     subparsers = parser.add_subparsers(
         title="dataset", description="Which dataset to prepare", dest="dataset"
     )
@@ -47,6 +43,12 @@ def prepare(argv: list[str] | None = None):
         for dataset_type, prepare_dataset_fns in prepare_torchvision_datasets.items()
         if current_cluster in prepare_dataset_fns
     }
+    dataset_preparation_functions = dict(
+        sorted(
+            (dataset_name, prepare_dataset_fn)
+            for dataset_name, prepare_dataset_fn in dataset_preparation_functions.items()
+        )
+    )
 
     # TODO: Add preparation function for HuggingFace datasets.
 
@@ -81,9 +83,13 @@ def prepare(argv: list[str] | None = None):
         # )
         # dataset_parser.set_defaults(function=prepare_dataset_fn)
 
-    args = parser.parse_args(argv)
 
+def prepare(args):
+    """Prepare a dataset"""
     args_dict = vars(args)
+
+    assert args_dict.pop("command_name") == "prepare"
+    assert args_dict.pop("command") is prepare
     dataset = args_dict.pop("dataset")
     function = args_dict.pop("function")
     kwargs = args_dict
@@ -104,7 +110,3 @@ def prepare(argv: list[str] | None = None):
 
 def get_env_variables_to_use():
     """IDEA: Output only the environment variables that need to be set for the current job."""
-
-
-if __name__ == "__main__":
-    prepare()
