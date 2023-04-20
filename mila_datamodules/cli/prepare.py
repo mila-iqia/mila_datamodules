@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import asdict
-
-# from argparse import ArgumentParser
 from pathlib import Path
+
+from simple_parsing import ArgumentParser
 
 from mila_datamodules.clusters.env_variables import (
     run_job_step_to_get_slurm_env_variables,
@@ -25,7 +25,6 @@ from mila_datamodules.cli.prepare_huggingface import (
 from mila_datamodules.cli.prepare_torchvision import prepare_torchvision_datasets
 from mila_datamodules.clusters.cluster import Cluster
 
-
 current_cluster = Cluster.current_or_error()
 
 
@@ -33,7 +32,7 @@ current_cluster = Cluster.current_or_error()
 # extracted version can be found, or we could download the archive in $SCRATCH.
 
 
-def add_prepare_arguments(parser):
+def add_prepare_arguments(parser: ArgumentParser):
     subparsers = parser.add_subparsers(
         title="dataset", description="Which dataset to prepare", dest="dataset"
     )
@@ -84,7 +83,7 @@ def add_prepare_arguments(parser):
 
 
 def prepare(args):
-    """Prepare a dataset"""
+    """Prepare a dataset."""
     args_dict = vars(args)
 
     assert args_dict.pop("command_name") == "prepare"
