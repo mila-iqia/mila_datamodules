@@ -9,42 +9,13 @@ NOTE: This is a work in progress. Please let us know what you think, what featur
 This can be installed with `pip`:
 
 ```console
-pip install "mila_datamodules @ git+https://www.github.com/lebrice/mila_datamodules.git"
-```
-
-`ffcv` is an optional dependency, only currently used in the `ImagenetFfcvDataModule`.
-Installing FFCV can be a bit of a pain at the moment. But we're working on it.
-For now, your best bet is to use conda with the provided env.yaml:
-
-```console
-$ module load miniconda/3
-$ conda env create -n ffcv -f env.yaml
-$ conda activate ffcv
-$ pip install git+https://www.github.com/lebrice/mila_datamodules
+pip install "mila_datamodules @ git+https://www.github.com/mila-iqia/mila_datamodules.git"
 ```
 
 ## Usage:
 
-DataModules are a great way to organize your data loading code.
-The datamodules from `mila_datamodules` are opinionated in the way they handle where/how to
-download/store the data, so you don't have to think about it.
+TODO once the CLI is finalized
 
-```python
-
-from mila_datamodules.vision import ImagenetDataModule
-imagenet = ImagenetDataModule(batch_size=512)
-
-# With PyTorch Lightning:
-trainer = Trainer(gpus=8, accelerator="ddp")
-trainer.fit(model, imagenet)
-
-# Without PyTorch Lightning:
-imagenet.prepare_data()
-imagenet.setup()
-train_dataloader = imagenet.train_dataloader()
-val_dataloader = imagenet.val_dataloader()
-test_dataloader = imagenet.test_dataloader()
-```
 
 ## Supported Datasets
 

@@ -14,9 +14,10 @@ else
     virtualenv --no-download env
     source env/bin/activate
     pip install --no-index --upgrade pip
+    pip install poetry
 fi
+poetry install --with test
 # note: pip installing the packages on the login node, because the compute nodes don't have internet
-pip install -e .[all]
 pytest -v -n 4 --collect-only
 
 salloc --time=3:0:0 --account=rrg-bengioy-ad --mem=12G --cpus-per-task=4
