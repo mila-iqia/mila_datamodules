@@ -1,17 +1,15 @@
 from __future__ import annotations
 
-import os
 from dataclasses import asdict
 
 # from argparse import ArgumentParser
 from pathlib import Path
 
-from simple_parsing import ArgumentParser
-
 from mila_datamodules.clusters.env_variables import (
     run_job_step_to_get_slurm_env_variables,
 )
 from mila_datamodules.clusters.utils import (
+    get_slurm_tmpdir,
     in_job_but_not_in_job_step_so_no_slurm_env_vars,
 )
 
@@ -27,7 +25,6 @@ from mila_datamodules.cli.prepare_huggingface import (
 from mila_datamodules.cli.prepare_torchvision import prepare_torchvision_datasets
 from mila_datamodules.clusters.cluster import Cluster
 
-SLURM_TMPDIR = Path(os.environ["SLURM_TMPDIR"])
 
 current_cluster = Cluster.current_or_error()
 
@@ -36,9 +33,7 @@ current_cluster = Cluster.current_or_error()
 # extracted version can be found, or we could download the archive in $SCRATCH.
 
 
-def prepare(argv: list[str] | None = None):
-    parser = ArgumentParser()
-
+def add_prepare_arguments(parser):
     subparsers = parser.add_subparsers(
         title="dataset", description="Which dataset to prepare", dest="dataset"
     )
@@ -47,6 +42,12 @@ def prepare(argv: list[str] | None = None):
         for dataset_type, prepare_dataset_fns in prepare_torchvision_datasets.items()
         if current_cluster in prepare_dataset_fns
     }
+    dataset_preparation_functions = dict(
+        sorted(
+            (dataset_name, prepare_dataset_fn)
+            for dataset_name, prepare_dataset_fn in dataset_preparation_functions.items()
+        )
+    )
 
     # TODO: Add preparation function for HuggingFace datasets.
 
@@ -54,7 +55,7 @@ def prepare(argv: list[str] | None = None):
         dataset_parser = subparsers.add_parser(
             dataset_name, help=f"Prepare the {dataset_name} dataset"
         )
-        dataset_parser.add_argument("--root", type=Path, default=SLURM_TMPDIR / "datasets")
+        dataset_parser.add_argument("--root", type=Path, default=get_slurm_tmpdir() / "datasets")
         # IDEA: Add a way for the dataset preparation thingy to add its own arguments
         # (e.g. --split='train'/'val')
         # prepare_dataset_fn.add_arguments(dataset_parser)
@@ -81,9 +82,13 @@ def prepare(argv: list[str] | None = None):
         # )
         # dataset_parser.set_defaults(function=prepare_dataset_fn)
 
-    args = parser.parse_args(argv)
 
+def prepare(args):
+    """Prepare a dataset"""
     args_dict = vars(args)
+
+    assert args_dict.pop("command_name") == "prepare"
+    assert args_dict.pop("command") is prepare
     dataset = args_dict.pop("dataset")
     function = args_dict.pop("function")
     kwargs = args_dict
@@ -104,7 +109,3 @@ def prepare(argv: list[str] | None = None):
 
 def get_env_variables_to_use():
     """IDEA: Output only the environment variables that need to be set for the current job."""
-
-
-if __name__ == "__main__":
-    prepare()

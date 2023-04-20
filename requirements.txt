@@ -1,6 +1,0 @@
-pytorch-lightning==1.7.0
-torchvision==0.14.1
-lightning-bolts==0.5.0
-filelock
-pydantic
-scipy

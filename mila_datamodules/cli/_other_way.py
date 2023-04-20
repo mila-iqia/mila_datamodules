@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import shutil
 from pathlib import Path
 
@@ -8,8 +7,9 @@ import torchvision.datasets as tvd
 
 from mila_datamodules.cli.utils import is_local_main, local_main_process_first
 from mila_datamodules.clusters.cluster import Cluster
+from mila_datamodules.clusters.utils import get_slurm_tmpdir
 
-SLURM_TMPDIR = Path(os.environ["SLURM_TMPDIR"])
+SLURM_TMPDIR = get_slurm_tmpdir()
 
 
 cifar10_archives = {

@@ -32,6 +32,7 @@ conda activate $SLURM_TMPDIR/mila_datamodules/env
 # conda install cupy pkg-config compilers libjpeg-turbo opencv pytorch torchvision torchaudio cudatoolkit=11.3 numba -c pytorch -c conda-forge
 # pip install -e .[all]
 
-pip install -e .[no_ffcv]
+pip install poetry
+poetry install --with test
 
 pytest -v -x -n 4

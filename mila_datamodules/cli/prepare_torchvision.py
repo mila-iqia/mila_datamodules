@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 import inspect
-import os
 import shutil
 from logging import getLogger as get_logger
 from pathlib import Path
-from typing import Callable, Generic, Sequence, TypeVar
+from typing import Any, Callable, Generic, Sequence, TypeVar
 from zipfile import ZipFile
 
 import torchvision.datasets as tvd
@@ -13,11 +12,12 @@ from typing_extensions import Concatenate, ParamSpec
 
 from mila_datamodules.cli.utils import is_local_main, runs_on_local_main_process_first
 from mila_datamodules.clusters.cluster import Cluster
+from mila_datamodules.clusters.utils import get_slurm_tmpdir
 
 logger = get_logger(__name__)
 # from simple_parsing import ArgumentParser
-SLURM_TMPDIR = Path(os.environ["SLURM_TMPDIR"])
-P = ParamSpec("P")
+SLURM_TMPDIR = get_slurm_tmpdir()
+P = ParamSpec("P", default=Any)
 VD = TypeVar("VD", bound=tvd.VisionDataset)
 C = TypeVar("C", bound=Callable)
 
@@ -75,11 +75,7 @@ class PrepareVisionDataset(AbstractPrepareVisionDataset[VD, P]):
 class SymlinkDatasetFiles(AbstractPrepareVisionDataset[VD, P]):
     """Creates symlinks to the datasets' files in the `root` directory."""
 
-    def __init__(
-        self,
-        source: str | Path = None,
-        files: dict[str, str | Path] = None
-    ):
+    def __init__(self, source: str | Path = None, files: dict[str, str | Path] = None):
         """
         Parameters
         ----------
@@ -104,12 +100,10 @@ class SymlinkDatasetFiles(AbstractPrepareVisionDataset[VD, P]):
                 for _f in SymlinkDatasetFiles._recursive_list_files(Path(source))
             }
         else:
-            self.relative_paths_to_files = {
-                k: Path(v) for k, v in files.items()
-            }
+            self.relative_paths_to_files = {k: Path(v) for k, v in files.items()}
 
     @staticmethod
-    def _recursive_list_files(root:Path):
+    def _recursive_list_files(root: Path):
         for entry in root.iterdir():
             if entry.name.startswith("."):
                 continue
@@ -267,7 +261,8 @@ class Compose(AbstractPrepareVisionDataset[VD, P]):
         **dataset_kwargs: P.kwargs,
     ) -> str:
         for c in self.callables:
-            # TODO: Check that nesting `runs_on_local_main_process_first` decorators isn't a problem.
+            # TODO: Check that nesting `runs_on_local_main_process_first` decorators isn't a
+            # problem.
             root = c(root, *dataset_args, **dataset_kwargs)
         return root
 
@@ -282,173 +277,197 @@ standardized_torchvision_datasets_dirs = {
 
 prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareVisionDataset]] = {
     tvd.Caltech101: {
-        cluster: Compose([
-            SymlinkDatasetFiles(
-                source=f"{datasets_folder}/caltech101",
-            ),
-            MoveFiles(
-                # Torchvision will look into a caltech101 directory to
-                # preprocess the dataset
-                files=[("*", "caltech101/*")]
-            ),
-            PrepareVisionDataset(tvd.Caltech101)
-        ])
+        cluster: Compose(
+            [
+                SymlinkDatasetFiles(
+                    source=f"{datasets_folder}/caltech101",
+                ),
+                MoveFiles(
+                    # Torchvision will look into a caltech101 directory to
+                    # preprocess the dataset
+                    files=[("*", "caltech101/*")]
+                ),
+                PrepareVisionDataset(tvd.Caltech101),
+            ]
+        )
         for cluster, datasets_folder in standardized_torchvision_datasets_dirs.items()
     },
     tvd.Caltech256: {
-        cluster: Compose([
-            SymlinkDatasetFiles(
-                source=f"{datasets_folder}/caltech256",
-            ),
-            MoveFiles(
-                # Torchvision will look into a caltech256 directory to
-                # preprocess the dataset
-                files=[("*", "caltech256/*")]
-            ),
-            PrepareVisionDataset(tvd.Caltech256)
-        ])
+        cluster: Compose(
+            [
+                SymlinkDatasetFiles(
+                    source=f"{datasets_folder}/caltech256",
+                ),
+                MoveFiles(
+                    # Torchvision will look into a caltech256 directory to
+                    # preprocess the dataset
+                    files=[("*", "caltech256/*")]
+                ),
+                PrepareVisionDataset(tvd.Caltech256),
+            ]
+        )
         for cluster, datasets_folder in standardized_torchvision_datasets_dirs.items()
     },
     tvd.CelebA: {
-        cluster: Compose([
-            SymlinkDatasetFiles(
-                source=f"{datasets_folder}/celeba",
-            ),
-            MoveFiles(
-                # Torchvision will look into a celeba directory to preprocess
-                # the dataset
-                files=[
-                    ("Anno/**/*", "celeba/*"),
-                    ("Eval/**/*", "celeba/*"),
-                    ("Img/**/*", "celeba/*"),
-                ]
-            ),
-            PrepareVisionDataset(tvd.CelebA)
-        ])
+        cluster: Compose(
+            [
+                SymlinkDatasetFiles(
+                    source=f"{datasets_folder}/celeba",
+                ),
+                MoveFiles(
+                    # Torchvision will look into a celeba directory to preprocess
+                    # the dataset
+                    files=[
+                        ("Anno/**/*", "celeba/*"),
+                        ("Eval/**/*", "celeba/*"),
+                        ("Img/**/*", "celeba/*"),
+                    ]
+                ),
+                PrepareVisionDataset(tvd.CelebA),
+            ]
+        )
         for cluster, datasets_folder in standardized_torchvision_datasets_dirs.items()
     },
     tvd.CIFAR10: {
-        cluster: Compose([
-            SymlinkDatasetFiles(
-                source=f"{datasets_folder}/cifar10",
-            ),
-            PrepareVisionDataset(tvd.CIFAR10)
-        ])
+        cluster: Compose(
+            [
+                SymlinkDatasetFiles(
+                    source=f"{datasets_folder}/cifar10",
+                ),
+                PrepareVisionDataset(tvd.CIFAR10),
+            ]
+        )
         for cluster, datasets_folder in standardized_torchvision_datasets_dirs.items()
     },
     tvd.CIFAR100: {
-        cluster: Compose([
-            SymlinkDatasetFiles(
-                source=f"{datasets_folder}/cifar100",
-            ),
-            PrepareVisionDataset(tvd.CIFAR100)
-        ])
+        cluster: Compose(
+            [
+                SymlinkDatasetFiles(
+                    source=f"{datasets_folder}/cifar100",
+                ),
+                PrepareVisionDataset(tvd.CIFAR100),
+            ]
+        )
         for cluster, datasets_folder in standardized_torchvision_datasets_dirs.items()
     },
     tvd.Cityscapes: {
-        cluster: Compose([
-            SymlinkDatasetFiles(
-                source=f"{datasets_folder}/cityscapes",
-            ),
-            PrepareVisionDataset(tvd.Cityscapes)
-        ])
+        cluster: Compose(
+            [
+                SymlinkDatasetFiles(
+                    source=f"{datasets_folder}/cityscapes",
+                ),
+                PrepareVisionDataset(tvd.Cityscapes),
+            ]
+        )
         for cluster, datasets_folder in standardized_torchvision_datasets_dirs.items()
     },
     tvd.CocoCaptions: {
-        cluster: Compose([
-            SymlinkDatasetFiles(
-                source=f"{datasets_folder}/coco/2017",
-            ),
-            ExtractArchives(
-                archives=[
-                    ("test2017.zip", "."),
-                    ("train2017.zip", "."),
-                    ("val2017.zip", "."),
-                    ("annotations/annotations_trainval2017.zip", "."),
-                    ("annotations/image_info_test2017.zip", "."),
-                    ("annotations/panoptic_annotations_trainval2017.zip", "."),
-                    ("annotations/stuff_annotations_trainval2017.zip", "."),
-                ]
-            ),
-            PrepareVisionDataset(tvd.CocoCaptions)
-        ])
+        cluster: Compose(
+            [
+                SymlinkDatasetFiles(
+                    source=f"{datasets_folder}/coco/2017",
+                ),
+                ExtractArchives(
+                    archives=[
+                        ("test2017.zip", "."),
+                        ("train2017.zip", "."),
+                        ("val2017.zip", "."),
+                        ("annotations/annotations_trainval2017.zip", "."),
+                        ("annotations/image_info_test2017.zip", "."),
+                        ("annotations/panoptic_annotations_trainval2017.zip", "."),
+                        ("annotations/stuff_annotations_trainval2017.zip", "."),
+                    ]
+                ),
+                PrepareVisionDataset(tvd.CocoCaptions),
+            ]
+        )
         for cluster, datasets_folder in standardized_torchvision_datasets_dirs.items()
     },
     tvd.CocoDetection: {
-        cluster: Compose([
-            SymlinkDatasetFiles(
-                source=f"{datasets_folder}/coco/2017",
-            ),
-            ExtractArchives(
-                archives=[
-                    ("test2017.zip", "."),
-                    ("train2017.zip", "."),
-                    ("val2017.zip", "."),
-                    ("annotations/annotations_trainval2017.zip", "."),
-                    ("annotations/image_info_test2017.zip", "."),
-                    ("annotations/panoptic_annotations_trainval2017.zip", "."),
-                    ("annotations/stuff_annotations_trainval2017.zip", "."),
-                ]
-            ),
-            PrepareVisionDataset(tvd.CocoDetection)
-        ])
+        cluster: Compose(
+            [
+                SymlinkDatasetFiles(
+                    source=f"{datasets_folder}/coco/2017",
+                ),
+                ExtractArchives(
+                    archives=[
+                        ("test2017.zip", "."),
+                        ("train2017.zip", "."),
+                        ("val2017.zip", "."),
+                        ("annotations/annotations_trainval2017.zip", "."),
+                        ("annotations/image_info_test2017.zip", "."),
+                        ("annotations/panoptic_annotations_trainval2017.zip", "."),
+                        ("annotations/stuff_annotations_trainval2017.zip", "."),
+                    ]
+                ),
+                PrepareVisionDataset(tvd.CocoDetection),
+            ]
+        )
         for cluster, datasets_folder in standardized_torchvision_datasets_dirs.items()
     },
     tvd.FashionMNIST: {
-        cluster: Compose([
-            SymlinkDatasetFiles(
-                source=f"{datasets_folder}/fashionmnist",
-            ),
-            MoveFiles(
-                # Torchvision will look into a FashionMNIST/raw directory to
-                # preprocess the dataset
-                files=[("*", "FashionMNIST/raw/*")]
-            ),
-            PrepareVisionDataset(tvd.FashionMNIST)
-        ])
+        cluster: Compose(
+            [
+                SymlinkDatasetFiles(
+                    source=f"{datasets_folder}/fashionmnist",
+                ),
+                MoveFiles(
+                    # Torchvision will look into a FashionMNIST/raw directory to
+                    # preprocess the dataset
+                    files=[("*", "FashionMNIST/raw/*")]
+                ),
+                PrepareVisionDataset(tvd.FashionMNIST),
+            ]
+        )
         for cluster, datasets_folder in standardized_torchvision_datasets_dirs.items()
     },
     tvd.INaturalist: {
-        cluster: Compose([
-            SymlinkDatasetFiles(
-                source=f"{datasets_folder}/inat",
-            ),
-            MoveFiles(
-                # Torchvision will look for those files to preprocess the
-                # dataset
-                files=[
-                    ("train.tar.gz", "2021_train.tgz"),
-                    ("train_mini.tar.gz", "2021_train_mini.tgz"),
-                    ("val.tar.gz", "2021_valid.tgz"),
-                ]
-            ),
-            PrepareVisionDataset(tvd.INaturalist)
-        ])
+        cluster: Compose(
+            [
+                SymlinkDatasetFiles(
+                    source=f"{datasets_folder}/inat",
+                ),
+                MoveFiles(
+                    # Torchvision will look for those files to preprocess the
+                    # dataset
+                    files=[
+                        ("train.tar.gz", "2021_train.tgz"),
+                        ("train_mini.tar.gz", "2021_train_mini.tgz"),
+                        ("val.tar.gz", "2021_valid.tgz"),
+                    ]
+                ),
+                PrepareVisionDataset(tvd.INaturalist),
+            ]
+        )
         for cluster, datasets_folder in standardized_torchvision_datasets_dirs.items()
     },
     tvd.ImageNet: {
         # TODO: Write a customized `PrepareVisionDataset` for ImageNet that uses Olexa's magic tar
         # command.
-        cluster: Compose([
-            SymlinkDatasetFiles(
-                source=f"{datasets_folder}/imagenet",
-            ),
-            PrepareVisionDataset(tvd.ImageNet)
-        ])
+        cluster: Compose(
+            [
+                SymlinkDatasetFiles(
+                    source=f"{datasets_folder}/imagenet",
+                ),
+                PrepareVisionDataset(tvd.ImageNet),
+            ]
+        )
         for cluster, datasets_folder in standardized_torchvision_datasets_dirs.items()
     },
     tvd.KMNIST: {
-        cluster: Compose([
-            SymlinkDatasetFiles(
-                source=f"{datasets_folder}/kmnist",
-            ),
-            MoveFiles(
-                # Torchvision will look into a KMNIST/raw directory to
-                # preprocess the dataset
-                files=[("*", "KMNIST/raw/*")]
-            ),
-            PrepareVisionDataset(tvd.KMNIST)
-        ])
+        cluster: Compose(
+            [
+                SymlinkDatasetFiles(
+                    source=f"{datasets_folder}/kmnist",
+                ),
+                MoveFiles(
+                    # Torchvision will look into a KMNIST/raw directory to
+                    # preprocess the dataset
+                    files=[("*", "KMNIST/raw/*")]
+                ),
+                PrepareVisionDataset(tvd.KMNIST),
+            ]
+        )
         for cluster, datasets_folder in standardized_torchvision_datasets_dirs.items()
     },
     tvd.MNIST: {
@@ -457,83 +476,95 @@ prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareVisionDataset]] = 
         # structure of the torchvision MNIST dataset though.  NOTE: On Beluga,
         # we also have the MNIST 'raw' files in
         # /project/rpp-bengioy/data/MNIST/raw, no archives.
-        cluster: Compose([
-            SymlinkDatasetFiles(
-                source=f"{datasets_folder}/mnist",
-            ),
-            MoveFiles(
-                # Torchvision will look into a raw directory to preprocess the
-                # dataset
-                files=[("*", "raw/*")]
-            ),
-            PrepareVisionDataset(tvd.MNIST)
-        ])
+        cluster: Compose(
+            [
+                SymlinkDatasetFiles(
+                    source=f"{datasets_folder}/mnist",
+                ),
+                MoveFiles(
+                    # Torchvision will look into a raw directory to preprocess the
+                    # dataset
+                    files=[("*", "raw/*")]
+                ),
+                PrepareVisionDataset(tvd.MNIST),
+            ]
+        )
         for cluster, datasets_folder in standardized_torchvision_datasets_dirs.items()
     },
     tvd.Places365: {
-        cluster: Compose([
-            SymlinkDatasetFiles(
-                source=f"{datasets_folder}/places365",
-            ),
-            SymlinkDatasetFiles(
-                source=f"{datasets_folder}/places365.var/places365_challenge",
-            ),
-            MoveFiles(
-                files=[
-                    ("256/*.tar", "./*"),
-                    ("large/*.tar", "./*"),
-                ]
-            ),
-            PrepareVisionDataset(tvd.Places365)
-        ])
+        cluster: Compose(
+            [
+                SymlinkDatasetFiles(
+                    source=f"{datasets_folder}/places365",
+                ),
+                SymlinkDatasetFiles(
+                    source=f"{datasets_folder}/places365.var/places365_challenge",
+                ),
+                MoveFiles(
+                    files=[
+                        ("256/*.tar", "./*"),
+                        ("large/*.tar", "./*"),
+                    ]
+                ),
+                PrepareVisionDataset(tvd.Places365),
+            ]
+        )
         for cluster, datasets_folder in standardized_torchvision_datasets_dirs.items()
     },
     tvd.QMNIST: {
-        cluster: Compose([
-            SymlinkDatasetFiles(
-                source=f"{datasets_folder}/qmnist",
-            ),
-            MoveFiles(
-                # Torchvision will look into a QMNIST/raw directory to
-                # preprocess the dataset
-                files=[("*", "QMNIST/raw/*")]
-            ),
-            PrepareVisionDataset(tvd.QMNIST)
-        ])
+        cluster: Compose(
+            [
+                SymlinkDatasetFiles(
+                    source=f"{datasets_folder}/qmnist",
+                ),
+                MoveFiles(
+                    # Torchvision will look into a QMNIST/raw directory to
+                    # preprocess the dataset
+                    files=[("*", "QMNIST/raw/*")]
+                ),
+                PrepareVisionDataset(tvd.QMNIST),
+            ]
+        )
         for cluster, datasets_folder in standardized_torchvision_datasets_dirs.items()
     },
     tvd.STL10: {
-        cluster: Compose([
-            SymlinkDatasetFiles(
-                source=f"{datasets_folder}/stl10",
-            ),
-            PrepareVisionDataset(tvd.STL10)
-        ])
+        cluster: Compose(
+            [
+                SymlinkDatasetFiles(
+                    source=f"{datasets_folder}/stl10",
+                ),
+                PrepareVisionDataset(tvd.STL10),
+            ]
+        )
         for cluster, datasets_folder in standardized_torchvision_datasets_dirs.items()
     },
     tvd.SVHN: {
-        cluster: Compose([
-            SymlinkDatasetFiles(
-                source=f"{datasets_folder}/svhn",
-            ),
-            PrepareVisionDataset(tvd.SVHN)
-        ])
+        cluster: Compose(
+            [
+                SymlinkDatasetFiles(
+                    source=f"{datasets_folder}/svhn",
+                ),
+                PrepareVisionDataset(tvd.SVHN),
+            ]
+        )
         for cluster, datasets_folder in standardized_torchvision_datasets_dirs.items()
     },
     tvd.UCF101: {
-        cluster: Compose([
-            SymlinkDatasetFiles(
-                source=f"{datasets_folder}/ucf101",
-            ),
-            ExtractArchives(
-                archives=[
-                    # TODO: add support for rar archives
-                    ("UCF101.rar", "."),
-                    ("UCF101TrainTestSplits-RecognitionTask.zip", "."),
-                ]
-            ),
-            PrepareVisionDataset(tvd.UCF101)
-        ])
+        cluster: Compose(
+            [
+                SymlinkDatasetFiles(
+                    source=f"{datasets_folder}/ucf101",
+                ),
+                ExtractArchives(
+                    archives=[
+                        # TODO: add support for rar archives
+                        ("UCF101.rar", "."),
+                        ("UCF101TrainTestSplits-RecognitionTask.zip", "."),
+                    ]
+                ),
+                PrepareVisionDataset(tvd.UCF101),
+            ]
+        )
         for cluster, datasets_folder in standardized_torchvision_datasets_dirs.items()
     },
 }

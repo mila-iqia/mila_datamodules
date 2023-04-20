@@ -14,7 +14,8 @@ module load python/3.9
 virtualenv --no-download $SLURM_TMPDIR/env
 source $SLURM_TMPDIR/env/bin/activate
 pip install --no-index --upgrade pip
+pip install poetry
 
 # Note: No need to cd to $SCRATCH/mila_datamodules, we should already be there.
-pip install -e .[no_ffcv]
+poetry install --with test
 pytest -x -v -n 4
