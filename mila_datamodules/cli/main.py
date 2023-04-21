@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from simple_parsing import ArgumentParser
 
 from .prepare import add_prepare_arguments, prepare

@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import argparse
 from dataclasses import asdict
-
-# from argparse import ArgumentParser
 from pathlib import Path
+
+from simple_parsing import ArgumentParser
 
 from mila_datamodules.clusters.env_variables import (
     run_job_step_to_get_slurm_env_variables,
@@ -25,7 +26,6 @@ from mila_datamodules.cli.prepare_huggingface import (
 from mila_datamodules.cli.prepare_torchvision import prepare_torchvision_datasets
 from mila_datamodules.clusters.cluster import Cluster
 
-
 current_cluster = Cluster.current_or_error()
 
 
@@ -33,7 +33,19 @@ current_cluster = Cluster.current_or_error()
 # extracted version can be found, or we could download the archive in $SCRATCH.
 
 
-def add_prepare_arguments(parser):
+class DatasetArgs(argparse.Action):
+    def __call__(self, parser, namespace, values, option_string=None):
+        delattr(namespace, self.dest)
+        dataset_kwargs = {}
+        for v in values:
+            arg = v.split("=")
+            assert len(arg) > 1
+            arg, value = arg[0], "=".join(arg[1:])
+            dataset_kwargs[arg] = value
+        setattr(namespace, "dataset_kwargs", dataset_kwargs)
+
+
+def add_prepare_arguments(parser: ArgumentParser):
     subparsers = parser.add_subparsers(
         title="dataset", description="Which dataset to prepare", dest="dataset"
     )
@@ -42,20 +54,14 @@ def add_prepare_arguments(parser):
         for dataset_type, prepare_dataset_fns in prepare_torchvision_datasets.items()
         if current_cluster in prepare_dataset_fns
     }
-    dataset_preparation_functions = dict(
-        sorted(
-            (dataset_name, prepare_dataset_fn)
-            for dataset_name, prepare_dataset_fn in dataset_preparation_functions.items()
-        )
-    )
-
-    # TODO: Add preparation function for HuggingFace datasets.
+    dataset_preparation_functions = dict(sorted(dataset_preparation_functions.items()))
 
     for dataset_name, prepare_dataset_fn in dataset_preparation_functions.items():
         dataset_parser = subparsers.add_parser(
             dataset_name, help=f"Prepare the {dataset_name} dataset"
         )
         dataset_parser.add_argument("--root", type=Path, default=get_slurm_tmpdir() / "datasets")
+        dataset_parser.add_argument("args", action=DatasetArgs, nargs="*")
         # IDEA: Add a way for the dataset preparation thingy to add its own arguments
         # (e.g. --split='train'/'val')
         # prepare_dataset_fn.add_arguments(dataset_parser)
@@ -84,16 +90,17 @@ def add_prepare_arguments(parser):
 
 
 def prepare(args):
-    """Prepare a dataset"""
+    """Prepare a dataset."""
     args_dict = vars(args)
 
     assert args_dict.pop("command_name") == "prepare"
     assert args_dict.pop("command") is prepare
     dataset = args_dict.pop("dataset")
     function = args_dict.pop("function")
+    dataset_kwargs = args_dict.pop("dataset_kwargs")
     kwargs = args_dict
 
-    output = function(**kwargs)
+    output = function(**kwargs, **dataset_kwargs)
     if isinstance(output, (str, Path)):
         new_root = output
         print(f"The {dataset} dataset can now be read from the following directory: {new_root}")
