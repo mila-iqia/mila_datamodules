@@ -1,4 +1,5 @@
 from __future__ import annotations
+import argparse
 
 from dataclasses import asdict
 from pathlib import Path
@@ -32,6 +33,18 @@ current_cluster = Cluster.current_or_error()
 # extracted version can be found, or we could download the archive in $SCRATCH.
 
 
+class DatasetArgs(argparse.Action):
+    def __call__(self, parser, namespace, values, option_string=None):
+        delattr(namespace, self.dest)
+        dataset_kwargs = {}
+        for v in values:
+            arg = v.split("=")
+            assert len(arg) > 1
+            arg, value = arg[0], "=".join(arg[1:])
+            dataset_kwargs[arg] = value
+        setattr(namespace, "dataset_kwargs", dataset_kwargs)
+
+
 def add_prepare_arguments(parser: ArgumentParser):
     subparsers = parser.add_subparsers(
         title="dataset", description="Which dataset to prepare", dest="dataset"
@@ -55,6 +68,7 @@ def add_prepare_arguments(parser: ArgumentParser):
             dataset_name, help=f"Prepare the {dataset_name} dataset"
         )
         dataset_parser.add_argument("--root", type=Path, default=get_slurm_tmpdir() / "datasets")
+        dataset_parser.add_argument("args", action=DatasetArgs, nargs="*")
         # IDEA: Add a way for the dataset preparation thingy to add its own arguments
         # (e.g. --split='train'/'val')
         # prepare_dataset_fn.add_arguments(dataset_parser)
@@ -90,9 +104,10 @@ def prepare(args):
     assert args_dict.pop("command") is prepare
     dataset = args_dict.pop("dataset")
     function = args_dict.pop("function")
+    dataset_kwargs = args_dict.pop("dataset_kwargs")
     kwargs = args_dict
 
-    output = function(**kwargs)
+    output = function(**kwargs, **dataset_kwargs)
     if isinstance(output, (str, Path)):
         new_root = output
         print(f"The {dataset} dataset can now be read from the following directory: {new_root}")

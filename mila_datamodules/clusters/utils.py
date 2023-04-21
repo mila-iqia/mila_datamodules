@@ -42,7 +42,7 @@ def on_fake_slurm_cluster() -> bool:
 def current_cluster_name() -> str | None:
     if "CC_CLUSTER" in os.environ:
         return os.environ["CC_CLUSTER"]
-    if "/home/mila" in str(Path.home()):
+    if Path("/home/mila").exists():
         return "mila"
     return None
 
