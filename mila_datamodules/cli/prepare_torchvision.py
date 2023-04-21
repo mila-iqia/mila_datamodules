@@ -4,9 +4,21 @@ import contextlib
 import inspect
 import shutil
 import typing
+from dataclasses import dataclass
 from logging import getLogger as get_logger
 from pathlib import Path
-from typing import Any, Callable, Generic, Iterable, Mapping, Sequence
+from shutil import unpack_archive
+from typing import (
+    Any,
+    Callable,
+    Generic,
+    Iterable,
+    Literal,
+    Mapping,
+    MutableMapping,
+    Protocol,
+    Sequence,
+)
 from zipfile import ZipFile
 
 import torchvision.datasets as tvd
@@ -23,35 +35,31 @@ if typing.TYPE_CHECKING:
     P = ParamSpec("P", default=...)
 else:
     P = ParamSpec("P", default=Any)
+
 VD = TypeVar("VD", bound=tvd.VisionDataset, default=tvd.VisionDataset)
+VD_co = TypeVar("VD_co", bound=tvd.VisionDataset, default=tvd.VisionDataset, covariant=True)
 C = TypeVar("C", bound=Callable)
 
 current_cluster = Cluster.current_or_error()
 
 
-class PrepareVisionDataset(Generic[VD, P]):
+class PrepareVisionDataset(Protocol[VD_co, P]):
     def __call__(
         self,
-        root: str | Path = SLURM_TMPDIR / "datasets",
+        root: str | Path,
         *dataset_args: P.args,
         **dataset_kwargs: P.kwargs,
     ) -> str:
-        del root, dataset_args, dataset_kwargs
         raise NotImplementedError
 
 
-class CallDatasetConstructor(PrepareVisionDataset[VD, P]):
-    def __init__(self, dataset_type: Callable[Concatenate[str, P], VD], verify=False):
+class CallDatasetConstructor(PrepareVisionDataset[VD_co, P]):
+    def __init__(self, dataset_type: Callable[Concatenate[str, P], VD_co], verify=False):
         self.dataset_type = dataset_type
         self.verify = verify
 
     @runs_on_local_main_process_first
-    def __call__(
-        self,
-        root: str | Path = SLURM_TMPDIR / "datasets",
-        *dataset_args: P.args,
-        **dataset_kwargs: P.kwargs,
-    ) -> str:
+    def __call__(self, root: str | Path, *dataset_args: P.args, **dataset_kwargs: P.kwargs) -> str:
         """Use the dataset constructor to prepare the dataset in the `root` directory.
 
         If the dataset has a `download` argument in its constructor, it will be set to `True` so
@@ -108,7 +116,7 @@ class MakeSymlinksToDatasetFiles(PrepareVisionDataset[VD, P]):
 
     def __init__(
         self,
-        source_or_relative_paths_to_files: str | Path | Mapping[str, str | Path],
+        source_dir_or_relative_paths_to_files: str | Path | Mapping[str, str | Path],
     ):
         """
         Parameters
@@ -120,21 +128,16 @@ class MakeSymlinksToDatasetFiles(PrepareVisionDataset[VD, P]):
             symlink should be created, to the absolute path to the file on the cluster.
         """
         self.relative_paths_to_files: dict[str, Path]
-        if isinstance(source_or_relative_paths_to_files, (str, Path)):
-            source = source_or_relative_paths_to_files
+        if isinstance(source_dir_or_relative_paths_to_files, (str, Path)):
+            source = source_dir_or_relative_paths_to_files
             self.relative_paths_to_files = dataset_files_in_source_dir(source)
         else:
             self.relative_paths_to_files = {
-                str(k): Path(v) for k, v in source_or_relative_paths_to_files.items()
+                str(k): Path(v) for k, v in source_dir_or_relative_paths_to_files.items()
             }
 
     @runs_on_local_main_process_first
-    def __call__(
-        self,
-        root: str | Path = SLURM_TMPDIR / "datasets",
-        *dataset_args: P.args,
-        **dataset_kwargs: P.kwargs,
-    ) -> str:
+    def __call__(self, root: str | Path, *dataset_args: P.args, **dataset_kwargs: P.kwargs) -> str:
         root = Path(root)
         root.mkdir(parents=True, exist_ok=True)
 
@@ -168,19 +171,13 @@ class ExtractArchives(PrepareVisionDataset[VD, P]):
         self.archives = {glob: Path(path) for glob, path in archives.items()}
 
     @runs_on_local_main_process_first
-    def __call__(
-        self,
-        root: str | Path = SLURM_TMPDIR / "datasets",
-        *dataset_args: P.args,
-        **dataset_kwargs: P.kwargs,
-    ) -> str:
+    def __call__(self, root: str | Path, *dataset_args: P.args, **dataset_kwargs: P.kwargs) -> str:
         for archive, dest in self.archives.items():
             archive = Path(archive)
             assert not dest.is_absolute()
-            from shutil import unpack_archive
 
             dest = root / dest
-
+            print(f"Extracting {archive} in {dest}")
             if archive.suffix == ".zip":
                 with ZipFile(root / archive) as zf:
                     zf.extractall(str(dest))
@@ -211,7 +208,7 @@ class MoveFiles(PrepareVisionDataset[VD, P]):
     @runs_on_local_main_process_first
     def __call__(
         self,
-        root: str | Path = SLURM_TMPDIR / "datasets",
+        root: str | Path,
         *dataset_args: P.args,
         **dataset_kwargs: P.kwargs,
     ) -> str:
@@ -268,11 +265,11 @@ class CopyTree(CallDatasetConstructor[VD, P]):
         return super()(root, *constructor_args, **constructor_kwargs)
 
 
-class Compose(PrepareVisionDataset[VD, P]):
+class Compose(PrepareVisionDataset[VD_co, P]):
     class Stop(Exception):
         pass
 
-    def __init__(self, *callables: PrepareVisionDataset[VD, P]) -> None:
+    def __init__(self, *callables: PrepareVisionDataset[VD_co, P]) -> None:
         self.callables = callables
 
     @runs_on_local_main_process_first
@@ -325,6 +322,44 @@ standardized_torchvision_datasets_dir = {
     Cluster.Mila: Path("/network/datasets"),
     Cluster.Beluga: Path("~/project/rpp-bengioy/data/curated").expanduser().resolve(),
 }
+
+CocoType = TypeVar("CocoType", tvd.CocoCaptions, tvd.CocoDetection, default=tvd.CocoDetection)
+
+
+def check_coco_is_setup(
+    dataset_type: Callable[P, CocoType] = tvd.CocoDetection,
+    variant: Literal["captions", "instances", "panoptic", "person_keypoints", "stuff"]
+    | None = None,
+):
+    if variant is None:
+        if dataset_type is tvd.CocoCaptions:
+            variant = "captions"
+
+    def _check_coco_setup(
+        root: str | Path,
+        annFile: str = "annotations/captions_train2017.json",
+        *args: P.args,
+        **kwargs: P.kwargs,
+    ) -> str:
+        dataset = dataset_type(
+            f"{root}/train2017",
+            f"{root}/annotations/{variant}_train2017.json",
+            *args,
+            **kwargs,
+        )
+        dataset[0]
+        dataset = dataset_type(
+            f"{root}/val2017",
+            f"{root}/annotations/{variant}_val2017.json",
+            *args,
+            **kwargs,
+        )
+        dataset[0]
+
+        return str(root)
+
+    return _check_coco_setup
+
 
 prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareVisionDataset]] = {
     tvd.Caltech101: {
@@ -406,11 +441,17 @@ prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareVisionDataset]] = 
         )
         for cluster, datasets_dir in standardized_torchvision_datasets_dir.items()
     },
+    # TODO: CocoCaptions is a bit weird.
+    # - If we prepare everything right, we still have to call the constructor with
+    # root=<root>/train2017.
     tvd.CocoCaptions: {
         cluster: Compose(
+            # BUG: This actually only checks that the annotation file is present and can be loaded!
+            # Therefore, we index the created dataset to see if it actually works.
             StopOnSucess(
-                CallDatasetConstructor(tvd.CocoCaptions, verify=True),
-                exceptions=[RuntimeError],
+                # CallDatasetConstructor(tvd.CocoCaptions, verify=True),
+                check_coco_is_setup(tvd.CocoCaptions),
+                exceptions=[FileNotFoundError],
             ),
             MakeSymlinksToDatasetFiles(f"{datasets_dir}/coco/2017"),
             ExtractArchives(
@@ -424,15 +465,17 @@ prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareVisionDataset]] = 
                     "annotations/stuff_annotations_trainval2017.zip": ".",
                 },
             ),
-            CallDatasetConstructor(tvd.CocoCaptions),
+            check_coco_is_setup(tvd.CocoCaptions),
+            # lambda root, annFile, *args, **kwargs: (tvd.CocoCaptions),
         )
         for cluster, datasets_dir in standardized_torchvision_datasets_dir.items()
     },
     tvd.CocoDetection: {
         cluster: Compose(
             StopOnSucess(
-                CallDatasetConstructor(tvd.CocoDetection, verify=True),
-                exceptions=[RuntimeError],
+                check_coco_is_setup(tvd.CocoDetection, variant="stuff"),
+                # CallDatasetConstructor(tvd.CocoDetection, verify=True),
+                exceptions=[FileNotFoundError],
             ),
             MakeSymlinksToDatasetFiles(f"{datasets_dir}/coco/2017"),
             ExtractArchives(
@@ -446,7 +489,8 @@ prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareVisionDataset]] = 
                     "annotations/stuff_annotations_trainval2017.zip": ".",
                 }
             ),
-            CallDatasetConstructor(tvd.CocoDetection),
+            # CallDatasetConstructor(tvd.CocoDetection),
+            check_coco_is_setup(tvd.CocoDetection, variant="stuff"),
         )
         for cluster, datasets_dir in standardized_torchvision_datasets_dir.items()
     },
@@ -587,3 +631,51 @@ prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareVisionDataset]] = 
     },
 }
 """Dataset preparation functions per dataset type, per cluster."""
+
+
+command_line_args_for_dataset: MutableMapping[type[tvd.VisionDataset], type[DatasetArguments]] = {}
+
+
+@dataclass
+class DatasetArguments(Generic[VD]):
+    """Keyword arguments for the dataset."""
+
+    # root: Path = get_slurm_tmpdir() / "datasets"
+    # """Root directory where images are downloaded to."""
+
+    def __init_subclass__(cls, dataset_class: type[tvd.VisionDataset] | None = None) -> None:
+        if not dataset_class:
+            from typing import get_args
+
+            dataset_class = get_args(cls.__orig_bases__[0])[0]  # type: ignore
+            # TODO: Get the bound programmatically to avoid hardcoding `Dataset` here.
+        if not (inspect.isclass(dataset_class) and issubclass(dataset_class, tvd.VisionDataset)):
+            raise RuntimeError(
+                "Your test class needs to pass the class under test to the generic base class.\n"
+                "for example: `class TestMyDataset(DatasetTests[MyDataset]):`\n"
+                f"(Got {dataset_class})"
+            )
+        command_line_args_for_dataset[dataset_class] = cls
+
+
+@dataclass
+class CocoCaptionsArgs(DatasetArguments[tvd.CocoCaptions]):
+    """Command-line arguments used when preparing the CocoCaptions dataset."""
+
+    root: Path = get_slurm_tmpdir() / "datasets"
+
+    # TODO: Should we set a default value here to make things easier?
+    annFile: str = "annotations/captions_train2017.json"
+    """Path to json annotation file."""
+
+    def __post_init__(self):
+        self.annFile = f"{self.root}/{self.annFile}"
+
+
+@dataclass
+class CocoDetectionArgs(DatasetArguments[tvd.CocoDetection]):
+    """Command-line arguments used when preparing the CocoCaptions dataset."""
+
+    # TODO: Should we set a default value here to make things easier?
+    annFile: str = "annotations/instances_train2017.json"
+    """Path to json annotation file."""

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import argparse
 from dataclasses import asdict
 from pathlib import Path
 
@@ -23,7 +22,10 @@ from mila_datamodules.cli.prepare_huggingface import (
     HfDatasetsEnvVariables,
     prepare_huggingface_datasets,
 )
-from mila_datamodules.cli.prepare_torchvision import prepare_torchvision_datasets
+from mila_datamodules.cli.prepare_torchvision import (
+    command_line_args_for_dataset,
+    prepare_torchvision_datasets,
+)
 from mila_datamodules.clusters.cluster import Cluster
 
 current_cluster = Cluster.current_or_error()
@@ -33,37 +35,50 @@ current_cluster = Cluster.current_or_error()
 # extracted version can be found, or we could download the archive in $SCRATCH.
 
 
-class DatasetArgs(argparse.Action):
-    def __call__(self, parser, namespace, values, option_string=None):
-        delattr(namespace, self.dest)
-        dataset_kwargs = {}
-        for v in values:
-            arg = v.split("=")
-            assert len(arg) > 1
-            arg, value = arg[0], "=".join(arg[1:])
-            dataset_kwargs[arg] = value
-        setattr(namespace, "dataset_kwargs", dataset_kwargs)
+# class DatasetArgs(argparse.Action):
+#     def __call__(self, parser, namespace, values, option_string=None):
+#         delattr(namespace, self.dest)
+#         dataset_kwargs = {}
+#         for v in values:
+#             arg = v.split("=")
+#             assert len(arg) > 1
+#             arg, value = arg[0], "=".join(arg[1:])
+#             dataset_kwargs[arg] = value
+#         setattr(namespace, "dataset_kwargs", dataset_kwargs)
 
 
 def add_prepare_arguments(parser: ArgumentParser):
     subparsers = parser.add_subparsers(
         title="dataset", description="Which dataset to prepare", dest="dataset"
     )
-    dataset_preparation_functions = {
-        dataset_type.__name__.lower(): prepare_dataset_fns[current_cluster]
+    # Only add commands for the datasets that we know how to prepare on the current cluster.
+    dataset_names_types_and_functions = {
+        dataset_type: prepare_dataset_fns[current_cluster]
         for dataset_type, prepare_dataset_fns in prepare_torchvision_datasets.items()
         if current_cluster in prepare_dataset_fns
     }
-    dataset_preparation_functions = dict(sorted(dataset_preparation_functions.items()))
+    dataset_names_types_and_functions = [
+        (dataset_type.__name__.lower(), dataset_type, preparation_fn)
+        for dataset_type, preparation_fn in dataset_names_types_and_functions.items()
+    ]
 
-    for dataset_name, prepare_dataset_fn in dataset_preparation_functions.items():
+    for dataset_name, dataset_type, prepare_dataset_fn in sorted(
+        dataset_names_types_and_functions
+    ):
         dataset_parser = subparsers.add_parser(
             dataset_name, help=f"Prepare the {dataset_name} dataset"
         )
-        dataset_parser.add_argument("--root", type=Path, default=get_slurm_tmpdir() / "datasets")
-        dataset_parser.add_argument("args", action=DatasetArgs, nargs="*")
+
         # IDEA: Add a way for the dataset preparation thingy to add its own arguments
         # (e.g. --split='train'/'val')
+        command_line_args = command_line_args_for_dataset.get(dataset_type)
+        if command_line_args:
+            dataset_parser.add_arguments(command_line_args, dest="dataset_kwargs")
+        else:
+            dataset_parser.add_argument(
+                "--root", type=Path, default=get_slurm_tmpdir() / "datasets"
+            )
+
         # prepare_dataset_fn.add_arguments(dataset_parser)
         dataset_parser.set_defaults(function=prepare_dataset_fn)
 
@@ -73,11 +88,11 @@ def add_prepare_arguments(parser: ArgumentParser):
         if current_cluster in prepare_dataset_fns
     }
 
-    for dataset_name, prepare_dataset_fn in huggingface_preparation_functions.items():
+    for dataset_name, prepare_hf_dataset_fn in huggingface_preparation_functions.items():
         dataset_parser = subparsers.add_parser(
             dataset_name, help=f"Prepare the {dataset_name} dataset from HuggingFace"
         )
-        dataset_parser.add_arguments(prepare_dataset_fn, dest="function")
+        dataset_parser.add_arguments(prepare_hf_dataset_fn, dest="function")
         # dataset_parser.add_argument(
         #     "name",
         #     type=str,
@@ -97,10 +112,17 @@ def prepare(args):
     assert args_dict.pop("command") is prepare
     dataset = args_dict.pop("dataset")
     function = args_dict.pop("function")
-    dataset_kwargs = args_dict.pop("dataset_kwargs")
+    dataset_kwargs = args_dict.pop("dataset_kwargs", None)
+
     kwargs = args_dict
 
-    output = function(**kwargs, **dataset_kwargs)
+    if dataset_kwargs:
+        additional_kwargs = asdict(dataset_kwargs)
+        assert not any(k in kwargs for k in additional_kwargs)
+        kwargs.update(additional_kwargs)
+
+    output = function(**kwargs)
+
     if isinstance(output, (str, Path)):
         new_root = output
         print(f"The {dataset} dataset can now be read from the following directory: {new_root}")
