@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import enum
 from logging import getLogger as get_logger
+from pathlib import Path
 
 logger = get_logger(__name__)
 
@@ -64,3 +65,10 @@ class Cluster(enum.Enum):
             return True
         else:
             return False
+
+    @property
+    def torchvision_datasets_dir(self) -> Path:
+        return {
+            Cluster.Mila: Path("/network/datasets"),
+            Cluster.Beluga: Path("~/project/rpp-bengioy/data/curated").expanduser().resolve(),
+        }[self]

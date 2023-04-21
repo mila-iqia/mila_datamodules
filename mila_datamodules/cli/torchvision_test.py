@@ -1,18 +1,20 @@
 """ TODO: Tests for the CLI. """
 
-import pytest
-from torchvision.datasets import VisionDataset
-from typing import Any, Callable
-from pathlib import Path
 import sys
-from typing_extensions import Concatenate, ParamSpec
+from pathlib import Path
+from typing import Any, Callable
+
+import pytest
 import torchvision.datasets as tvd
-from mila_datamodules.clusters import CURRENT_CLUSTER
-from mila_datamodules.cli.prepare_torchvision import (
-    VD,
-    prepare_torchvision_datasets,
+from torchvision.datasets import VisionDataset
+from typing_extensions import Concatenate, ParamSpec
+
+from mila_datamodules.cli.torchvision import (
     PrepareVisionDataset,
+    prepare_torchvision_datasets,
 )
+from mila_datamodules.cli.torchvision._types import VD
+from mila_datamodules.clusters import CURRENT_CLUSTER
 
 P = ParamSpec("P", default=Any)
 no_internet = pytest.mark.disable_socket

@@ -5,6 +5,7 @@ from pathlib import Path
 
 from simple_parsing import ArgumentParser
 
+from mila_datamodules.cli.torchvision.dataset_args import DatasetArguments
 from mila_datamodules.clusters.env_variables import (
     run_job_step_to_get_slurm_env_variables,
 )
@@ -22,29 +23,13 @@ from mila_datamodules.cli.prepare_huggingface import (
     HfDatasetsEnvVariables,
     prepare_huggingface_datasets,
 )
-from mila_datamodules.cli.prepare_torchvision import (
+from mila_datamodules.cli.torchvision import (
     command_line_args_for_dataset,
     prepare_torchvision_datasets,
 )
 from mila_datamodules.clusters.cluster import Cluster
 
 current_cluster = Cluster.current_or_error()
-
-
-# TODO: For the datasets we don't have archives for, we could either list the locations where the
-# extracted version can be found, or we could download the archive in $SCRATCH.
-
-
-# class DatasetArgs(argparse.Action):
-#     def __call__(self, parser, namespace, values, option_string=None):
-#         delattr(namespace, self.dest)
-#         dataset_kwargs = {}
-#         for v in values:
-#             arg = v.split("=")
-#             assert len(arg) > 1
-#             arg, value = arg[0], "=".join(arg[1:])
-#             dataset_kwargs[arg] = value
-#         setattr(namespace, "dataset_kwargs", dataset_kwargs)
 
 
 def add_prepare_arguments(parser: ArgumentParser):
@@ -93,15 +78,6 @@ def add_prepare_arguments(parser: ArgumentParser):
             dataset_name, help=f"Prepare the {dataset_name} dataset from HuggingFace"
         )
         dataset_parser.add_arguments(prepare_hf_dataset_fn, dest="function")
-        # dataset_parser.add_argument(
-        #     "name",
-        #     type=str,
-        #     # required=False,
-        #     # positional=True,
-        #     default="",
-        #     help="Dataset config name.",
-        # )
-        # dataset_parser.set_defaults(function=prepare_dataset_fn)
 
 
 def prepare(args):
@@ -117,7 +93,8 @@ def prepare(args):
     kwargs = args_dict
 
     if dataset_kwargs:
-        additional_kwargs = asdict(dataset_kwargs)
+        assert isinstance(dataset_kwargs, DatasetArguments)
+        additional_kwargs = dataset_kwargs.to_dataset_kwargs()
         assert not any(k in kwargs for k in additional_kwargs)
         kwargs.update(additional_kwargs)
 
@@ -125,7 +102,14 @@ def prepare(args):
 
     if isinstance(output, (str, Path)):
         new_root = output
-        print(f"The {dataset} dataset can now be read from the following directory: {new_root}")
+        # TODO: For some datasets (e.g. Coco), it's not actually true! We would like to tell users
+        # how exactly the dataset can be created, for instance:
+        # ```
+        # tvd.CocoCaptions(root=SLURM_TMPDIR/"datasets/train2017",
+        #                  annFile=SLURM_TMPDIR/"datasets/annotations/stuff_train2017.json")
+        # ```
+        # TODO: Perhaps we should return a dictionary of **kwargs to use to create the dataset?
+        print(f"The {dataset} dataset can now be read by using {new_root} as the 'root' argument.")
     else:
         assert isinstance(output, HfDatasetsEnvVariables)
         print(
