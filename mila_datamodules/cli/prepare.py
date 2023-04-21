@@ -1,6 +1,6 @@
 from __future__ import annotations
-import argparse
 
+import argparse
 from dataclasses import asdict
 from pathlib import Path
 
@@ -54,14 +54,7 @@ def add_prepare_arguments(parser: ArgumentParser):
         for dataset_type, prepare_dataset_fns in prepare_torchvision_datasets.items()
         if current_cluster in prepare_dataset_fns
     }
-    dataset_preparation_functions = dict(
-        sorted(
-            (dataset_name, prepare_dataset_fn)
-            for dataset_name, prepare_dataset_fn in dataset_preparation_functions.items()
-        )
-    )
-
-    # TODO: Add preparation function for HuggingFace datasets.
+    dataset_preparation_functions = dict(sorted(dataset_preparation_functions.items()))
 
     for dataset_name, prepare_dataset_fn in dataset_preparation_functions.items():
         dataset_parser = subparsers.add_parser(

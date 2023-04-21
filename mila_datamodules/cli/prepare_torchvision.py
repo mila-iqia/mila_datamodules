@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import inspect
 import shutil
 import typing
@@ -291,7 +292,15 @@ class Compose(PrepareVisionDataset[VD, P]):
 
 
 class StopOnSucess(PrepareVisionDataset[VD, P]):
-    def __init__(self, function: PrepareVisionDataset[VD, P], exceptions: Sequence[Exception] = tuple()) -> None:
+    """Raises a special Stop exception when calling function doesn't raise an exception.
+
+    If an exception of a type matching one in `exceptions` is raised by the function, the exception
+    is ignored. Other exceptions are raised.
+    """
+
+    def __init__(
+        self, function: PrepareVisionDataset[VD, P], exceptions: Sequence[type[Exception]] = ()
+    ):
         self.function = function
         self.exceptions = exceptions
 
@@ -302,15 +311,9 @@ class StopOnSucess(PrepareVisionDataset[VD, P]):
         *dataset_args: P.args,
         **dataset_kwargs: P.kwargs,
     ) -> str:
-        try:
+        with contextlib.suppress(*self.exceptions):
             self.function(root, *dataset_args, **dataset_kwargs)
             raise Compose.Stop()
-        except Exception as e:
-            for e_type in self.exceptions:
-                if isinstance(e, e_type):
-                    break
-            else:
-                raise
         return str(root)
 
 
@@ -326,7 +329,9 @@ prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareVisionDataset]] = 
     tvd.Caltech101: {
         cluster: Compose(
             [
-                StopOnSucess(CallDatasetConstructor(tvd.Caltech101, verify=True), exceptions=[RuntimeError]),
+                StopOnSucess(
+                    CallDatasetConstructor(tvd.Caltech101, verify=True), exceptions=[RuntimeError]
+                ),
                 MakeSymlinksToDatasetFiles(f"{datasets_dir}/caltech101"),
                 # Torchvision will look into a caltech101 directory to
                 # preprocess the dataset
@@ -339,7 +344,9 @@ prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareVisionDataset]] = 
     tvd.Caltech256: {
         cluster: Compose(
             [
-                StopOnSucess(CallDatasetConstructor(tvd.Caltech256, verify=True), exceptions=[RuntimeError]),
+                StopOnSucess(
+                    CallDatasetConstructor(tvd.Caltech256, verify=True), exceptions=[RuntimeError]
+                ),
                 MakeSymlinksToDatasetFiles(f"{datasets_dir}/caltech256"),
                 # Torchvision will look into a caltech256 directory to
                 # preprocess the dataset
@@ -352,7 +359,9 @@ prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareVisionDataset]] = 
     tvd.CelebA: {
         cluster: Compose(
             [
-                StopOnSucess(CallDatasetConstructor(tvd.CelebA, verify=True), exceptions=[RuntimeError]),
+                StopOnSucess(
+                    CallDatasetConstructor(tvd.CelebA, verify=True), exceptions=[RuntimeError]
+                ),
                 MakeSymlinksToDatasetFiles(f"{datasets_dir}/celeba"),
                 # Torchvision will look into a celeba directory to preprocess
                 # the dataset
@@ -371,9 +380,11 @@ prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareVisionDataset]] = 
     tvd.CIFAR10: {
         cluster: Compose(
             [
-                StopOnSucess(CallDatasetConstructor(tvd.CIFAR10, verify=True), exceptions=[RuntimeError]),
+                StopOnSucess(
+                    CallDatasetConstructor(tvd.CIFAR10, verify=True), exceptions=[RuntimeError]
+                ),
                 MakeSymlinksToDatasetFiles(
-                    {"cifar-10-python.tar.gz": f"{datasets_dir}/cifar-10-python.tar.gz"}
+                    {"cifar-10-python.tar.gz": f"{datasets_dir}/cifar10/cifar-10-python.tar.gz"}
                 ),
                 CallDatasetConstructor(tvd.CIFAR10),
             ]
@@ -383,8 +394,12 @@ prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareVisionDataset]] = 
     tvd.CIFAR100: {
         cluster: Compose(
             [
-                StopOnSucess(CallDatasetConstructor(tvd.CIFAR100, verify=True), exceptions=[RuntimeError]),
-                MakeSymlinksToDatasetFiles(f"{datasets_dir}/cifar100"),
+                StopOnSucess(
+                    CallDatasetConstructor(tvd.CIFAR100, verify=True), exceptions=[RuntimeError]
+                ),
+                MakeSymlinksToDatasetFiles(
+                    {"cifar-100-python.tar.gz": f"{datasets_dir}/cifar100/cifar-100-python.tar.gz"}
+                ),
                 CallDatasetConstructor(tvd.CIFAR100),
             ]
         )
@@ -393,7 +408,9 @@ prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareVisionDataset]] = 
     tvd.Cityscapes: {
         cluster: Compose(
             [
-                StopOnSucess(CallDatasetConstructor(tvd.Cityscapes, verify=True), exceptions=[RuntimeError]),
+                StopOnSucess(
+                    CallDatasetConstructor(tvd.Cityscapes, verify=True), exceptions=[RuntimeError]
+                ),
                 MakeSymlinksToDatasetFiles(f"{datasets_dir}/cityscapes"),
                 CallDatasetConstructor(tvd.Cityscapes),
             ]
@@ -403,7 +420,10 @@ prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareVisionDataset]] = 
     tvd.CocoCaptions: {
         cluster: Compose(
             [
-                StopOnSucess(CallDatasetConstructor(tvd.CocoCaptions, verify=True), exceptions=[RuntimeError]),
+                StopOnSucess(
+                    CallDatasetConstructor(tvd.CocoCaptions, verify=True),
+                    exceptions=[RuntimeError],
+                ),
                 MakeSymlinksToDatasetFiles(f"{datasets_dir}/coco/2017"),
                 ExtractArchives(
                     archives={
@@ -424,7 +444,10 @@ prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareVisionDataset]] = 
     tvd.CocoDetection: {
         cluster: Compose(
             [
-                StopOnSucess(CallDatasetConstructor(tvd.CocoDetection, verify=True), exceptions=[RuntimeError]),
+                StopOnSucess(
+                    CallDatasetConstructor(tvd.CocoDetection, verify=True),
+                    exceptions=[RuntimeError],
+                ),
                 MakeSymlinksToDatasetFiles(f"{datasets_dir}/coco/2017"),
                 ExtractArchives(
                     archives={
@@ -445,7 +468,10 @@ prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareVisionDataset]] = 
     tvd.FashionMNIST: {
         cluster: Compose(
             [
-                StopOnSucess(CallDatasetConstructor(tvd.FashionMNIST, verify=True), exceptions=[RuntimeError]),
+                StopOnSucess(
+                    CallDatasetConstructor(tvd.FashionMNIST, verify=True),
+                    exceptions=[RuntimeError],
+                ),
                 MakeSymlinksToDatasetFiles(f"{datasets_dir}/fashionmnist"),
                 # Torchvision will look into a FashionMNIST/raw directory to
                 # preprocess the dataset
@@ -458,7 +484,9 @@ prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareVisionDataset]] = 
     tvd.INaturalist: {
         cluster: Compose(
             [
-                StopOnSucess(CallDatasetConstructor(tvd.INaturalist, verify=True), exceptions=[RuntimeError]),
+                StopOnSucess(
+                    CallDatasetConstructor(tvd.INaturalist, verify=True), exceptions=[RuntimeError]
+                ),
                 MakeSymlinksToDatasetFiles(f"{datasets_dir}/inat"),
                 # Torchvision will look for those files to preprocess the
                 # dataset
@@ -479,7 +507,9 @@ prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareVisionDataset]] = 
         # command.
         cluster: Compose(
             [
-                StopOnSucess(CallDatasetConstructor(tvd.ImageNet, verify=True), exceptions=[RuntimeError]),
+                StopOnSucess(
+                    CallDatasetConstructor(tvd.ImageNet, verify=True), exceptions=[RuntimeError]
+                ),
                 MakeSymlinksToDatasetFiles(f"{datasets_dir}/imagenet"),
                 CallDatasetConstructor(tvd.ImageNet),
             ]
@@ -489,7 +519,9 @@ prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareVisionDataset]] = 
     tvd.KMNIST: {
         cluster: Compose(
             [
-                StopOnSucess(CallDatasetConstructor(tvd.KMNIST, verify=True), exceptions=[RuntimeError]),
+                StopOnSucess(
+                    CallDatasetConstructor(tvd.KMNIST, verify=True), exceptions=[RuntimeError]
+                ),
                 MakeSymlinksToDatasetFiles(f"{datasets_dir}/kmnist"),
                 # Torchvision will look into a KMNIST/raw directory to
                 # preprocess the dataset
@@ -507,7 +539,9 @@ prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareVisionDataset]] = 
         # /project/rpp-bengioy/data/MNIST/raw, no archives.
         cluster: Compose(
             [
-                StopOnSucess(CallDatasetConstructor(tvd.MNIST, verify=True), exceptions=[RuntimeError]),
+                StopOnSucess(
+                    CallDatasetConstructor(tvd.MNIST, verify=True), exceptions=[RuntimeError]
+                ),
                 MakeSymlinksToDatasetFiles(f"{datasets_dir}/mnist"),
                 # Torchvision will look into a raw directory to preprocess the
                 # dataset
@@ -520,7 +554,9 @@ prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareVisionDataset]] = 
     tvd.Places365: {
         cluster: Compose(
             [
-                StopOnSucess(CallDatasetConstructor(tvd.Places365, verify=True), exceptions=[RuntimeError]),
+                StopOnSucess(
+                    CallDatasetConstructor(tvd.Places365, verify=True), exceptions=[RuntimeError]
+                ),
                 MakeSymlinksToDatasetFiles(f"{datasets_dir}/places365"),
                 MakeSymlinksToDatasetFiles(f"{datasets_dir}/places365.var/places365_challenge"),
                 MoveFiles({"256/*.tar": "./*", "large/*.tar": "./*"}),
@@ -532,7 +568,9 @@ prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareVisionDataset]] = 
     tvd.QMNIST: {
         cluster: Compose(
             [
-                StopOnSucess(CallDatasetConstructor(tvd.QMNIST, verify=True), exceptions=[RuntimeError]),
+                StopOnSucess(
+                    CallDatasetConstructor(tvd.QMNIST, verify=True), exceptions=[RuntimeError]
+                ),
                 MakeSymlinksToDatasetFiles(f"{datasets_dir}/qmnist"),
                 # Torchvision will look into a QMNIST/raw directory to
                 # preprocess the dataset
@@ -545,7 +583,9 @@ prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareVisionDataset]] = 
     tvd.STL10: {
         cluster: Compose(
             [
-                StopOnSucess(CallDatasetConstructor(tvd.STL10, verify=True), exceptions=[RuntimeError]),
+                StopOnSucess(
+                    CallDatasetConstructor(tvd.STL10, verify=True), exceptions=[RuntimeError]
+                ),
                 MakeSymlinksToDatasetFiles(f"{datasets_folder}/stl10"),
                 CallDatasetConstructor(tvd.STL10),
             ]
@@ -555,7 +595,9 @@ prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareVisionDataset]] = 
     tvd.SVHN: {
         cluster: Compose(
             [
-                StopOnSucess(CallDatasetConstructor(tvd.SVHN, verify=True), exceptions=[RuntimeError]),
+                StopOnSucess(
+                    CallDatasetConstructor(tvd.SVHN, verify=True), exceptions=[RuntimeError]
+                ),
                 MakeSymlinksToDatasetFiles(f"{datasets_dir}/svhn"),
                 CallDatasetConstructor(tvd.SVHN),
             ]
@@ -565,7 +607,9 @@ prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareVisionDataset]] = 
     tvd.UCF101: {
         cluster: Compose(
             [
-                StopOnSucess(CallDatasetConstructor(tvd.UCF101, verify=True), exceptions=[RuntimeError]),
+                StopOnSucess(
+                    CallDatasetConstructor(tvd.UCF101, verify=True), exceptions=[RuntimeError]
+                ),
                 MakeSymlinksToDatasetFiles(f"{datasets_dir}/ucf101"),
                 ExtractArchives(
                     {
