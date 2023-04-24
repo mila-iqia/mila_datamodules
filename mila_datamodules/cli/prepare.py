@@ -19,7 +19,7 @@ from mila_datamodules.clusters.utils import (
 if in_job_but_not_in_job_step_so_no_slurm_env_vars():
     run_job_step_to_get_slurm_env_variables()
 
-from mila_datamodules.cli.prepare_huggingface import (
+from mila_datamodules.cli.huggingface.prepare_huggingface import (
     HfDatasetsEnvVariables,
     prepare_huggingface_datasets,
 )

@@ -20,7 +20,7 @@ from typing_extensions import Concatenate
 from mila_datamodules.cli.utils import is_local_main, runs_on_local_main_process_first
 from mila_datamodules.clusters.utils import get_slurm_tmpdir
 
-from ._types import VD, P, VD_co
+from .torchvision.types import VD, P, VD_co
 
 logger = get_logger(__name__)
 # from simple_parsing import ArgumentParser
@@ -38,9 +38,30 @@ class PrepareVisionDataset(Protocol[VD_co, P]):
 
 
 class CallDatasetConstructor(PrepareVisionDataset[VD_co, P]):
-    def __init__(self, dataset_type: Callable[Concatenate[str, P], VD_co], verify=False):
+    """Function that calls the dataset constructor with the given arguments.
+
+    Parameters
+    ----------
+    dataset_type :
+        The dataset type or callable.
+    verify : bool, optional
+        If `verify` is `True` and the `dataset_type` takes a `download` argument, then `download`
+        is set to `False`. This is used to skip downloading files or verifying checksums of the
+        archives, making things faster if we just want to check that the dataset is setup properly.
+    get_index : int, optional
+        If passed, the dataset instance is also indexed (`dataset[get_index]`) to check that the
+        dataset is properly set up.
+    """
+
+    def __init__(
+        self,
+        dataset_type: Callable[Concatenate[str, P], VD_co],
+        verify: bool = True,
+        get_index: int | None = 0,
+    ):
         self.dataset_type = dataset_type
         self.verify = verify
+        self.get_index = get_index
 
     @runs_on_local_main_process_first
     def __call__(self, root: str | Path, *dataset_args: P.args, **dataset_kwargs: P.kwargs) -> str:
@@ -67,6 +88,11 @@ class CallDatasetConstructor(PrepareVisionDataset[VD_co, P]):
         dataset_instance = self.dataset_type(str(root), *dataset_args, **dataset_kwargs)
         if is_local_main():
             print(dataset_instance)
+
+        if self.get_index is not None:
+            _ = dataset_instance[self.get_index]
+            if is_local_main():
+                logger.debug(f"Sample at index {self.get_index}:\n{_}")
         return str(root)
 
 
@@ -95,7 +121,7 @@ def dataset_files_in_source_dir(
     }
 
 
-class MakeSymlinksToDatasetFiles(PrepareVisionDataset[VD, P]):
+class MakeSymlinksToDatasetFiles(PrepareVisionDataset[VD_co, P]):
     """Creates symlinks to the datasets' files in the `root` directory."""
 
     def __init__(
@@ -126,7 +152,7 @@ class MakeSymlinksToDatasetFiles(PrepareVisionDataset[VD, P]):
         root.mkdir(parents=True, exist_ok=True)
 
         for relative_path, dataset_file in self.relative_paths_to_files.items():
-            assert dataset_file.exists()
+            assert dataset_file.exists(), dataset_file
             # Make a symlink in the local scratch directory to the archive on the network.
             archive_symlink = root / relative_path
             if archive_symlink.exists():
@@ -139,7 +165,7 @@ class MakeSymlinksToDatasetFiles(PrepareVisionDataset[VD, P]):
         return str(root)
 
 
-class ExtractArchives(PrepareVisionDataset[VD, P]):
+class ExtractArchives(PrepareVisionDataset[VD_co, P]):
     """Extract some archives files in a subfolder of the `root` directory."""
 
     def __init__(self, archives: dict[str, str | Path]):
@@ -200,6 +226,8 @@ class MoveFiles(PrepareVisionDataset[VD, P]):
         for glob, dest in self.files:
             assert not dest.is_absolute()
             dest = root / dest
+            # TODO: Does this assume that the keys are globs? IF so, that's not intended, we should
+            # be able to pass {"a.zip": "b.zip"}, not just globs.
             for entry in root.glob(glob):
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 # Avoid replacing dest by itself
@@ -285,10 +313,12 @@ class StopOnSucess(PrepareVisionDataset[VD, P]):
     def __init__(
         self,
         function: PrepareVisionDataset[VD, P] | Callable[Concatenate[str, P], VD],
-        exceptions: Sequence[type[Exception]] = (),
+        continue_if_raised: type[Exception] | tuple[type[Exception], ...] = (),
     ):
         self.function = function
-        self.exceptions = exceptions
+        self.exceptions = (
+            [continue_if_raised] if isinstance(continue_if_raised, type) else continue_if_raised
+        )
 
     @runs_on_local_main_process_first
     def __call__(

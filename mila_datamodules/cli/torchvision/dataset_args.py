@@ -6,7 +6,7 @@ from typing import (
     Generic,
 )
 
-from ._types import VD
+from .types import VD
 
 
 @dataclass

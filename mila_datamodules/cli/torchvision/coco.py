@@ -5,14 +5,13 @@ from dataclasses import dataclass
 from logging import getLogger as get_logger
 from pathlib import Path
 from typing import (
-    Callable,
     Literal,
 )
 
 import torchvision.datasets as tvd
 from typing_extensions import TypeVar
 
-from mila_datamodules.cli.torchvision.blocks import (
+from mila_datamodules.cli.blocks import (
     Compose,
     ExtractArchives,
     MakeSymlinksToDatasetFiles,
@@ -21,7 +20,7 @@ from mila_datamodules.cli.torchvision.blocks import (
 from mila_datamodules.cli.torchvision.dataset_args import DatasetArguments
 from mila_datamodules.clusters.utils import get_slurm_tmpdir
 
-from ._types import P
+from .types import P
 
 logger = get_logger(__name__)
 # from simple_parsing import ArgumentParser
@@ -33,13 +32,9 @@ CocoVariant = Literal["captions", "instances", "panoptic", "person_keypoints", "
 
 
 def check_coco_is_setup(
-    dataset_type: Callable[P, CocoType] = tvd.CocoDetection,
-    variant: CocoVariant | None = None,
+    dataset_type: type[CocoType],
+    variant: CocoVariant,
 ):
-    if variant is None:
-        if dataset_type is tvd.CocoCaptions:
-            variant = "captions"
-
     def _check_coco_setup(
         root: str | Path,
         annFile: str = "annotations/captions_train2017.json",
@@ -72,11 +67,12 @@ def check_coco_is_setup(
 
 
 def _prepare_coco(
-    dataset_type: Callable[P, CocoType], datasets_dir: Path, variant: CocoVariant = "stuff"
+    dataset_type: type[CocoType], datasets_dir: Path, variant: CocoVariant = "stuff"
 ):
     return Compose(
         StopOnSucess(
-            check_coco_is_setup(dataset_type, variant=variant), exceptions=[FileNotFoundError]
+            check_coco_is_setup(dataset_type, variant=variant),
+            continue_if_raised=[FileNotFoundError],
         ),
         MakeSymlinksToDatasetFiles(f"{datasets_dir}/coco/2017"),
         ExtractArchives(
