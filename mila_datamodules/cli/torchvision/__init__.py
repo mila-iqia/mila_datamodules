@@ -77,10 +77,10 @@ prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareVisionDataset]] = 
             tvd.Caltech101,
             MakeSymlinksToDatasetFiles(
                 {
-                    p: datasets_dir / p
+                    p: f"{datasets_dir}/caltech101/{p}"
                     for p in [
-                        "caltech101/101_ObjectCategories.tar.gz",
-                        "caltech101/Annotations.tar",
+                        "101_ObjectCategories.tar.gz",
+                        "Annotations.tar",
                     ]
                 }
             ),
@@ -91,7 +91,7 @@ prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareVisionDataset]] = 
         cluster: ComposeWithChecks(
             tvd.Caltech256,
             MakeSymlinksToDatasetFiles(
-                {p: datasets_dir / p for p in ["caltech256/256_ObjectCategories.tar"]}
+                {p: f"{datasets_dir}/caltech256/{p}" for p in ["256_ObjectCategories.tar"]}
             ),
         )
         for cluster, datasets_dir in standardized_torchvision_datasets_dir.items()
@@ -116,11 +116,7 @@ prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareVisionDataset]] = 
         cluster: ComposeWithChecks(
             tvd.CIFAR10,
             MakeSymlinksToDatasetFiles(
-                {
-                    "cifar10/cifar-10-python.tar.gz": (
-                        f"{datasets_dir}/cifar10/cifar-10-python.tar.gz"
-                    )
-                }
+                {"cifar-10-python.tar.gz": (f"{datasets_dir}/cifar10/cifar-10-python.tar.gz")}
             ),
         )
         for cluster, datasets_dir in standardized_torchvision_datasets_dir.items()
@@ -129,11 +125,7 @@ prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareVisionDataset]] = 
         cluster: ComposeWithChecks(
             tvd.CIFAR100,
             MakeSymlinksToDatasetFiles(
-                {
-                    "cifar100/cifar-100-python.tar.gz": (
-                        f"{datasets_dir}/cifar100/cifar-100-python.tar.gz"
-                    )
-                }
+                {"cifar-100-python.tar.gz": (f"{datasets_dir}/cifar100/cifar-100-python.tar.gz")}
             ),
         )
         for cluster, datasets_dir in standardized_torchvision_datasets_dir.items()
