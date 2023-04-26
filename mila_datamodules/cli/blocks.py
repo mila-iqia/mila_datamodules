@@ -6,13 +6,7 @@ import shutil
 from logging import getLogger as get_logger
 from pathlib import Path
 from shutil import unpack_archive
-from typing import (
-    Callable,
-    Iterable,
-    Mapping,
-    Protocol,
-    Sequence,
-)
+from typing import Callable, Iterable, Mapping, Protocol, Sequence
 from zipfile import ZipFile
 
 from typing_extensions import Concatenate
@@ -20,7 +14,7 @@ from typing_extensions import Concatenate
 from mila_datamodules.cli.utils import is_local_main, runs_on_local_main_process_first
 from mila_datamodules.clusters.utils import get_slurm_tmpdir
 
-from .torchvision.types import VD, P, VD_co
+from .types import VD, P, VD_co
 
 logger = get_logger(__name__)
 # from simple_parsing import ArgumentParser
@@ -87,7 +81,7 @@ class CallDatasetConstructor(PrepareVisionDataset[VD_co, P]):
         )
         dataset_instance = self.dataset_type(str(root), *dataset_args, **dataset_kwargs)
         if is_local_main():
-            print(dataset_instance)
+            logger.info(dataset_instance)
 
         if self.get_index is not None:
             _ = dataset_instance[self.get_index]
@@ -160,7 +154,7 @@ class MakeSymlinksToDatasetFiles(PrepareVisionDataset[VD_co, P]):
 
             archive_symlink.parent.mkdir(parents=True, exist_ok=True)
             archive_symlink.symlink_to(dataset_file)
-            print(f"Making link from {archive_symlink} -> {dataset_file}")
+            logger.info(f"Making link from {archive_symlink} -> {dataset_file}")
 
         return str(root)
 
@@ -187,7 +181,7 @@ class ExtractArchives(PrepareVisionDataset[VD_co, P]):
             assert not dest.is_absolute()
 
             dest = root / dest
-            print(f"Extracting {archive} in {dest}")
+            logger.info(f"Extracting {archive} in {dest}")
             if archive.suffix == ".zip":
                 with ZipFile(root / archive) as zf:
                     zf.extractall(str(dest))

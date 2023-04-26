@@ -1,8 +1,4 @@
-"""Set of functions for creating torchvision datasets when on the Mila cluster.
-
-IDEA: later on, we could also add some functions for loading torchvision models from a cached
-directory.
-"""
+"""Environment variables that are set on SLURM clusters."""
 import functools
 import ipaddress
 import os
@@ -162,7 +158,7 @@ def run_job_step_to_get_slurm_env_variables(
             # for example when running multi-node or multi-gpu jobs.
             logger.info("Extracting SLURM environment variables... ")
             # NOTE: Need to pass --account for DRAC cluster!
-            command = "srun env | grep SLURM"
+            command = "srun --overlap env | grep SLURM"
             try:
                 with temp_file.open("w") as f:
                     logger.debug(f"Using temp file: {temp_file}")

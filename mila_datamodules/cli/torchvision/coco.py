@@ -17,10 +17,10 @@ from mila_datamodules.cli.blocks import (
     MakeSymlinksToDatasetFiles,
     StopOnSucess,
 )
-from mila_datamodules.cli.torchvision.dataset_args import DatasetArguments
+from mila_datamodules.cli.dataset_args import DatasetArguments
 from mila_datamodules.clusters.utils import get_slurm_tmpdir
 
-from .types import P
+from ..types import P
 
 logger = get_logger(__name__)
 # from simple_parsing import ArgumentParser

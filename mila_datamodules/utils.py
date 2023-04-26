@@ -169,3 +169,19 @@ def copytree_with_symlinks(
         copy_function=_copy_fn,
         dirs_exist_ok=True,
     )
+
+
+def cpus_per_node() -> int:
+    """Returns the number of cpus per node in a SLURM cluster, Otherwise # CPUS on this machine."""
+    nodes = int(os.environ.get("SLURM_JOB_NUM_NODES", "1"))
+    if "SLURM_CPUS_PER_TASK" in os.environ:
+        return (int(os.environ["SLURM_CPUS_PER_TASK"]) * int(os.environ["SLURM_NTASKS"])) // nodes
+    elif "SLURM_CPUS_ON_NODE" in os.environ:
+        return int(os.environ["SLURM_CPUS_ON_NODE"])
+
+    if hasattr(os, "sched_getaffinity"):
+        return len(os.sched_getaffinity(0))
+
+    import multiprocessing
+
+    return multiprocessing.cpu_count()

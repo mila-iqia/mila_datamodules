@@ -17,6 +17,10 @@ C = TypeVar("C", bound=Callable)
 current_cluster = Cluster.current_or_error()
 
 
+def get_node_index() -> int:
+    return int(os.environ["SLURM_NODEID"])
+
+
 def get_rank() -> int:
     return int(os.environ["SLURM_PROCID"])
 

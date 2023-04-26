@@ -17,8 +17,7 @@ echo "Hostname: $(hostname)"
 module --quiet purge
 
 # 'setup_env.sh' should be called before launching the job to create the
-# environment and install packages only once in an environment where internet is
-# accessible
+# environment and install packages only once. This requires an internet connection the first time.
 source setup_env.sh
 
 set -x  # print commands.

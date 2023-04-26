@@ -13,7 +13,7 @@ from mila_datamodules.cli.torchvision import (
     PrepareVisionDataset,
     prepare_torchvision_datasets,
 )
-from mila_datamodules.cli.torchvision.types import VD
+from mila_datamodules.cli.types import VD
 from mila_datamodules.clusters import CURRENT_CLUSTER
 
 P = ParamSpec("P", default=Any)

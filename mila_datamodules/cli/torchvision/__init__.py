@@ -15,16 +15,16 @@ from mila_datamodules.cli.blocks import (
     PrepareVisionDataset,
     StopOnSucess,
 )
+from mila_datamodules.cli.dataset_args import DatasetArguments
 from mila_datamodules.cli.torchvision.coco import (
     CocoDetectionArgs,
     PrepareCocoCaptions,
     PrepareCocoDetection,
 )
-from mila_datamodules.cli.torchvision.dataset_args import DatasetArguments
-from mila_datamodules.cli.torchvision.types import P
+from mila_datamodules.cli.types import P
 from mila_datamodules.clusters.cluster import Cluster
 
-from .types import VD
+from ..types import VD
 
 # NOTE: For some datasets, we have datasets stored in folders with the same structure. This here is
 # only really used to prevent repeating a bit of code in the dictionary below.

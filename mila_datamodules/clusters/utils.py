@@ -12,9 +12,7 @@ from pathlib import Path
 from shutil import which
 from typing import TypeVar
 
-from mila_datamodules.clusters.env_variables import (
-    run_job_step_to_get_slurm_env_variables,
-)
+from mila_datamodules.clusters.env_variables import run_job_step_to_get_slurm_env_variables
 
 T = TypeVar("T")
 
@@ -64,10 +62,7 @@ def in_job_but_not_in_job_step_so_no_slurm_env_vars() -> bool:
 
 
 def get_scratch_dir(default: str | Path | None = None) -> Path:
-    """Returns the path to the scratch directory on the current cluster, or `default` otherwise.
-
-    If the current machine is not on the Mila cluster, returns `default`.
-    """
+    """Returns the path to the scratch directory on the current cluster, or `default` otherwise."""
     return Path(_get_env_var("SCRATCH", default=default))
 
 
