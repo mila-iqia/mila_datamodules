@@ -12,13 +12,11 @@ from zipfile import ZipFile
 from typing_extensions import Concatenate
 
 from mila_datamodules.cli.utils import is_local_main, runs_on_local_main_process_first
-from mila_datamodules.clusters.utils import get_slurm_tmpdir
 
 from .types import VD, P, VD_co
 
 logger = get_logger(__name__)
 # from simple_parsing import ArgumentParser
-SLURM_TMPDIR = get_slurm_tmpdir()
 
 
 class PrepareVisionDataset(Protocol[VD_co, P]):
@@ -75,9 +73,11 @@ class CallDatasetConstructor(PrepareVisionDataset[VD_co, P]):
         if "download" in inspect.signature(self.dataset_type).parameters:
             dataset_kwargs["download"] = not self.verify
 
-        logger.debug(
-            f"Using dataset constructor: {self.dataset_type} with args {dataset_args}, and "
-            f"kwargs {dataset_kwargs}"
+        logger.info(
+            f"Calling {self.dataset_type.__name__}(root={root!r}, "
+            + ", ".join(f"{v!r}" for v in dataset_args)
+            + ", ".join(f"{k}={v!r}" for k, v in dataset_kwargs.items())
+            + ")"
         )
         dataset_instance = self.dataset_type(str(root), *dataset_args, **dataset_kwargs)
         if is_local_main():
@@ -251,7 +251,7 @@ class CopyTree(CallDatasetConstructor[VD, P]):
     @runs_on_local_main_process_first
     def __call__(
         self,
-        root: str | Path = SLURM_TMPDIR / "datasets",
+        root: str | Path,
         *constructor_args: P.args,
         **constructor_kwargs: P.kwargs,
     ):
@@ -281,7 +281,7 @@ class Compose(PrepareVisionDataset[VD_co, P]):
     @runs_on_local_main_process_first
     def __call__(
         self,
-        root: str | Path = SLURM_TMPDIR / "datasets",
+        root: str | Path,
         *dataset_args: P.args,
         **dataset_kwargs: P.kwargs,
     ) -> str:
@@ -317,7 +317,7 @@ class StopOnSucess(PrepareVisionDataset[VD, P]):
     @runs_on_local_main_process_first
     def __call__(
         self,
-        root: str | Path = SLURM_TMPDIR / "datasets",
+        root: str | Path,
         *dataset_args: P.args,
         **dataset_kwargs: P.kwargs,
     ) -> str:

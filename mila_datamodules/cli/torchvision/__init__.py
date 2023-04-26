@@ -290,16 +290,20 @@ prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareVisionDataset]] = 
 
 # Coco is special enough to warrant its own module. We add its entries here.
 
+# TODO: Support more splits and variants of Coco
+# FIXME: Fix this strangeness. We need to be able to just go
+# `mila_datamodules prepare cocodetection --variant=stuff --split=val` and it should just work.
 prepare_torchvision_datasets[tvd.CocoDetection] = {
-    cluster: PrepareCocoDetection(cluster.torchvision_datasets_dir)
+    cluster: PrepareCocoDetection(cluster.torchvision_datasets_dir, variant="stuff", split="train")
     for cluster in [Cluster.Mila, Cluster.Beluga]
 }
 
 prepare_torchvision_datasets[tvd.CocoCaptions] = {
-    cluster: PrepareCocoCaptions(cluster.torchvision_datasets_dir)
+    cluster: PrepareCocoCaptions(
+        cluster.torchvision_datasets_dir, variant="captions", split="train"
+    )
     for cluster in [Cluster.Mila, Cluster.Beluga]
 }
-
 
 command_line_args_for_dataset: dict[
     type[tvd.VisionDataset], DatasetArguments | type[DatasetArguments]

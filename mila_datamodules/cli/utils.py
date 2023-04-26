@@ -3,7 +3,6 @@ from __future__ import annotations
 import contextlib
 import functools
 import os
-from pathlib import Path
 from typing import Callable, TypeVar
 
 import torch
@@ -83,9 +82,8 @@ def runs_on_local_main_process_first(function: C) -> C:
     return _inner  # type: ignore
 
 
-def replace_dir_name_with_SLURM_TMPDIR(dir_name: str | Path) -> str:
+def replace_dir_name_with_SLURM_TMPDIR(some_string: str) -> str:
     slurm_tmpdir = get_slurm_tmpdir()
-    if Path(dir_name).is_relative_to(slurm_tmpdir):
-        new_name = str(dir_name).replace(str(slurm_tmpdir), "$SLURM_TMPDIR")
-        return new_name
-    return str(dir_name)
+
+    new_name = some_string.replace(str(slurm_tmpdir), "os.environ['SLURM_TMPDIR']")
+    return new_name

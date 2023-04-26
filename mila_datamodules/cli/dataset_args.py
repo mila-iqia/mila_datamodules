@@ -2,9 +2,7 @@ from __future__ import annotations
 
 import dataclasses
 from dataclasses import dataclass
-from typing import (
-    Generic,
-)
+from typing import Generic
 
 from .types import VD
 

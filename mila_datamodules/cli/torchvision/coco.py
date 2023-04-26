@@ -4,14 +4,13 @@ import dataclasses
 from dataclasses import dataclass
 from logging import getLogger as get_logger
 from pathlib import Path
-from typing import (
-    Literal,
-)
+from typing import Literal
 
 import torchvision.datasets as tvd
 from typing_extensions import TypeVar
 
 from mila_datamodules.cli.blocks import (
+    CallDatasetConstructor,
     Compose,
     ExtractArchives,
     MakeSymlinksToDatasetFiles,
@@ -29,34 +28,24 @@ SLURM_TMPDIR = get_slurm_tmpdir()
 
 CocoType = TypeVar("CocoType", tvd.CocoCaptions, tvd.CocoDetection, default=tvd.CocoDetection)
 CocoVariant = Literal["captions", "instances", "panoptic", "person_keypoints", "stuff"]
+CocoSplit = Literal["train", "val", "test", "unlabeled"]
 
 
-def check_coco_is_setup(
-    dataset_type: type[CocoType],
-    variant: CocoVariant,
-):
+def _check_coco_is_setup(dataset_type: type[CocoType], variant: CocoVariant, split: CocoSplit):
     def _check_coco_setup(
         root: str | Path,
         annFile: str = "annotations/captions_train2017.json",
         *args: P.args,
         **kwargs: P.kwargs,
     ) -> str:
-        dataset = dataset_type(
-            f"{root}/train2017",
-            f"{root}/annotations/{variant}_train2017.json",
+        fn = CallDatasetConstructor(dataset_type, get_index=0)
+        fn(
+            f"{root}/{split}2017",
+            annFile=f"{root}/annotations/{variant}_{split}2017.json",
             *args,
             **kwargs,
         )
-        dataset[0]
-        dataset = dataset_type(
-            f"{root}/val2017",
-            f"{root}/annotations/{variant}_val2017.json",
-            *args,
-            **kwargs,
-        )
-        dataset[0]
-
-        return str(root)
+        return f"{root}/{split}2017"
 
     return _check_coco_setup
 
@@ -66,15 +55,18 @@ def check_coco_is_setup(
 # root=<root>/train2017.
 
 
-def _prepare_coco(
-    dataset_type: type[CocoType], datasets_dir: Path, variant: CocoVariant = "stuff"
+def prepare_coco(
+    dataset_type: type[CocoType],
+    root: str | Path,
+    variant: CocoVariant,
+    split: CocoSplit,
 ):
     return Compose(
         StopOnSucess(
-            check_coco_is_setup(dataset_type, variant=variant),
-            continue_if_raised=[FileNotFoundError],
+            _check_coco_is_setup(dataset_type, variant=variant, split=split),
+            continue_if_raised=FileNotFoundError,
         ),
-        MakeSymlinksToDatasetFiles(f"{datasets_dir}/coco/2017"),
+        MakeSymlinksToDatasetFiles(f"{root}/coco/2017"),
         ExtractArchives(
             archives={
                 "test2017.zip": ".",
@@ -86,16 +78,16 @@ def _prepare_coco(
                 "annotations/stuff_annotations_trainval2017.zip": ".",
             }
         ),
-        check_coco_is_setup(dataset_type, variant=variant),
+        _check_coco_is_setup(dataset_type, variant=variant, split=split),
     )
 
 
-def PrepareCocoDetection(datasets_dir: Path, variant: CocoVariant = "stuff"):
-    return _prepare_coco(tvd.CocoDetection, datasets_dir, variant)
+def PrepareCocoDetection(datasets_dir: Path, variant: CocoVariant, split: CocoSplit):
+    return prepare_coco(tvd.CocoDetection, datasets_dir, variant=variant, split=split)
 
 
-def PrepareCocoCaptions(datasets_dir: Path, variant: CocoVariant = "captions"):
-    return _prepare_coco(tvd.CocoCaptions, datasets_dir, variant)
+def PrepareCocoCaptions(datasets_dir: Path, variant: CocoVariant, split: CocoSplit):
+    return prepare_coco(tvd.CocoCaptions, datasets_dir, variant=variant, split=split)
 
 
 @dataclass
@@ -116,16 +108,40 @@ class CocoDetectionArgs(DatasetArguments[tvd.CocoDetection]):
     variant: CocoVariant = "stuff"
     """Which variant of the Coco dataset to use."""
 
-    split: Literal["train", "val"] = "train"
+    # TODO: Check other splits than just train and val.
+    split: CocoSplit = "train"
     """Which split to prepare."""
 
-    def __post_init__(self):
-        if not self.annFile:
-            annFile = f"annotations/{self.variant}_{self.split}2017.json"
-            self.annFile = f"{self.root}/{annFile}"
-
     def to_dataset_kwargs(self) -> dict:
+        """Returns the dataset constructor arguments that are to be passed to the dataset
+        preparation function."""
         dataset_kwargs = dataclasses.asdict(self)
         dataset_kwargs.pop("variant")
         dataset_kwargs.pop("split")
+
+        if not self.annFile:
+            annFile = f"annotations/{self.variant}_{self.split}2017.json"
+            dataset_kwargs["annFile"] = f"{self.root}/{annFile}"
+
         return dataset_kwargs
+
+    def code_to_use(self) -> str:
+        slurm_tmpdir = get_slurm_tmpdir()
+        coco_type = "CocoCaptions" if self.variant == "captions" else "CocoDetection"
+        # FIXME: Remove this assertion
+        assert self.root == slurm_tmpdir / "datasets", "fixme"
+        return (
+            f"{coco_type}(\n"
+            + ("""    root=f"{os.environ['SLURM_TMPDIR']}/datasets/""" + f"{self.split}2017,\n")
+            + (
+                """    annFile=f"{os.environ['SLURM_TMPDIR']}/"""
+                + str(Path(self.annFile).relative_to(slurm_tmpdir))
+                + '"\n'
+            )
+            + ")"
+        )
+
+
+@dataclass
+class CocoCaptionArgs(CocoDetectionArgs):
+    variant: CocoVariant = "captions"

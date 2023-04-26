@@ -146,7 +146,7 @@ def run_job_step_to_get_slurm_env_variables(
 
     # Using a lockfile so that even when running this with multiple workers, they share a single
     # call to the `srun` command.
-    print(f"Using temp file: {temp_file}")
+    logger.debug(f"Using temp file: {temp_file}")
     with FileLock(temp_file.with_suffix(".lock")):
         if temp_file.exists():
             # We are not the first process to run this function. We can just read the file that was

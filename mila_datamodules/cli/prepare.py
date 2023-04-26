@@ -50,14 +50,14 @@ def add_torchvision_prepare_args(
     subparsers: argparse._SubParsersAction[simple_parsing.ArgumentParser],
 ):
     # Only add commands for the datasets that we know how to prepare on the current cluster.
-    dataset_names_types_and_functions = {
+    dataset_types_and_functions = {
         dataset_type: prepare_dataset_fns[current_cluster]
         for dataset_type, prepare_dataset_fns in prepare_torchvision_datasets.items()
         if current_cluster in prepare_dataset_fns
     }
     dataset_names_types_and_functions = [
         (dataset_type.__name__.lower(), dataset_type, preparation_fn)
-        for dataset_type, preparation_fn in dataset_names_types_and_functions.items()
+        for dataset_type, preparation_fn in dataset_types_and_functions.items()
     ]
 
     for dataset_name, dataset_type, prepare_dataset_fn in sorted(
@@ -71,7 +71,7 @@ def add_torchvision_prepare_args(
         # (e.g. --split='train'/'val')
         command_line_args = command_line_args_for_dataset.get(dataset_type)
         if command_line_args:
-            dataset_parser.add_arguments(command_line_args, dest="dataset_kwargs")
+            dataset_parser.add_arguments(command_line_args, dest="dataset_preparation")
         else:
             dataset_parser.add_argument(
                 "--root", type=Path, default=get_slurm_tmpdir() / "datasets"
@@ -96,7 +96,7 @@ def add_huggingface_prepare_arguments(
         )
         assert isinstance(dataset_parser, simple_parsing.ArgumentParser)
         command_line_args = command_line_args_for_hf_dataset[dataset_name]
-        dataset_parser.add_arguments(command_line_args, dest="dataset_kwargs")
+        dataset_parser.add_arguments(command_line_args, dest="dataset_preparation")
         dataset_parser.set_defaults(function=prepare_hf_dataset_fn)
 
 
@@ -133,36 +133,62 @@ def prepare(args):
     #     handlers=[rich.logging.RichHandler(markup=True, tracebacks_width=100)],
     # )
 
+    logger.debug(args)
     # TODO: Dispatch what to do with `args` (and the output of the function) in a smarter way,
     # based on which module was selected.
 
     dataset: str = args_dict.pop("dataset")
     function: Callable = args_dict.pop("function")
-    dataset_kwargs = args_dict.pop("dataset_kwargs", None)
+    dataset_arguments = args_dict.pop("dataset_preparation", None)
 
     kwargs = args_dict
 
-    if dataset_kwargs:
-        assert isinstance(dataset_kwargs, DatasetArguments)
-        additional_kwargs = dataset_kwargs.to_dataset_kwargs()
+    if dataset_arguments:
+        assert isinstance(dataset_arguments, DatasetArguments)
+        additional_kwargs = dataset_arguments.to_dataset_kwargs()
         assert not any(k in kwargs for k in additional_kwargs)
         kwargs.update(additional_kwargs)
 
     output = function(**kwargs)
+
+    logger.setLevel(logging.INFO)
 
     if isinstance(output, (str, Path)):
         new_root = output
         # TODO: For some datasets (e.g. Coco), it's not actually true! We would like to tell users
         # how exactly the dataset can be created, for instance:
         # ```
-        # tvd.CocoCaptions(root=SLURM_TMPDIR/"datasets/train2017",
-        #                  annFile=SLURM_TMPDIR/"datasets/annotations/stuff_train2017.json")
+        # tvd.CocoCaptions(
+        #     root=f"{os.environ['SLURM_TMPDIR']}/datasets/train2017",
+        #     annFile=f"{os.environ['SLURM_TMPDIR']}/datasets/annotations/stuff_train2017.json"
+        # )
         # ```
-        # TODO: Perhaps we should return a dictionary of **kwargs to use to create the dataset?
-        print(f"The {dataset} dataset can now be read by using {new_root} as the 'root' argument.")
+        import torchvision.datasets
+
+        # FIXME: Ugly AF, just there for the demo:
+        dataset_class = {
+            k: v for k, v in vars(torchvision.datasets).items() if k.lower() == dataset
+        }.popitem()[1]
+        # if isinstance(dataset_arguments, CocoDetectionArgs):
+        #     code_snippet = dataset_arguments.code_to_use()
+        # else:
+        kwargs.update(root=new_root)
+        code_snippet = (
+            f"{dataset_class.__name__}(" + ", ".join(f"{k}={v!r}" for k, v in kwargs.items()) + ")"
+        )
+        slurm_tmpdir = get_slurm_tmpdir()
+        code_snippet = (
+            (code_snippet)
+            .replace(f'"{slurm_tmpdir}', 'os.environ["SLURM_TMPDIR"] + "')
+            .replace(f"'{slurm_tmpdir}", "os.environ['SLURM_TMPDIR'] + '")
+        )
+        # fn = logger.info if verbose > 0 else print
+        logger.info(
+            f"The {dataset_class.__name__} dataset can now be created as follows:\n" + code_snippet
+        )
     else:
         assert isinstance(output, HfDatasetsEnvVariables)
-        print(
+        logger.info(
             "The following environment variables have been set in this process, but will "
             "probably also need to also be added in the job script:"
         )
