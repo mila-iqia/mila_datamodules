@@ -133,7 +133,7 @@ def prepare(args):
     #     handlers=[rich.logging.RichHandler(markup=True, tracebacks_width=100)],
     # )
 
-    logger.debug(args)
+    # logger.debug(args)
     # TODO: Dispatch what to do with `args` (and the output of the function) in a smarter way,
     # based on which module was selected.
 
@@ -184,7 +184,12 @@ def prepare(args):
         )
         # fn = logger.info if verbose > 0 else print
         logger.info(
-            f"The {dataset_class.__name__} dataset can now be created as follows:\n" + code_snippet
+            "Here's how you can use this prepared dataset in your job:\n"
+            + "\n"
+            + "```python\n"
+            + "import os\n"
+            + code_snippet
+            + "\n```"
         )
     else:
         assert isinstance(output, HfDatasetsEnvVariables)

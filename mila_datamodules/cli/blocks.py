@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import contextlib
 import inspect
 import shutil
 from logging import getLogger as get_logger
@@ -70,18 +69,25 @@ class CallDatasetConstructor(PrepareVisionDataset[VD_co, P]):
         Path(root).mkdir(parents=True, exist_ok=True)
 
         dataset_kwargs = dataset_kwargs.copy()  # type: ignore
+        download = False
         if "download" in inspect.signature(self.dataset_type).parameters:
             dataset_kwargs["download"] = not self.verify
-
+            download = not self.verify
+        # TODO:
         logger.info(
-            f"Calling {self.dataset_type.__name__}(root={root!r}, "
+            f"Checking if the dataset is properly set up in {root}."
+            if not download
+            else f"Extracting the dataset archives in {root}."
+        )
+        logger.debug(
+            f"Calling {self.dataset_type.__name__}({root!r}, "
             + ", ".join(f"{v!r}" for v in dataset_args)
             + ", ".join(f"{k}={v!r}" for k, v in dataset_kwargs.items())
             + ")"
         )
         dataset_instance = self.dataset_type(str(root), *dataset_args, **dataset_kwargs)
         if is_local_main():
-            logger.info(dataset_instance)
+            logger.info(f"Successfully created dataset:\n{dataset_instance}")
 
         if self.get_index is not None:
             _ = dataset_instance[self.get_index]
@@ -144,7 +150,7 @@ class MakeSymlinksToDatasetFiles(PrepareVisionDataset[VD_co, P]):
     def __call__(self, root: str | Path, *dataset_args: P.args, **dataset_kwargs: P.kwargs) -> str:
         root = Path(root)
         root.mkdir(parents=True, exist_ok=True)
-
+        logger.info(f"Making symlinks in {root} pointing to the dataset files on the network.")
         for relative_path, dataset_file in self.relative_paths_to_files.items():
             assert dataset_file.exists(), dataset_file
             # Make a symlink in the local scratch directory to the archive on the network.
@@ -154,7 +160,7 @@ class MakeSymlinksToDatasetFiles(PrepareVisionDataset[VD_co, P]):
 
             archive_symlink.parent.mkdir(parents=True, exist_ok=True)
             archive_symlink.symlink_to(dataset_file)
-            logger.info(f"Making link from {archive_symlink} -> {dataset_file}")
+            logger.debug(f"Making link from {archive_symlink} -> {dataset_file}")
 
         return str(root)
 
@@ -176,12 +182,13 @@ class ExtractArchives(PrepareVisionDataset[VD_co, P]):
 
     @runs_on_local_main_process_first
     def __call__(self, root: str | Path, *dataset_args: P.args, **dataset_kwargs: P.kwargs) -> str:
+        logger.info(f"Extracting archives in {root}...")
         for archive, dest in self.archives.items():
             archive = Path(archive)
             assert not dest.is_absolute()
 
             dest = root / dest
-            logger.info(f"Extracting {archive} in {dest}")
+            logger.debug(f"Extracting {archive} in {dest}")
             if archive.suffix == ".zip":
                 with ZipFile(root / archive) as zf:
                     zf.extractall(str(dest))
@@ -321,7 +328,16 @@ class StopOnSucess(PrepareVisionDataset[VD, P]):
         *dataset_args: P.args,
         **dataset_kwargs: P.kwargs,
     ) -> str:
-        with contextlib.suppress(*self.exceptions):
+        try:
+            # logger.info(f"Checking if the dataset has been prepared in {root}")
             self.function(str(root), *dataset_args, **dataset_kwargs)
+        except tuple(self.exceptions) as expected_exception:
+            logger.info(
+                f"Failed: dataset has not been prepared in {root}, continuing with dataset "
+                f"preparation."
+            )
+            logger.debug(f"Exceptions: {expected_exception}")
+        else:
+            logger.info("Success!")
             raise Compose.Stop()
         return str(root)
