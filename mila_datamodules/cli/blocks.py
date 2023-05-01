@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import inspect
 import shutil
 from logging import getLogger as get_logger
 from pathlib import Path
@@ -47,11 +46,11 @@ class CallDatasetConstructor(PrepareVisionDataset[VD_co, P]):
     def __init__(
         self,
         dataset_type: Callable[Concatenate[str, P], VD_co],
-        verify: bool = True,
+        extract_and_verify_archives: bool = False,
         get_index: int | None = 0,
     ):
         self.dataset_type = dataset_type
-        self.verify = verify
+        self.extract_and_verify_archives = extract_and_verify_archives
         self.get_index = get_index
 
     @runs_on_local_main_process_first
@@ -69,22 +68,25 @@ class CallDatasetConstructor(PrepareVisionDataset[VD_co, P]):
         Path(root).mkdir(parents=True, exist_ok=True)
 
         dataset_kwargs = dataset_kwargs.copy()  # type: ignore
-        download = False
-        if "download" in inspect.signature(self.dataset_type).parameters:
-            dataset_kwargs["download"] = not self.verify
-            download = not self.verify
+        if self.extract_and_verify_archives:
+            dataset_kwargs["download"] = True
+
         # TODO:
         logger.info(
-            f"Checking if the dataset is properly set up in {root}."
-            if not download
-            else f"Extracting the dataset archives in {root}."
+            f"Extracting the dataset archives in {root}."
+            if self.extract_and_verify_archives
+            else f"Checking if the dataset is properly set up in {root}."
         )
-        logger.debug(
-            f"Calling {self.dataset_type.__name__}({root!r}, "
-            + ", ".join(f"{v!r}" for v in dataset_args)
-            + ", ".join(f"{k}={v!r}" for k, v in dataset_kwargs.items())
-            + ")"
-        )
+
+        message = f"Calling {self.dataset_type.__name__}({root!r}"
+        if dataset_args or dataset_kwargs:
+            message += ", "
+        if dataset_args:
+            message += ", ".join(f"{v!r}" for v in dataset_args)
+        if dataset_kwargs:
+            message += ", ".join(f"{k}={v!r}" for k, v in dataset_kwargs.items())
+        message += ")"
+        logger.debug(message)
         dataset_instance = self.dataset_type(str(root), *dataset_args, **dataset_kwargs)
         if is_local_main():
             logger.info(f"Successfully created dataset:\n{dataset_instance}")

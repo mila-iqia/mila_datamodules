@@ -59,7 +59,7 @@ def ComposeWithChecks(
         # Try calling the dataset constructor. If there are no errors, skip the other steps.
         # If there is a RuntimeError, continue.
         StopOnSucess(
-            CallDatasetConstructor(dataset_type, verify=True, get_index=0),
+            CallDatasetConstructor(dataset_type, extract_and_verify_archives=False, get_index=0),
             continue_if_raised=RuntimeError,
         ),
         *callables,
@@ -67,7 +67,8 @@ def ComposeWithChecks(
         # TODO: This `verify` argument is a bit confusing. Here we want to use `download=True` here
         # so that the md5 checksums of the archives are verified and so the files are extracted,
         # but we don't want to download anything from the internet!
-        CallDatasetConstructor(dataset_type, verify=False, get_index=0),
+        CallDatasetConstructor(dataset_type, extract_and_verify_archives=True, get_index=0),
+        # CallDatasetConstructor(dataset_type, extract_and_verify_archives=False, get_index=0),
     )
 
 
@@ -227,10 +228,21 @@ prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareVisionDataset]] = 
     tvd.QMNIST: {
         cluster: ComposeWithChecks(
             tvd.QMNIST,
-            MakeSymlinksToDatasetFiles(f"{datasets_dir}/qmnist"),
-            # Torchvision will look into a QMNIST/raw directory to
-            # preprocess the dataset
-            MoveFiles({"*": "QMNIST/raw/*"}),
+            MakeSymlinksToDatasetFiles(
+                {
+                    f"QMNIST/raw/{p}": f"/network/datasets/qmnist/{p}"
+                    for p in [
+                        "qmnist-test-images-idx3-ubyte.gz",
+                        "qmnist-test-labels-idx2-int.gz",
+                        "qmnist-test-labels.tsv.gz",
+                        "qmnist-train-images-idx3-ubyte.gz",
+                        "qmnist-train-labels-idx2-int.gz",
+                        "qmnist-train-labels.tsv.gz",
+                        "xnist-images-idx3-ubyte.xz",
+                        "xnist-labels-idx2-int.xz",
+                    ]
+                }
+            ),
         )
         for cluster, datasets_dir in standardized_torchvision_datasets_dir.items()
     },
