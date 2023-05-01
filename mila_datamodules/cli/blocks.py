@@ -290,7 +290,8 @@ class CopyFiles(PrepareVisionDataset[VD, P]):
             else:
                 logger.debug(f"Copying file {path_on_cluster} -> {dest_path}.")
                 dest_path.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy(path_on_cluster, relative_path)
+                shutil.copy(path_on_cluster, dest_path)
+                dest_path.chmod(511)
 
         return str(root)
 
