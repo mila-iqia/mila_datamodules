@@ -77,7 +77,7 @@ prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareVisionDataset]] = 
             tvd.Caltech101,
             MakeSymlinksToDatasetFiles(
                 {
-                    p: f"{datasets_dir}/caltech101/{p}"
+                    f"caltech101/{p}": f"{datasets_dir}/caltech101/{p}"
                     for p in [
                         "101_ObjectCategories.tar.gz",
                         "Annotations.tar",
@@ -91,7 +91,10 @@ prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareVisionDataset]] = 
         cluster: ComposeWithChecks(
             tvd.Caltech256,
             MakeSymlinksToDatasetFiles(
-                {p: f"{datasets_dir}/caltech256/{p}" for p in ["256_ObjectCategories.tar"]}
+                {
+                    f"caltech256/{p}": f"{datasets_dir}/caltech256/{p}"
+                    for p in ["256_ObjectCategories.tar"]
+                }
             ),
         )
         for cluster, datasets_dir in standardized_torchvision_datasets_dir.items()
