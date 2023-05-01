@@ -200,7 +200,7 @@ prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareVisionDataset]] = 
             tvd.MNIST,
             MakeSymlinksToDatasetFiles(
                 {
-                    f"raw/{filename}": f"{datasets_dir}/mnist/{filename}"
+                    f"MNIST/raw/{filename}": f"{datasets_dir}/mnist/{filename}"
                     for filename in [
                         "t10k-images-idx3-ubyte.gz",
                         "t10k-labels-idx1-ubyte.gz",
