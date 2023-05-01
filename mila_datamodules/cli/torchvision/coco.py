@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import dataclasses
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from logging import getLogger as get_logger
 from pathlib import Path
 from typing import Literal
@@ -94,7 +94,7 @@ def PrepareCocoCaptions(datasets_dir: Path, variant: CocoVariant, split: CocoSpl
 class CocoDetectionArgs(DatasetArguments[tvd.CocoDetection]):
     """Command-line arguments used when preparing the CocoCaptions dataset."""
 
-    root: Path = get_slurm_tmpdir() / "datasets"
+    root: Path = field(default_factory=lambda: get_slurm_tmpdir() / "datasets")
 
     annFile: str = ""
     """Path to json annotation file.

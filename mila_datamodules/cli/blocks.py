@@ -4,7 +4,7 @@ import shutil
 from logging import getLogger as get_logger
 from pathlib import Path
 from shutil import unpack_archive
-from typing import Callable, Iterable, Mapping, Protocol, Sequence
+from typing import Callable, Iterable, Mapping, Protocol
 from zipfile import ZipFile
 
 from typing_extensions import Concatenate
@@ -77,8 +77,8 @@ class CallDatasetConstructor(PrepareVisionDataset[VD_co, P]):
             if self.extract_and_verify_archives
             else f"Checking if the dataset is properly set up in {root}."
         )
-
-        message = f"Calling {self.dataset_type.__name__}({root!r}"
+        fn_name = getattr(self.dataset_type, "__name__", str(self.dataset_type))
+        message = f"Calling {fn_name}({root!r}"
         if dataset_args or dataset_kwargs:
             message += ", "
         if dataset_args:
@@ -89,7 +89,7 @@ class CallDatasetConstructor(PrepareVisionDataset[VD_co, P]):
         logger.debug(message)
         dataset_instance = self.dataset_type(str(root), *dataset_args, **dataset_kwargs)
         if is_local_main():
-            logger.info(f"Successfully created dataset:\n{dataset_instance}")
+            logger.info(f"Successfully read dataset:\n{dataset_instance}")
 
         if self.get_index is not None:
             _ = dataset_instance[self.get_index]
@@ -242,20 +242,18 @@ class MoveFiles(PrepareVisionDataset[VD, P]):
         return str(root)
 
 
-class CopyTree(CallDatasetConstructor[VD, P]):
-    """Copies a tree of files from the cluster to the `root` directory."""
+class CopyFiles(PrepareVisionDataset[VD, P]):
+    """Copies some files from the cluster to the `root` directory."""
 
     def __init__(
         self,
-        dataset_type: Callable[Concatenate[str, P], VD],
-        relative_paths_to_dirs: dict[str, str | Path],
-        ignore_filenames: Sequence[str] = (".git",),
+        relative_paths_to_files: dict[str, str | Path],
+        ignore_dirs: Iterable[str] = (".git"),
     ):
-        self.dataset_type = dataset_type
-        self.relative_paths_to_dirs = {
-            relative_path: Path(path) for relative_path, path in relative_paths_to_dirs.items()
+        self.relative_paths_to_cluster_path = {
+            relative_path: Path(path) for relative_path, path in relative_paths_to_files.items()
         }
-        self.ignore_dirs = ignore_filenames
+        self.ignore_dirs = ignore_dirs
 
     @runs_on_local_main_process_first
     def __call__(
@@ -264,20 +262,37 @@ class CopyTree(CallDatasetConstructor[VD, P]):
         *constructor_args: P.args,
         **constructor_kwargs: P.kwargs,
     ):
-        assert all(directory.exists() for directory in self.relative_paths_to_dirs.values())
-
         root = Path(root)
-        for relative_path, tree in self.relative_paths_to_dirs.items():
-            dest_dir = root / relative_path
-            dest_dir.mkdir(parents=True, exist_ok=True)
-            shutil.copytree(
-                tree,
-                dest_dir,
-                ignore=shutil.ignore_patterns(*self.ignore_dirs),
-                dirs_exist_ok=True,
-            )
+        logger.info(f"Copying files from the network filesystem to {root}.")
+        assert all(
+            path_on_cluster.exists()
+            for path_on_cluster in self.relative_paths_to_cluster_path.values()
+        )
 
-        return super()(root, *constructor_args, **constructor_kwargs)
+        for relative_path, path_on_cluster in self.relative_paths_to_cluster_path.items():
+            dest_path = root / relative_path
+            if dest_path.exists():
+                logger.debug(
+                    f"Skipping copying {path_on_cluster} as it already exists at {dest_path}."
+                )
+                continue
+
+            if path_on_cluster.is_dir():
+                logger.debug(f"Copying directory {path_on_cluster} -> {dest_path}.")
+
+                dest_path.mkdir(parents=True, exist_ok=True)
+                shutil.copytree(
+                    path_on_cluster,
+                    dest_path,
+                    ignore=shutil.ignore_patterns(*self.ignore_dirs),
+                    dirs_exist_ok=True,
+                )
+            else:
+                logger.debug(f"Copying file {path_on_cluster} -> {dest_path}.")
+                dest_path.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy(path_on_cluster, relative_path)
+
+        return str(root)
 
 
 class Compose(PrepareVisionDataset[VD_co, P]):

@@ -19,6 +19,7 @@ from mila_datamodules.cli.torchvision.coco import (
     PrepareCocoCaptions,
     PrepareCocoDetection,
 )
+from mila_datamodules.cli.torchvision.places365 import Places365Args, prepare_places365
 from mila_datamodules.clusters.cluster import Cluster
 
 # NOTE: For some datasets, we have datasets stored in folders with the same structure. This here is
@@ -184,16 +185,6 @@ prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareVisionDataset]] = 
         )
         for cluster, datasets_dir in standardized_torchvision_datasets_dir.items()
     },
-    tvd.Places365: {
-        cluster: Compose(
-            StopOnSuccess(CallDatasetConstructor(tvd.Places365, extract_and_verify_archives=True)),
-            MakeSymlinksToDatasetFiles(f"{datasets_dir}/places365"),
-            MakeSymlinksToDatasetFiles(f"{datasets_dir}/places365.var/places365_challenge"),
-            MoveFiles({"256/*.tar": "./*", "large/*.tar": "./*"}),
-            CallDatasetConstructor(tvd.Places365, extract_and_verify_archives=True),
-        )
-        for cluster, datasets_dir in standardized_torchvision_datasets_dir.items()
-    },
     tvd.QMNIST: {
         cluster: Compose(
             StopOnSuccess(CallDatasetConstructor(tvd.QMNIST)),
@@ -299,3 +290,9 @@ command_line_args_for_dataset: dict[
     tvd.CocoDetection: CocoDetectionArgs(variant="stuff"),
     tvd.CocoCaptions: CocoDetectionArgs(variant="captions"),
 }
+
+
+prepare_torchvision_datasets[tvd.Places365] = {
+    cluster: prepare_places365(cluster.torchvision_datasets_dir) for cluster in [Cluster.Mila]
+}
+command_line_args_for_dataset[tvd.Places365] = Places365Args
