@@ -6,16 +6,20 @@ import contextlib
 import dataclasses
 import importlib
 import os
+import shutil
 import warnings
 from dataclasses import asdict, dataclass
 from logging import getLogger as get_logger
 from pathlib import Path
-from typing import Literal, Protocol, TypedDict
+from typing import Literal, Optional, Protocol, TypedDict, Union
 
+from datasets import DownloadConfig, DownloadMode, Version, load_dataset, load_dataset_builder
 from simple_parsing import field
 
+from mila_datamodules.cli.dataset_args import DatasetArguments
 from mila_datamodules.clusters.cluster import Cluster
-from mila_datamodules.clusters.utils import get_scratch_dir
+from mila_datamodules.clusters.utils import get_scratch_dir, get_slurm_tmpdir
+from mila_datamodules.utils import cpus_per_node
 
 logger = get_logger(__name__)
 
@@ -149,3 +153,87 @@ def use_variables(
     # Reload *again*, to get back to what it was set to before.
     _apply_changes_to_datasets_config_module()
     _apply_changes_to_hf_vars_in_global_scope()
+
+
+@dataclass
+class PrepareGenericDatasetArgs(DatasetArguments):
+    """Options for preparing an arbitrary HuggingFace dataset."""
+
+    path: str = field(positional=True)
+
+    name: str | None = None
+
+    # NOTE: These next args are available "for free" in our CLI because HF uses dataclasses!
+    # data_dir: Optional[str] = None
+    # data_files: Optional[Union[str, Sequence[str], Mapping[str, Union[str, Sequence[str]]]]]=None
+    # cache_dir: Optional[str] = None
+    # features: Optional[Features] = None
+    # download_config: Optional[DownloadConfig] = None
+    download_mode: Optional[Union[DownloadMode, str]] = None
+    revision: Optional[Union[str, Version]] = None
+    use_auth_token: Optional[Union[bool, str]] = None
+    # storage_options: Optional[dict] = None
+
+
+def prepare_generic(path: str, name: str, **load_dataset_builder_kwargs) -> HfDatasetsEnvVariables:
+    """Prepare the wikitext dataset."""
+    cluster = Cluster.current_or_error()
+    scratch = get_scratch_dir()
+    slurm_tmpdir = get_slurm_tmpdir()
+    # Number of processes to use for preparing the dataset. Note, since this is expected to be only
+    # executed once per node, we can use all the CPUs
+    num_proc = cpus_per_node()
+
+    # Load the dataset under $SCRATCH/cache/huggingface first, since we don't have a shared copy
+    # on the cluster.
+    scratch_hf_datasets_cache = scratch / "cache/huggingface/datasets"
+    with use_variables(HF_DATASETS_CACHE=scratch_hf_datasets_cache):
+        # load_dataset(path, name, num_proc=num_proc)
+        dataset_builder = load_dataset_builder(path, name, **load_dataset_builder_kwargs)
+        # TODO: There are tons of arguments that we could probably pass here.
+        dataset_builder.download_and_prepare(num_proc=num_proc)
+
+    # Copy the dataset from $SCRATCH to $SLURM_TMPDIR
+    dataset_dir = scratch_hf_datasets_cache / path
+    relative_path = dataset_dir.relative_to(scratch)
+    logger.info(f"Copying dataset from {dataset_dir} -> {slurm_tmpdir / relative_path}")
+    shutil.copytree(
+        scratch / relative_path,
+        slurm_tmpdir / relative_path,
+        symlinks=True,  # TODO: Keep symlinks in source dir as symlinks in destination dir?
+        dirs_exist_ok=True,
+    )
+
+    logger.info("Checking that the dataset was copied correctly to SLURM_TMPDIR...")
+    with use_variables(
+        HfDatasetsEnvVariables(
+            HF_DATASETS_CACHE=slurm_tmpdir / "cache/huggingface/datasets",
+            HF_DATASETS_OFFLINE=1,  # Disabling internet just to be sure everything is setup.
+        )
+    ):
+        download_config = DownloadConfig(
+            local_files_only=True,
+        )
+        dataset_builder = load_dataset_builder(
+            path,
+            name,
+            **dict(**load_dataset_builder_kwargs, download_config=download_config),
+        )
+        dataset_builder.download_and_prepare(
+            download_config=download_config,
+            num_proc=num_proc,
+        )
+        load_dataset(
+            path,
+            name,
+            download_config=download_config,
+            num_proc=num_proc,
+        )
+
+    offline_bit = 0 if cluster.internet_access_on_compute_nodes else 1
+
+    return HfDatasetsEnvVariables(
+        HF_HOME=f"{scratch}/cache/huggingface",
+        HF_DATASETS_CACHE=f"{slurm_tmpdir}/cache/huggingface/datasets",
+        HF_DATASETS_OFFLINE=offline_bit,
+    )

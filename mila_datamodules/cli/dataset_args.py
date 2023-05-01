@@ -4,11 +4,11 @@ import dataclasses
 from dataclasses import dataclass
 from typing import Generic
 
-from .types import VD
+from .types import T
 
 
 @dataclass
-class DatasetArguments(Generic[VD]):
+class DatasetArguments(Generic[T]):
     """Arguments for the dataset preparation."""
 
     # root: Path = get_slurm_tmpdir() / "datasets"
