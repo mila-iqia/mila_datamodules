@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import Any, Callable
 
 import pytest
-import simple_parsing
 import torchvision.datasets as tvd
 from torchvision.datasets import VisionDataset
 from typing_extensions import Concatenate, ParamSpec
@@ -62,11 +61,19 @@ def test_prepare_dataset(
     args: DatasetArguments | None = None
     command_line_arguments = command_line_args_for_dataset.get(dataset_type)
     if command_line_arguments:
-        args = simple_parsing.parse(command_line_arguments, args="")
+        args: DatasetArguments[VD]
+        if isinstance(command_line_arguments, type):
+            args = command_line_arguments()
+        else:
+            args = command_line_arguments
         dataset_kwargs = args.to_dataset_kwargs()
+        if "root" in dataset_kwargs:
+            dataset_kwargs.pop("root")
     else:
         dataset_kwargs = {}
 
-    dataset_kwargs["root"] = fake_slurm_tmpdir
-    new_root = dataset_preparation_function(**dataset_kwargs)
-    dataset_type(new_root)
+    new_root = dataset_preparation_function(fake_slurm_tmpdir, **dataset_kwargs)
+
+    new_dataset_kwargs = dataset_kwargs.copy()
+    dataset_instance = dataset_type(new_root, **new_dataset_kwargs)
+    dataset_instance[0]
