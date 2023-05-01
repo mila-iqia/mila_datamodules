@@ -304,7 +304,7 @@ class Compose(PrepareVisionDataset[VD_co, P]):
         return str(root)
 
 
-class StopOnSucess(PrepareVisionDataset[VD, P]):
+class StopOnSuccess(PrepareVisionDataset[VD, P]):
     """Raises a special Stop exception when running the given callable doesn't raise an exception.
 
     If an exception of a type matching one in `exceptions` is raised by the function, the exception
@@ -316,7 +316,7 @@ class StopOnSucess(PrepareVisionDataset[VD, P]):
     def __init__(
         self,
         function: PrepareVisionDataset[VD, P] | Callable[Concatenate[str, P], VD],
-        continue_if_raised: type[Exception] | tuple[type[Exception], ...] = (),
+        continue_if_raised: type[Exception] | tuple[type[Exception], ...] = RuntimeError,
     ):
         self.function = function
         self.exceptions = (

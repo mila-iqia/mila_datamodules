@@ -1,10 +1,8 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Callable
 
 import torchvision.datasets as tvd
-from typing_extensions import Concatenate
 
 from mila_datamodules.cli.blocks import (
     CallDatasetConstructor,
@@ -13,7 +11,7 @@ from mila_datamodules.cli.blocks import (
     MakeSymlinksToDatasetFiles,
     MoveFiles,
     PrepareVisionDataset,
-    StopOnSucess,
+    StopOnSuccess,
 )
 from mila_datamodules.cli.dataset_args import DatasetArguments
 from mila_datamodules.cli.torchvision.coco import (
@@ -21,10 +19,7 @@ from mila_datamodules.cli.torchvision.coco import (
     PrepareCocoCaptions,
     PrepareCocoDetection,
 )
-from mila_datamodules.cli.types import P
 from mila_datamodules.clusters.cluster import Cluster
-
-from ..types import VD
 
 # NOTE: For some datasets, we have datasets stored in folders with the same structure. This here is
 # only really used to prevent repeating a bit of code in the dictionary below.
@@ -37,45 +32,10 @@ standardized_torchvision_datasets_dir = {
 # NOTE: Repeating the clusters for each dataset might look a bit tedious and repetitive, but I
 # think that's fine for now.
 
-
-def ComposeWithChecks(
-    dataset_type: Callable[Concatenate[str, P], VD], *callables: PrepareVisionDataset[VD, P]
-):
-    """Adds checks before and after running `callables` when preparing `dataset_type`.
-
-    - Adds a check before, to bypass `callables` if the dataset is already setup.
-    - Adds a check after `callables` to check that the dataset is correctly setup.
-
-    Parameters
-    ----------
-    dataset_type:
-        A dataset type or callable.
-
-    Returns
-    -------
-    A `Compose` with the added checks.
-    """
-    return Compose(
-        # Try calling the dataset constructor. If there are no errors, skip the other steps.
-        # If there is a RuntimeError, continue.
-        StopOnSucess(
-            CallDatasetConstructor(dataset_type, extract_and_verify_archives=False, get_index=0),
-            continue_if_raised=RuntimeError,
-        ),
-        *callables,
-        # Call the dataset constructor at the end, to make sure everything was setup correctly.
-        # TODO: This `verify` argument is a bit confusing. Here we want to use `download=True` here
-        # so that the md5 checksums of the archives are verified and so the files are extracted,
-        # but we don't want to download anything from the internet!
-        CallDatasetConstructor(dataset_type, extract_and_verify_archives=True, get_index=0),
-        # CallDatasetConstructor(dataset_type, extract_and_verify_archives=False, get_index=0),
-    )
-
-
 prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareVisionDataset]] = {
     tvd.Caltech101: {
-        cluster: ComposeWithChecks(
-            tvd.Caltech101,
+        cluster: Compose(
+            StopOnSuccess(CallDatasetConstructor(tvd.Caltech101)),
             MakeSymlinksToDatasetFiles(
                 {
                     f"caltech101/{p}": f"{datasets_dir}/caltech101/{p}"
@@ -85,24 +45,26 @@ prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareVisionDataset]] = 
                     ]
                 }
             ),
+            CallDatasetConstructor(tvd.Caltech101, extract_and_verify_archives=True),
         )
         for cluster, datasets_dir in standardized_torchvision_datasets_dir.items()
     },
     tvd.Caltech256: {
-        cluster: ComposeWithChecks(
-            tvd.Caltech256,
+        cluster: Compose(
+            StopOnSuccess(CallDatasetConstructor(tvd.Caltech256)),
             MakeSymlinksToDatasetFiles(
                 {
                     f"caltech256/{p}": f"{datasets_dir}/caltech256/{p}"
                     for p in ["256_ObjectCategories.tar"]
                 }
             ),
+            CallDatasetConstructor(tvd.Caltech256, extract_and_verify_archives=True),
         )
         for cluster, datasets_dir in standardized_torchvision_datasets_dir.items()
     },
     tvd.CelebA: {
-        cluster: ComposeWithChecks(
-            tvd.CelebA,
+        cluster: Compose(
+            StopOnSuccess(CallDatasetConstructor(tvd.CelebA)),
             MakeSymlinksToDatasetFiles(f"{datasets_dir}/celeba"),
             # Torchvision will look into a celeba directory to preprocess
             # the dataset, so we move the files a new directory.
@@ -113,37 +75,41 @@ prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareVisionDataset]] = 
                     "Img/*": "celeba/*",
                 }
             ),
+            CallDatasetConstructor(tvd.CelebA, extract_and_verify_archives=True),
         )
         for cluster, datasets_dir in standardized_torchvision_datasets_dir.items()
     },
     tvd.CIFAR10: {
-        cluster: ComposeWithChecks(
-            tvd.CIFAR10,
+        cluster: Compose(
+            StopOnSuccess(CallDatasetConstructor(tvd.CIFAR10)),
             MakeSymlinksToDatasetFiles(
                 {"cifar-10-python.tar.gz": (f"{datasets_dir}/cifar10/cifar-10-python.tar.gz")}
             ),
+            CallDatasetConstructor(tvd.CIFAR10, extract_and_verify_archives=True),
         )
         for cluster, datasets_dir in standardized_torchvision_datasets_dir.items()
     },
     tvd.CIFAR100: {
-        cluster: ComposeWithChecks(
-            tvd.CIFAR100,
+        cluster: Compose(
+            StopOnSuccess(CallDatasetConstructor(tvd.CIFAR100)),
             MakeSymlinksToDatasetFiles(
                 {"cifar-100-python.tar.gz": (f"{datasets_dir}/cifar100/cifar-100-python.tar.gz")}
             ),
+            CallDatasetConstructor(tvd.CIFAR100, extract_and_verify_archives=True),
         )
         for cluster, datasets_dir in standardized_torchvision_datasets_dir.items()
     },
     tvd.Cityscapes: {
-        cluster: ComposeWithChecks(
-            tvd.Cityscapes,
+        cluster: Compose(
+            StopOnSuccess(CallDatasetConstructor(tvd.Cityscapes)),
             MakeSymlinksToDatasetFiles(f"{datasets_dir}/cityscapes"),
+            CallDatasetConstructor(tvd.Cityscapes),
         )
         for cluster, datasets_dir in standardized_torchvision_datasets_dir.items()
     },
     tvd.FashionMNIST: {
-        cluster: ComposeWithChecks(
-            tvd.FashionMNIST,
+        cluster: Compose(
+            StopOnSuccess(CallDatasetConstructor(tvd.FashionMNIST)),
             # Make symlinks + rename in one step:
             MakeSymlinksToDatasetFiles(
                 {
@@ -156,13 +122,14 @@ prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareVisionDataset]] = 
                     ]
                 }
             ),
+            CallDatasetConstructor(tvd.FashionMNIST, extract_and_verify_archives=True),
         )
         # )
         for cluster, datasets_dir in standardized_torchvision_datasets_dir.items()
     },
     tvd.INaturalist: {
-        cluster: ComposeWithChecks(
-            tvd.INaturalist,
+        cluster: Compose(
+            StopOnSuccess(CallDatasetConstructor(tvd.INaturalist)),
             # Make symlinks + rename in one step:
             MakeSymlinksToDatasetFiles(
                 {
@@ -174,31 +141,34 @@ prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareVisionDataset]] = 
                     }.items()
                 }
             ),
+            CallDatasetConstructor(tvd.INaturalist, extract_and_verify_archives=True),
         )
         for cluster, datasets_dir in standardized_torchvision_datasets_dir.items()
     },
     tvd.ImageNet: {
         # TODO: Write a customized `PrepareVisionDataset` for ImageNet that uses Olexa's magic tar
         # command.
-        cluster: ComposeWithChecks(
-            tvd.ImageNet,
+        cluster: Compose(
+            StopOnSuccess(CallDatasetConstructor(tvd.ImageNet)),
             MakeSymlinksToDatasetFiles(f"{datasets_dir}/imagenet"),
+            CallDatasetConstructor(tvd.ImageNet),
         )
         for cluster, datasets_dir in standardized_torchvision_datasets_dir.items()
     },
     tvd.KMNIST: {
-        cluster: ComposeWithChecks(
-            tvd.KMNIST,
+        cluster: Compose(
+            StopOnSuccess(CallDatasetConstructor(tvd.KMNIST)),
             MakeSymlinksToDatasetFiles(datasets_dir / "kmnist"),
             # Torchvision will look into a KMNIST/raw directory to
             # preprocess the dataset
             MoveFiles({"*": "KMNIST/raw/*"}),
+            CallDatasetConstructor(tvd.KMNIST, extract_and_verify_archives=True),
         )
         for cluster, datasets_dir in standardized_torchvision_datasets_dir.items()
     },
     tvd.MNIST: {
-        cluster: ComposeWithChecks(
-            tvd.MNIST,
+        cluster: Compose(
+            StopOnSuccess(CallDatasetConstructor(tvd.MNIST)),
             MakeSymlinksToDatasetFiles(
                 {
                     f"MNIST/raw/{filename}": f"{datasets_dir}/mnist/{filename}"
@@ -210,24 +180,23 @@ prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareVisionDataset]] = 
                     ]
                 }
             ),
-            # Torchvision will look into a raw directory to preprocess the
-            # dataset
-            # MoveFiles({"*": "raw/*"}),
+            CallDatasetConstructor(tvd.MNIST, extract_and_verify_archives=True),
         )
         for cluster, datasets_dir in standardized_torchvision_datasets_dir.items()
     },
     tvd.Places365: {
-        cluster: ComposeWithChecks(
-            tvd.Places365,
+        cluster: Compose(
+            StopOnSuccess(CallDatasetConstructor(tvd.Places365, extract_and_verify_archives=True)),
             MakeSymlinksToDatasetFiles(f"{datasets_dir}/places365"),
             MakeSymlinksToDatasetFiles(f"{datasets_dir}/places365.var/places365_challenge"),
             MoveFiles({"256/*.tar": "./*", "large/*.tar": "./*"}),
+            CallDatasetConstructor(tvd.Places365, extract_and_verify_archives=True),
         )
         for cluster, datasets_dir in standardized_torchvision_datasets_dir.items()
     },
     tvd.QMNIST: {
-        cluster: ComposeWithChecks(
-            tvd.QMNIST,
+        cluster: Compose(
+            StopOnSuccess(CallDatasetConstructor(tvd.QMNIST)),
             MakeSymlinksToDatasetFiles(
                 {
                     f"QMNIST/raw/{p}": f"/network/datasets/qmnist/{p}"
@@ -243,21 +212,23 @@ prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareVisionDataset]] = 
                     ]
                 }
             ),
+            CallDatasetConstructor(tvd.QMNIST, extract_and_verify_archives=True),
         )
         for cluster, datasets_dir in standardized_torchvision_datasets_dir.items()
     },
     tvd.STL10: {
-        cluster: ComposeWithChecks(
-            tvd.STL10,
+        cluster: Compose(
+            StopOnSuccess(CallDatasetConstructor(tvd.STL10)),
             MakeSymlinksToDatasetFiles(
                 {p: f"{datasets_folder}/stl10/{p}" for p in ["stl10_binary.tar.gz"]}
             ),
+            CallDatasetConstructor(tvd.STL10, extract_and_verify_archives=True),
         )
         for cluster, datasets_folder in standardized_torchvision_datasets_dir.items()
     },
     tvd.SVHN: {
-        cluster: ComposeWithChecks(
-            tvd.SVHN,
+        cluster: Compose(
+            StopOnSuccess(CallDatasetConstructor(tvd.SVHN)),
             MakeSymlinksToDatasetFiles(
                 {
                     p: f"{datasets_dir}/svhn/{p}"
@@ -271,13 +242,14 @@ prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareVisionDataset]] = 
                     ]
                 },
             ),
+            CallDatasetConstructor(tvd.SVHN, extract_and_verify_archives=True),
         )
         for cluster, datasets_dir in standardized_torchvision_datasets_dir.items()
     },
     # TODO: This dataset requires some constructor arguments: `annotation_path`, `frames_per_clip`.
     tvd.UCF101: {
-        cluster: ComposeWithChecks(
-            tvd.UCF101,
+        cluster: Compose(
+            StopOnSuccess(CallDatasetConstructor(tvd.UCF101)),
             MakeSymlinksToDatasetFiles(
                 {
                     p: f"{datasets_dir}/ucf101/{p}"
@@ -296,6 +268,7 @@ prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareVisionDataset]] = 
                     "UCF101TrainTestSplits-RecognitionTask.zip": ".",
                 }
             ),
+            CallDatasetConstructor(tvd.UCF101),
         )
         for cluster, datasets_dir in standardized_torchvision_datasets_dir.items()
     },

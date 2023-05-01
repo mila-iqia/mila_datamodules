@@ -14,7 +14,7 @@ from mila_datamodules.cli.blocks import (
     Compose,
     ExtractArchives,
     MakeSymlinksToDatasetFiles,
-    StopOnSucess,
+    StopOnSuccess,
 )
 from mila_datamodules.cli.dataset_args import DatasetArguments
 from mila_datamodules.clusters.utils import get_slurm_tmpdir
@@ -62,7 +62,7 @@ def prepare_coco(
     split: CocoSplit,
 ):
     return Compose(
-        StopOnSucess(
+        StopOnSuccess(
             _check_coco_is_setup(dataset_type, variant=variant, split=split),
             continue_if_raised=FileNotFoundError,
         ),

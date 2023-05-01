@@ -1,18 +1,18 @@
 """ TODO: Tests for the CLI. """
+from __future__ import annotations
 
 import sys
 from pathlib import Path
 from typing import Any, Callable
 
 import pytest
+import simple_parsing
 import torchvision.datasets as tvd
 from torchvision.datasets import VisionDataset
 from typing_extensions import Concatenate, ParamSpec
 
-from mila_datamodules.cli.torchvision import (
-    PrepareVisionDataset,
-    prepare_torchvision_datasets,
-)
+from mila_datamodules.cli.dataset_args import DatasetArguments
+from mila_datamodules.cli.torchvision import PrepareVisionDataset, prepare_torchvision_datasets
 from mila_datamodules.cli.types import VD
 from mila_datamodules.clusters import CURRENT_CLUSTER
 
@@ -54,5 +54,19 @@ def test_prepare_dataset(
 ):
     dataset_preparation_function = get_preparation_function(dataset_type=dataset_type)
     assert len(list(fake_slurm_tmpdir.iterdir())) == 0  # start with an empty SLURM_TMPDIR.
-    new_root = dataset_preparation_function(root=fake_slurm_tmpdir)
+
+    # TODO: Need to adapt this tests for the datasets that need additional arguments (e.g. COCO
+    # needs `annFile`)
+    from mila_datamodules.cli.torchvision import command_line_args_for_dataset
+
+    args: DatasetArguments | None = None
+    command_line_arguments = command_line_args_for_dataset.get(dataset_type)
+    if command_line_arguments:
+        args = simple_parsing.parse(command_line_arguments, args="")
+        dataset_kwargs = args.to_dataset_kwargs()
+    else:
+        dataset_kwargs = {}
+
+    dataset_kwargs["root"] = fake_slurm_tmpdir
+    new_root = dataset_preparation_function(**dataset_kwargs)
     dataset_type(new_root)
