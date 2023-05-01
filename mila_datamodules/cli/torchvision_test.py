@@ -42,7 +42,7 @@ def get_preparation_function(
                 "-vvv" not in sys.argv, reason="This dataset takes a long time to prepare."
             ),
         )
-        if dataset in (tvd.ImageNet,)
+        if dataset in (tvd.ImageNet, tvd.Places365)
         else dataset
         for dataset in datasets_to_preparation_function
     ],
