@@ -11,23 +11,24 @@ from typing_extensions import Concatenate
 
 from mila_datamodules.cli.utils import is_local_main, runs_on_local_main_process_first
 
-from .types import VD, P, VD_co
+from .types import D, D_co, P
 
 logger = get_logger(__name__)
 # from simple_parsing import ArgumentParser
 
 
-class PrepareVisionDataset(Protocol[VD_co, P]):
+class PrepareDatasetFn(Protocol[D_co, P]):
     def __call__(
         self,
         root: str | Path,
+        /,
         *dataset_args: P.args,
         **dataset_kwargs: P.kwargs,
     ) -> str:
         raise NotImplementedError
 
 
-class CallDatasetConstructor(PrepareVisionDataset[VD_co, P]):
+class CallDatasetConstructor(PrepareDatasetFn[D_co, P]):
     """Function that calls the dataset constructor with the given arguments.
 
     Parameters
@@ -45,7 +46,7 @@ class CallDatasetConstructor(PrepareVisionDataset[VD_co, P]):
 
     def __init__(
         self,
-        dataset_type: Callable[Concatenate[str, P], VD_co],
+        dataset_type: Callable[Concatenate[str, P], D_co],
         extract_and_verify_archives: bool = False,
         get_index: int | None = 0,
     ):
@@ -71,22 +72,22 @@ class CallDatasetConstructor(PrepareVisionDataset[VD_co, P]):
         if self.extract_and_verify_archives:
             dataset_kwargs["download"] = True
 
-        # TODO:
         logger.info(
             f"Extracting the dataset archives in {root}."
             if self.extract_and_verify_archives
             else f"Checking if the dataset is properly set up in {root}."
         )
         fn_name = getattr(self.dataset_type, "__name__", str(self.dataset_type))
-        message = f"Calling {fn_name}({root!r}"
+        fn_call_message = f"{fn_name}({root!r}"
         if dataset_args or dataset_kwargs:
-            message += ", "
+            fn_call_message += ", "
         if dataset_args:
-            message += ", ".join(f"{v!r}" for v in dataset_args)
+            fn_call_message += ", ".join(f"{v!r}" for v in dataset_args)
         if dataset_kwargs:
-            message += ", ".join(f"{k}={v!r}" for k, v in dataset_kwargs.items())
-        message += ")"
-        logger.debug(message)
+            fn_call_message += ", ".join(f"{k}={v!r}" for k, v in dataset_kwargs.items())
+        fn_call_message += ")"
+        logger.debug(f"Calling {fn_call_message}")
+
         dataset_instance = self.dataset_type(str(root), *dataset_args, **dataset_kwargs)
         if is_local_main():
             logger.info(f"Successfully read dataset:\n{dataset_instance}")
@@ -123,7 +124,7 @@ def dataset_files_in_source_dir(
     }
 
 
-class MakeSymlinksToDatasetFiles(PrepareVisionDataset[VD_co, P]):
+class MakeSymlinksToDatasetFiles(PrepareDatasetFn[D_co, P]):
     """Creates symlinks to the datasets' files in the `root` directory."""
 
     def __init__(
@@ -167,7 +168,7 @@ class MakeSymlinksToDatasetFiles(PrepareVisionDataset[VD_co, P]):
         return str(root)
 
 
-class ExtractArchives(PrepareVisionDataset[VD_co, P]):
+class ExtractArchives(PrepareDatasetFn[D_co, P]):
     """Extract some archives files in a subfolder of the `root` directory."""
 
     def __init__(self, archives: dict[str, str | Path]):
@@ -200,7 +201,7 @@ class ExtractArchives(PrepareVisionDataset[VD_co, P]):
         return str(root)
 
 
-class MoveFiles(PrepareVisionDataset[VD, P]):
+class MoveFiles(PrepareDatasetFn[D, P]):
     """Reorganize datasets' files in the `root` directory."""
 
     def __init__(self, files: dict[str, str | Path]):
@@ -242,7 +243,7 @@ class MoveFiles(PrepareVisionDataset[VD, P]):
         return str(root)
 
 
-class CopyFiles(PrepareVisionDataset[VD, P]):
+class CopyFiles(PrepareDatasetFn[D, P]):
     """Copies some files from the cluster to the `root` directory."""
 
     def __init__(
@@ -291,16 +292,16 @@ class CopyFiles(PrepareVisionDataset[VD, P]):
                 logger.debug(f"Copying file {path_on_cluster} -> {dest_path}.")
                 dest_path.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy(path_on_cluster, dest_path)
-                dest_path.chmod(511)
+                dest_path.chmod(0o511)
 
         return str(root)
 
 
-class Compose(PrepareVisionDataset[VD_co, P]):
+class Compose(PrepareDatasetFn[D_co, P]):
     class Stop(Exception):
         pass
 
-    def __init__(self, *callables: PrepareVisionDataset[VD_co, P]) -> None:
+    def __init__(self, *callables: PrepareDatasetFn[D_co, P]) -> None:
         self.callables = callables
 
     @runs_on_local_main_process_first
@@ -320,7 +321,7 @@ class Compose(PrepareVisionDataset[VD_co, P]):
         return str(root)
 
 
-class StopOnSuccess(PrepareVisionDataset[VD, P]):
+class StopOnSuccess(PrepareDatasetFn[D, P]):
     """Raises a special Stop exception when running the given callable doesn't raise an exception.
 
     If an exception of a type matching one in `exceptions` is raised by the function, the exception
@@ -331,7 +332,7 @@ class StopOnSuccess(PrepareVisionDataset[VD, P]):
 
     def __init__(
         self,
-        function: PrepareVisionDataset[VD, P] | Callable[Concatenate[str, P], VD],
+        function: PrepareDatasetFn[D, P] | Callable[Concatenate[str, P], D],
         continue_if_raised: type[Exception] | tuple[type[Exception], ...] = RuntimeError,
     ):
         self.function = function
