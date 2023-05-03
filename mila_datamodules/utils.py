@@ -98,14 +98,14 @@ def replace_arg_defaults(
     return _wrap
 
 
-def copy_fn(src: str | Path, dest: str | Path):
+def copy_fn(src: str | Path, dest: str | Path, mode=0o755):
     """Copies a file/dir from `src` to `dest` and sets the mode of the copy to 644."""
     src_path = Path(src).resolve()
     if src_path.is_dir():
-        os.mkdir(dest, mode=0o644)
+        os.mkdir(dest, mode=mode)
     else:
         shutil.copyfile(src_path, dest, follow_symlinks=False)
-        os.chmod(dest, 0o644)
+        os.chmod(dest, mode)
 
 
 def chmod_recursive(path: str | Path, mode: int):

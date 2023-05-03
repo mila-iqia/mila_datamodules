@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import shlex
 import shutil
+import subprocess
 from logging import getLogger as get_logger
 from pathlib import Path
 from shutil import unpack_archive
@@ -10,6 +12,7 @@ from zipfile import ZipFile
 from typing_extensions import Concatenate
 
 from mila_datamodules.cli.utils import is_local_main, runs_on_local_main_process_first
+from mila_datamodules.utils import copy_fn
 
 from .types import D, D_co, P
 
@@ -66,11 +69,10 @@ class CallDatasetConstructor(PrepareDatasetFn[D_co, P]):
 
         Returns `root` (as a string).
         """
-        Path(root).mkdir(parents=True, exist_ok=True)
-
         dataset_kwargs = dataset_kwargs.copy()  # type: ignore
         if self.extract_and_verify_archives:
             dataset_kwargs["download"] = True
+            Path(root).mkdir(parents=True, exist_ok=True)
 
         logger.info(
             f"Extracting the dataset archives in {root}."
@@ -152,20 +154,23 @@ class MakeSymlinksToDatasetFiles(PrepareDatasetFn[D_co, P]):
     @runs_on_local_main_process_first
     def __call__(self, root: str | Path, *dataset_args: P.args, **dataset_kwargs: P.kwargs) -> str:
         root = Path(root)
-        root.mkdir(parents=True, exist_ok=True)
-        logger.info(f"Making symlinks in {root} pointing to the dataset files on the network.")
-        for relative_path, dataset_file in self.relative_paths_to_files.items():
-            assert dataset_file.exists(), dataset_file
-            # Make a symlink in the local scratch directory to the archive on the network.
-            archive_symlink = root / relative_path
-            if archive_symlink.exists():
-                continue
-
-            archive_symlink.parent.mkdir(parents=True, exist_ok=True)
-            archive_symlink.symlink_to(dataset_file)
-            logger.debug(f"Making link from {archive_symlink} -> {dataset_file}")
-
+        make_symlinks_to_dataset_files(root, self.relative_paths_to_files)
         return str(root)
+
+
+def make_symlinks_to_dataset_files(root: Path, relative_paths_to_files: dict[str, Path]):
+    root.mkdir(parents=True, exist_ok=True)
+    logger.info(f"Making symlinks in {root} pointing to the dataset files on the network.")
+    for relative_path, dataset_file in relative_paths_to_files.items():
+        assert dataset_file.exists(), dataset_file
+        # Make a symlink in the local scratch directory to the archive on the network.
+        archive_symlink = root / relative_path
+        if archive_symlink.exists():
+            continue
+
+        archive_symlink.parent.mkdir(parents=True, exist_ok=True)
+        archive_symlink.symlink_to(dataset_file)
+        logger.debug(f"Making link from {archive_symlink} -> {dataset_file}")
 
 
 class ExtractArchives(PrepareDatasetFn[D_co, P]):
@@ -217,7 +222,7 @@ class MoveFiles(PrepareDatasetFn[D, P]):
             the file. If not, the destination will be used as the target for the move.
             The files are moved in sequence. The destination's path should be relative.
         """
-        self.files = [(glob, Path(path)) for glob, path in files.items()]
+        self.files = {source: Path(destination) for source, destination in files.items()}
 
     @runs_on_local_main_process_first
     def __call__(
@@ -227,20 +232,41 @@ class MoveFiles(PrepareDatasetFn[D, P]):
         **dataset_kwargs: P.kwargs,
     ) -> str:
         root = Path(root)
-        for glob, dest in self.files:
-            assert not dest.is_absolute()
-            dest = root / dest
-            # TODO: Does this assume that the keys are globs? IF so, that's not intended, we should
-            # be able to pass {"a.zip": "b.zip"}, not just globs.
-            for entry in root.glob(glob):
-                dest.parent.mkdir(parents=True, exist_ok=True)
-                # Avoid replacing dest by itself
-                if dest.name == "*" and entry != dest.parent:
-                    entry.replace(dest.parent / entry.name)
-                elif dest.name != "*" and entry != dest:
-                    entry.replace(dest)
-
+        move_files(root, self.files)
         return str(root)
+
+
+def move_files(root: Path, files: dict[str, Path]) -> None:
+    logger.info(f"Moving files in {root}...")
+    for source, dest in files.items():
+        assert not dest.is_absolute()
+        source = str(source)
+
+        dest = root / dest
+        # source = root / source
+
+        logger.debug(f"Moving {source} to {dest}")
+        # # TODO: Does this assume that the keys are globs? IF so, that's not intended, we should
+        # # be able to pass {"a.zip": "b.zip"}, not just globs.
+        if "*" not in source:
+            logger.debug(f"Moving {source} to {dest}")
+            shutil.move(source, dest)
+            continue
+
+        for entry in root.glob(str(source)):
+            dest_dir = dest.parent
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            # Avoid replacing dest by itself
+            # Move all files in the 'dest' directory to the  directory
+            if dest.name == "*" and entry != dest_dir:
+                dest_path = dest_dir / entry
+                logger.debug(f"Moving {entry} to {dest_path}")
+                logger.debug(f"permissions on {entry}: {oct((dest_path).stat().st_mode)}")
+                entry.replace(dest_path.name)
+            elif dest.name != "*" and entry != dest:
+                logger.debug(f"Moving {entry} to {dest}")
+                logger.debug(f"permissions on {entry}: {oct((dest).stat().st_mode)}")
+                entry.replace(dest)
 
 
 class CopyFiles(PrepareDatasetFn[D, P]):
@@ -254,6 +280,7 @@ class CopyFiles(PrepareDatasetFn[D, P]):
         self.relative_paths_to_cluster_path = {
             relative_path: Path(path) for relative_path, path in relative_paths_to_files.items()
         }
+        # Note; this could be a lazy Path().glob object perhaps?
         self.ignore_dirs = ignore_dirs
 
     @runs_on_local_main_process_first
@@ -265,36 +292,51 @@ class CopyFiles(PrepareDatasetFn[D, P]):
     ):
         root = Path(root)
         logger.info(f"Copying files from the network filesystem to {root}.")
-        assert all(
-            path_on_cluster.exists()
-            for path_on_cluster in self.relative_paths_to_cluster_path.values()
-        )
-
-        for relative_path, path_on_cluster in self.relative_paths_to_cluster_path.items():
-            dest_path = root / relative_path
-            if dest_path.exists():
-                logger.debug(
-                    f"Skipping copying {path_on_cluster} as it already exists at {dest_path}."
-                )
-                continue
-
-            if path_on_cluster.is_dir():
-                logger.debug(f"Copying directory {path_on_cluster} -> {dest_path}.")
-
-                dest_path.mkdir(parents=True, exist_ok=True)
-                shutil.copytree(
-                    path_on_cluster,
-                    dest_path,
-                    ignore=shutil.ignore_patterns(*self.ignore_dirs),
-                    dirs_exist_ok=True,
-                )
-            else:
-                logger.debug(f"Copying file {path_on_cluster} -> {dest_path}.")
-                dest_path.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy(path_on_cluster, dest_path)
-                dest_path.chmod(0o511)
-
+        copy_files(root, self.relative_paths_to_cluster_path, self.ignore_dirs)
         return str(root)
+
+
+def copy_files(root: Path, relative_paths_to_cluster_paths: dict, ignore_dirs: Iterable[str]):
+    assert all(
+        path_on_cluster.exists() for path_on_cluster in relative_paths_to_cluster_paths.values()
+    )
+
+    for relative_path, path_on_cluster in relative_paths_to_cluster_paths.items():
+        dest_path = root / relative_path
+        if relative_path == ".":
+            logger.warning(
+                RuntimeWarning(
+                    f"Don't set '.' as the relative path for a copy. Use the folder name."
+                    f"(Using {path_on_cluster.name} as the destination."
+                )
+            )
+            relative_path = path_on_cluster.name
+
+        if dest_path.exists():
+            logger.debug(
+                f"Skipping copying {path_on_cluster} as it already exists at {dest_path}."
+            )
+            continue
+
+        if path_on_cluster.is_dir():
+            logger.debug(f"Copying directory {path_on_cluster} -> {dest_path}.")
+
+            dest_path.mkdir(parents=True, exist_ok=True)
+            shutil.copytree(
+                path_on_cluster,
+                dest_path,
+                ignore=shutil.ignore_patterns(*ignore_dirs),
+                dirs_exist_ok=True,
+                copy_function=copy_fn,
+            )
+            # TODO: Figure out the right way to do this here in Python directly. Nothing seems
+            # to work.
+            subprocess.check_call(shlex.split(f"chmod -R a+w {dest_path}"))
+        else:
+            logger.debug(f"Copying file {path_on_cluster} -> {dest_path}.")
+            dest_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(path_on_cluster, dest_path)
+            dest_path.chmod(0o755)
 
 
 class Compose(PrepareDatasetFn[D_co, P]):

@@ -12,8 +12,6 @@ from pathlib import Path
 from shutil import which
 from typing import TypeVar
 
-from mila_datamodules.clusters.env_variables import run_job_step_to_get_slurm_env_variables
-
 T = TypeVar("T")
 
 logger = get_logger(__name__)
@@ -77,6 +75,8 @@ def _get_env_var(
     var_name: str, default: T | None = None, mock_var_prefix: str = "FAKE_"
 ) -> str | T:
     if in_job_but_not_in_job_step_so_no_slurm_env_vars():
+        from mila_datamodules.clusters.env_variables import run_job_step_to_get_slurm_env_variables
+
         run_job_step_to_get_slurm_env_variables()
     if var_name in os.environ:
         return os.environ[var_name]

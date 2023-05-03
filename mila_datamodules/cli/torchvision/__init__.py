@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import dataclasses
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import torchvision.datasets as tvd
@@ -7,10 +9,11 @@ import torchvision.datasets as tvd
 from mila_datamodules.cli.blocks import (
     CallDatasetConstructor,
     Compose,
+    CopyFiles,
     ExtractArchives,
     MakeSymlinksToDatasetFiles,
     MoveFiles,
-    PrepareVisionDataset,
+    PrepareDatasetFn,
     StopOnSuccess,
 )
 from mila_datamodules.cli.dataset_args import DatasetArguments
@@ -21,6 +24,7 @@ from mila_datamodules.cli.torchvision.coco import (
 )
 from mila_datamodules.cli.torchvision.places365 import Places365Args, prepare_places365
 from mila_datamodules.clusters.cluster import Cluster
+from mila_datamodules.clusters.utils import get_slurm_tmpdir
 
 # NOTE: For some datasets, we have datasets stored in folders with the same structure. This here is
 # only really used to prevent repeating a bit of code in the dictionary below.
@@ -33,7 +37,7 @@ standardized_torchvision_datasets_dir = {
 # NOTE: Repeating the clusters for each dataset might look a bit tedious and repetitive, but I
 # think that's fine for now.
 
-prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareVisionDataset]] = {
+prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareDatasetFn]] = {
     tvd.Caltech101: {
         cluster: Compose(
             StopOnSuccess(CallDatasetConstructor(tvd.Caltech101)),
@@ -128,6 +132,8 @@ prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareVisionDataset]] = 
         # )
         for cluster, datasets_dir in standardized_torchvision_datasets_dir.items()
     },
+    # TODO: We could further speed things up by only preparing the version that is required by the
+    # user (within '2017', '2018', '2019', '2021_train', '2021_train_mini', '2021_valid')
     tvd.INaturalist: {
         cluster: Compose(
             StopOnSuccess(CallDatasetConstructor(tvd.INaturalist)),
@@ -237,29 +243,46 @@ prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareVisionDataset]] = 
         )
         for cluster, datasets_dir in standardized_torchvision_datasets_dir.items()
     },
-    # TODO: This dataset requires some constructor arguments: `annotation_path`, `frames_per_clip`.
+    # NOTE: This dataset requires a `pip install av`, otherwise we get:
+    # ImportError: PyAV is not installed, and is necessary for the video operations in torchvision.
+    # See https://github.com/mikeboers/PyAV#installation for instructions on how to
+    # install PyAV on your system.
     tvd.UCF101: {
         cluster: Compose(
-            StopOnSuccess(CallDatasetConstructor(tvd.UCF101)),
+            StopOnSuccess(
+                lambda root, *args, **kwargs: CallDatasetConstructor(tvd.UCF101)(
+                    str(Path(root) / "UCF-101"), *args, **kwargs
+                ),
+                # CallDatasetConstructor(tvd.UCF101),
+                continue_if_raised=(FileNotFoundError,),
+            ),
             MakeSymlinksToDatasetFiles(
                 {
                     p: f"{datasets_dir}/ucf101/{p}"
                     for p in [
-                        "UCF101_STIP_Part1.rar"
-                        "UCF101TrainTestSplits-DetectionTask.zip"
-                        "UCF101.rar"
-                        "UCF101_STIP_Part2.rar"
-                        "UCF101TrainTestSplits-RecognitionTask.zip"
+                        "UCF101_STIP_Part1.rar",
+                        "UCF101TrainTestSplits-DetectionTask.zip",
+                        "UCF101.rar",
+                        "UCF101_STIP_Part2.rar",
+                        "UCF101TrainTestSplits-RecognitionTask.zip",
                     ]
                 }
             ),
+            CopyFiles({"UCF-101": f"{datasets_dir}/ucf101.var/ucf101_torchvision/UCF-101"}),
+            # TODO: Need to move all the folders from the UCF-101 folder to the root.
+            # MoveFiles({"UCF-101/*": "."}),
             ExtractArchives(
                 {
-                    "UCF101.rar": ".",
+                    # "UCF101.rar": ".",  # todo: support .rar files if possible
                     "UCF101TrainTestSplits-RecognitionTask.zip": ".",
                 }
             ),
-            CallDatasetConstructor(tvd.UCF101),
+            # TODO: Weird, but we need to add this "UCF-101" folder to the "root" argument for it
+            # to work.
+            # lambda root, *args, **kwargs: str(Path(root) / "UCF-101"),
+            lambda root, *args, **kwargs: CallDatasetConstructor(tvd.UCF101)(
+                str(Path(root) / "UCF-101"), *args, **kwargs
+            ),
         )
         for cluster, datasets_dir in standardized_torchvision_datasets_dir.items()
     },
@@ -296,3 +319,23 @@ prepare_torchvision_datasets[tvd.Places365] = {
     cluster: prepare_places365(cluster.torchvision_datasets_dir) for cluster in [Cluster.Mila]
 }
 command_line_args_for_dataset[tvd.Places365] = Places365Args
+
+
+@dataclass
+class UCF101Args(DatasetArguments[tvd.UCF101]):
+    frames_per_clip: int  # number of frames in a clip.
+
+    root: Path = field(default_factory=lambda: get_slurm_tmpdir() / "datasets")
+
+    annotation_path: str = "ucfTrainTestlist"
+    """path to the folder containing the split files; see docstring above for download instructions
+    of these files."""
+
+    def to_dataset_kwargs(self) -> dict:
+        dataset_kwargs = dataclasses.asdict(self)
+        dataset_kwargs["annotation_path"] = str(self.root / dataset_kwargs["annotation_path"])
+        return dataset_kwargs
+
+
+command_line_args_for_dataset[tvd.UCF101] = UCF101Args
+command_line_args_for_dataset[tvd.UCF101] = UCF101Args

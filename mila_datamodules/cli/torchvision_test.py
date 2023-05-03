@@ -11,7 +11,7 @@ from torchvision.datasets import VisionDataset
 from typing_extensions import Concatenate, ParamSpec
 
 from mila_datamodules.cli.dataset_args import DatasetArguments
-from mila_datamodules.cli.torchvision import PrepareVisionDataset, prepare_torchvision_datasets
+from mila_datamodules.cli.torchvision import PrepareDatasetFn, prepare_torchvision_datasets
 from mila_datamodules.cli.types import VD
 from mila_datamodules.clusters import CURRENT_CLUSTER
 
@@ -29,7 +29,7 @@ datasets_to_preparation_function: dict[type[VisionDataset], Callable[..., str]] 
 
 def get_preparation_function(
     dataset_type: Callable[Concatenate[str, P], VD],
-) -> PrepareVisionDataset[VD, P]:
+) -> PrepareDatasetFn[VD, P]:
     return datasets_to_preparation_function[dataset_type]
 
 
