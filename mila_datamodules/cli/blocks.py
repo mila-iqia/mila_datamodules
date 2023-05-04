@@ -240,33 +240,34 @@ def move_files(root: Path, files: dict[str, Path]) -> None:
     logger.info(f"Moving files in {root}...")
     for source, dest in files.items():
         assert not dest.is_absolute()
-        source = str(source)
-
         dest = root / dest
-        # source = root / source
 
         logger.debug(f"Moving {source} to {dest}")
-        # # TODO: Does this assume that the keys are globs? IF so, that's not intended, we should
-        # # be able to pass {"a.zip": "b.zip"}, not just globs.
-        if "*" not in source:
+
+        # Move a single file or directory. Simple.
+        if "*" not in source and "*" not in dest.name:
+            source = root / source
             logger.debug(f"Moving {source} to {dest}")
             shutil.move(source, dest)
             continue
 
-        for entry in root.glob(str(source)):
-            dest_dir = dest.parent
-            dest_dir.mkdir(parents=True, exist_ok=True)
-            # Avoid replacing dest by itself
-            # Move all files in the 'dest' directory to the  directory
-            if dest.name == "*" and entry != dest_dir:
-                dest_path = dest_dir / entry
-                logger.debug(f"Moving {entry} to {dest_path}")
-                logger.debug(f"permissions on {entry}: {oct((dest_path).stat().st_mode)}")
-                entry.replace(dest_path.name)
-            elif dest.name != "*" and entry != dest:
-                logger.debug(f"Moving {entry} to {dest}")
-                logger.debug(f"permissions on {entry}: {oct((dest).stat().st_mode)}")
-                entry.replace(dest)
+        # TODO: Debugging.
+        assert source.endswith("*"), source
+        dest_dir = dest.parent if dest.name == "*" else dest
+        dest_dir.mkdir(parents=True, exist_ok=True)
+
+        # Move things with a glob pattern. A bit more difficult.
+        for source_file_or_dir in list(root.glob(str(source))):
+            assert source_file_or_dir.exists(), source_file_or_dir
+            dest_path = dest_dir / source_file_or_dir.name
+            if dest_path.exists():
+                continue
+            if dest_dir.is_relative_to(source_file_or_dir):
+                # Don't move a directory into itself.
+                # (e.g. with KMNIST, there's a MoveFiles({"*": "KMNIST/raw/*"}).
+                continue
+            logger.debug(f"Moving {source_file_or_dir} in {dest_dir}")
+            shutil.move(source_file_or_dir, dest_dir)
 
 
 class CopyFiles(PrepareDatasetFn[D, P]):

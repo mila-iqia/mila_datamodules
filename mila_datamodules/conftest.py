@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import os
 import random
+from pathlib import Path
 
 import numpy as np
 import pytest
 import torch
-from pathlib import Path
-from mila_datamodules.clusters.utils import on_slurm_cluster, get_scratch_dir, get_slurm_tmpdir
+
+from mila_datamodules.clusters.utils import get_scratch_dir, get_slurm_tmpdir, on_slurm_cluster
 
 TEST_SEED = 123
 
