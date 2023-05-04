@@ -4,7 +4,6 @@ import argparse
 import logging
 from dataclasses import asdict
 from logging import getLogger as get_logger
-from pathlib import Path
 from typing import Callable
 
 import rich.logging
@@ -29,6 +28,7 @@ from mila_datamodules.cli.huggingface import (
     prepare_huggingface_dataset_fns,
 )
 from mila_datamodules.cli.torchvision import (
+    VisionDatasetArgs,
     command_line_args_for_dataset,
     prepare_torchvision_datasets,
 )
@@ -68,16 +68,8 @@ def add_torchvision_prepare_args(
         dataset_parser = subparsers.add_parser(
             dataset_name, help=f"Prepare the {dataset_name} dataset"
         )
-
-        # IDEA: Add a way for the dataset preparation thingy to add its own arguments
-        # (e.g. --split='train'/'val')
-        command_line_args = command_line_args_for_dataset.get(dataset_type)
-        if command_line_args:
-            dataset_parser.add_arguments(command_line_args, dest="dataset_preparation")
-        else:
-            dataset_parser.add_argument(
-                "--root", type=Path, default=get_slurm_tmpdir() / "datasets"
-            )
+        command_line_args = command_line_args_for_dataset.get(dataset_type, VisionDatasetArgs)
+        dataset_parser.add_arguments(command_line_args, dest="dataset_preparation")
 
         # prepare_dataset_fn.add_arguments(dataset_parser)
         dataset_parser.set_defaults(function=prepare_dataset_fn)
@@ -135,6 +127,12 @@ def prepare(args):
 
     # TODO: Dispatch what to do with `args` (and the output of the function) in a smarter way,
     # based on which module was selected.
+    if "prepare_fn" not in args_dict or not callable(args_dict["prepare_fn"]):
+        raise RuntimeError(
+            "The parsing function isn't configured correctly. It should call "
+            "parser.set_defaults(prepare_fn=some_callable) where "
+            "some_callable: Callable[[dict], Any]"
+        )
     prepare_fn: Callable[[dict], None] = args_dict.pop("prepare_fn")
     prepare_fn(args_dict)
 
@@ -142,7 +140,7 @@ def prepare(args):
 def prepare_torchvision(args_dict: dict):
     dataset: str = args_dict.pop("dataset")
     function: Callable = args_dict.pop("function")
-    dataset_arguments = args_dict.pop("dataset_preparation", None)
+    dataset_arguments = args_dict.pop("dataset_preparation")
 
     kwargs = args_dict
 
@@ -157,23 +155,14 @@ def prepare_torchvision(args_dict: dict):
     logger.setLevel(logging.INFO)
 
     new_root = output
-    # TODO: For some datasets (e.g. Coco), it's not actually true! We would like to tell users
-    # how exactly the dataset can be created, for instance:
-    # ```
-    # tvd.CocoCaptions(
-    #     root=f"{os.environ['SLURM_TMPDIR']}/datasets/train2017",
-    #     annFile=f"{os.environ['SLURM_TMPDIR']}/datasets/annotations/stuff_train2017.json"
-    # )
-    # ```
+
     import torchvision.datasets
 
     # FIXME: Ugly AF, just there for the demo:
     dataset_class = {
         k: v for k, v in vars(torchvision.datasets).items() if k.lower() == dataset
     }.popitem()[1]
-    # if isinstance(dataset_arguments, CocoDetectionArgs):
-    #     code_snippet = dataset_arguments.code_to_use()
-    # else:
+
     kwargs.update(root=new_root)
     code_snippet = (
         f"{dataset_class.__name__}(" + ", ".join(f"{k}={v!r}" for k, v in kwargs.items()) + ")"

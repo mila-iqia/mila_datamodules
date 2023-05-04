@@ -23,6 +23,7 @@ from mila_datamodules.cli.torchvision.coco import (
     PrepareCocoDetection,
 )
 from mila_datamodules.cli.torchvision.places365 import Places365Args, prepare_places365
+from mila_datamodules.cli.types import VD
 from mila_datamodules.clusters.cluster import Cluster
 from mila_datamodules.clusters.utils import get_slurm_tmpdir
 
@@ -306,6 +307,12 @@ prepare_torchvision_datasets[tvd.CocoCaptions] = {
     )
     for cluster in [Cluster.Mila, Cluster.Beluga]
 }
+
+
+@dataclass
+class VisionDatasetArgs(DatasetArguments[VD]):
+    root: Path = field(default_factory=lambda: get_slurm_tmpdir() / "datasets")
+
 
 command_line_args_for_dataset: dict[
     type[tvd.VisionDataset], DatasetArguments | type[DatasetArguments]
