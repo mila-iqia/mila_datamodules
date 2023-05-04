@@ -25,7 +25,7 @@ def pytest_xdist_auto_num_workers(config):
     """Return the number of workers to spawn when ``--numprocesses=auto`` is given in the command-
     line."""
     if on_slurm_cluster():
-        return int(os.environ["SLURM_CPUS_PER_TASK"])
+        return int(os.environ.get("SLURM_CPUS_PER_TASK", os.environ["SLURM_CPUS_ON_NODE"]))
     return os.cpu_count()
 
 

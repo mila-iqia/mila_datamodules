@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 import pytest
+import simple_parsing
 import torchvision.datasets as tvd
 from torchvision.datasets import VisionDataset
 from typing_extensions import Concatenate, ParamSpec
@@ -33,22 +34,31 @@ def get_preparation_function(
     return datasets_to_preparation_function[dataset_type]
 
 
+command_line_args_for_tests: dict[type[VisionDataset], list[str]] = {
+    tvd.UCF101: ["--frames_per_clip=5"],
+    tvd.INaturalist: ["--version=2021_valid"],
+}
+
+
 @pytest.mark.parametrize(
-    "dataset_type",
+    ("dataset_type", "argv"),
     [
         pytest.param(
             dataset,
+            argv,
             marks=pytest.mark.skipif(
                 "-vvv" not in sys.argv, reason="This dataset takes a long time to prepare."
             ),
         )
         if dataset in (tvd.ImageNet, tvd.Places365)
-        else dataset
+        else (dataset, argv)
         for dataset in datasets_to_preparation_function
+        for argv in command_line_args_for_tests.get(dataset, [""])
     ],
 )
 def test_prepare_dataset(
     dataset_type: Callable[Concatenate[str, P], VD],
+    argv: str | None,
     fake_slurm_tmpdir: Path,
 ):
     dataset_preparation_function = get_preparation_function(dataset_type=dataset_type)
@@ -58,12 +68,16 @@ def test_prepare_dataset(
     # needs `annFile`)
     from mila_datamodules.cli.torchvision import command_line_args_for_dataset
 
-    args: DatasetArguments | None = None
+    args: DatasetArguments[VD] | None = None
     command_line_arguments = command_line_args_for_dataset.get(dataset_type)
     if command_line_arguments:
-        args: DatasetArguments[VD]
         if isinstance(command_line_arguments, type):
-            args = command_line_arguments()
+            if not argv:
+                args = command_line_arguments(root=fake_slurm_tmpdir)
+            else:
+                args = simple_parsing.parse(
+                    f"--root={fake_slurm_tmpdir} " + command_line_arguments, args=argv
+                )
         else:
             args = command_line_arguments
         dataset_kwargs = args.to_dataset_kwargs()
@@ -73,7 +87,7 @@ def test_prepare_dataset(
         dataset_kwargs = {}
 
     new_root = dataset_preparation_function(fake_slurm_tmpdir, **dataset_kwargs)
-
+    # FIXME: Just for COCO:
     new_dataset_kwargs = dataset_kwargs.copy()
     dataset_instance = dataset_type(new_root, **new_dataset_kwargs)
     dataset_instance[0]

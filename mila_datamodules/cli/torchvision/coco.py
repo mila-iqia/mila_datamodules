@@ -16,7 +16,7 @@ from mila_datamodules.cli.blocks import (
     MakeSymlinksToDatasetFiles,
     StopOnSuccess,
 )
-from mila_datamodules.cli.dataset_args import DatasetArguments
+from mila_datamodules.cli.torchvision.base import VisionDatasetArgs
 from mila_datamodules.clusters.utils import get_slurm_tmpdir
 
 from ..types import P
@@ -91,7 +91,7 @@ def PrepareCocoCaptions(datasets_dir: Path, variant: CocoVariant, split: CocoSpl
 
 
 @dataclass
-class CocoDetectionArgs(DatasetArguments[tvd.CocoDetection]):
+class CocoDetectionArgs(VisionDatasetArgs[tvd.CocoDetection]):
     """Command-line arguments used when preparing the CocoCaptions dataset."""
 
     root: Path = field(default_factory=lambda: get_slurm_tmpdir() / "datasets")
@@ -112,6 +112,11 @@ class CocoDetectionArgs(DatasetArguments[tvd.CocoDetection]):
     split: CocoSplit = "train"
     """Which split to prepare."""
 
+    def __post_init__(self):
+        if not self.annFile:
+            annFile = f"annotations/{self.variant}_{self.split}2017.json"
+            self.annFile = f"{self.root}/{annFile}"
+
     def to_dataset_kwargs(self) -> dict:
         """Returns the dataset constructor arguments that are to be passed to the dataset
         preparation function."""
@@ -125,21 +130,21 @@ class CocoDetectionArgs(DatasetArguments[tvd.CocoDetection]):
 
         return dataset_kwargs
 
-    def code_to_use(self) -> str:
-        slurm_tmpdir = get_slurm_tmpdir()
-        coco_type = "CocoCaptions" if self.variant == "captions" else "CocoDetection"
-        # FIXME: Remove this assertion
-        assert self.root == slurm_tmpdir / "datasets", "fixme"
-        return (
-            f"{coco_type}(\n"
-            + ("""    root=f"{os.environ['SLURM_TMPDIR']}/datasets/""" + f"{self.split}2017,\n")
-            + (
-                """    annFile=f"{os.environ['SLURM_TMPDIR']}/"""
-                + str(Path(self.annFile).relative_to(slurm_tmpdir))
-                + '"\n'
-            )
-            + ")"
-        )
+    # def code_to_use(self) -> str:
+    #     slurm_tmpdir = get_slurm_tmpdir()
+    #     coco_type = "CocoCaptions" if self.variant == "captions" else "CocoDetection"
+    #     # FIXME: Remove this assertion
+    #     assert self.root == slurm_tmpdir / "datasets", "fixme"
+    #     return (
+    #         f"{coco_type}(\n"
+    #         + ("""    root=f"{os.environ['SLURM_TMPDIR']}/datasets/""" + f"{self.split}2017,\n")
+    #         + (
+    #             """    annFile=f"{os.environ['SLURM_TMPDIR']}/"""
+    #             + str(Path(self.annFile).relative_to(slurm_tmpdir))
+    #             + '"\n'
+    #         )
+    #         + ")"
+    #     )
 
 
 @dataclass

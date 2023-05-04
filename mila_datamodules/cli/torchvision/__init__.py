@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import torchvision.datasets as tvd
+from typing_extensions import Literal
 
 from mila_datamodules.cli.blocks import (
     CallDatasetConstructor,
@@ -17,13 +18,14 @@ from mila_datamodules.cli.blocks import (
     StopOnSuccess,
 )
 from mila_datamodules.cli.dataset_args import DatasetArguments
+from mila_datamodules.cli.torchvision.base import VisionDatasetArgs
 from mila_datamodules.cli.torchvision.coco import (
+    CocoCaptionArgs,
     CocoDetectionArgs,
     PrepareCocoCaptions,
     PrepareCocoDetection,
 )
 from mila_datamodules.cli.torchvision.places365 import Places365Args, prepare_places365
-from mila_datamodules.cli.types import VD
 from mila_datamodules.clusters.cluster import Cluster
 from mila_datamodules.clusters.utils import get_slurm_tmpdir
 
@@ -309,16 +311,11 @@ prepare_torchvision_datasets[tvd.CocoCaptions] = {
 }
 
 
-@dataclass
-class VisionDatasetArgs(DatasetArguments[VD]):
-    root: Path = field(default_factory=lambda: get_slurm_tmpdir() / "datasets")
-
-
 command_line_args_for_dataset: dict[
-    type[tvd.VisionDataset], DatasetArguments | type[DatasetArguments]
+    type[tvd.VisionDataset], VisionDatasetArgs | type[VisionDatasetArgs]
 ] = {
-    tvd.CocoDetection: CocoDetectionArgs(variant="stuff"),
-    tvd.CocoCaptions: CocoDetectionArgs(variant="captions"),
+    tvd.CocoDetection: CocoDetectionArgs,
+    tvd.CocoCaptions: CocoCaptionArgs,
 }
 
 
@@ -345,4 +342,17 @@ class UCF101Args(DatasetArguments[tvd.UCF101]):
 
 
 command_line_args_for_dataset[tvd.UCF101] = UCF101Args
-command_line_args_for_dataset[tvd.UCF101] = UCF101Args
+
+
+@dataclass
+class INaturalistArgs(VisionDatasetArgs):
+    version: Literal[
+        "2017", "2018", "2019", "2021_train", "2021_train_mini", "2021_valid"
+    ] = "2021_train"
+    """Which version of the dataset to prepare.
+
+    Note, only the 2021 versions appear to be supported on the Mila cluster atm.
+    """
+
+
+command_line_args_for_dataset[tvd.INaturalist] = INaturalistArgs
