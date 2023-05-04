@@ -87,7 +87,6 @@ def test_prepare_dataset(
         dataset_kwargs = {}
 
     new_root = dataset_preparation_function(fake_slurm_tmpdir, **dataset_kwargs)
-    # FIXME: Just for COCO:
     new_dataset_kwargs = dataset_kwargs.copy()
     dataset_instance = dataset_type(new_root, **new_dataset_kwargs)
     dataset_instance[0]
