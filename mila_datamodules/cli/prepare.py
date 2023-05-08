@@ -185,6 +185,7 @@ def prepare_torchvision(args_dict: dict):
 
 
 def prepare_huggingface(args_dict: dict):
+    args_dict.pop("dataset")
     function: Callable = args_dict.pop("function")
     dataset_arguments = args_dict.pop("dataset_preparation", DatasetArguments())
 

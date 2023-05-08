@@ -1,4 +1,4 @@
-#!/home/mila/n/normandf/.conda/envs/datamodules/bin/python3
+#!/home/mila/n/normandf/.conda/envs/datamodules/bin/python
 """Sets up a user cache directory for commonly used libraries, while reusing shared cache entries.
 
 Use this to avoid having to download files to the $HOME directory, as well as to remove
@@ -161,6 +161,7 @@ def set_striping_config_for_dir(dir: Path, num_targets: int = 4, chunksize: str 
 
     NOTE: This only affects the files that are added in this directory *after* this command is ran.
     """
+    logger.info(f"Setting the striping config for {dir}")
     output = subprocess.check_output(
         shlex.split(
             f"beegfs-ctl --cfgFile=/etc/beegfs/scratch.d/beegfs-client.conf --setpattern "
@@ -168,7 +169,6 @@ def set_striping_config_for_dir(dir: Path, num_targets: int = 4, chunksize: str 
         ),
         encoding="utf-8",
     )
-    logger.info(f"Set the striping config for {dir}")
     logger.debug(output)
 
 
@@ -327,7 +327,7 @@ def create_links(user_cache_dir: Path, shared_cache_dir: Path):
     # TODO: Using `shutil.copytree` raises a bunch of errors at the end. I'm not sure why.
     # Using the more direct method below instead. One disadvantage is that we can't really use
     # `shutil.ignore_dirs` which would be useful to ignore some directories in the shared cache.
-
+    logger.info(f"Creating symlinks in {user_cache_dir} to files in {shared_cache_dir}...")
     # shutil.copytree(
     #     shared_cache_dir,
     #     user_cache_dir,
@@ -356,7 +356,7 @@ def create_links(user_cache_dir: Path, shared_cache_dir: Path):
             continue
 
         if not path_in_user_cache.exists():
-            logger.info(f"Creating a new symlink at {path_in_user_cache}")
+            logger.debug(f"Creating a new symlink at {path_in_user_cache}")
             path_in_user_cache.symlink_to(path_in_shared_cache)
             continue
 
