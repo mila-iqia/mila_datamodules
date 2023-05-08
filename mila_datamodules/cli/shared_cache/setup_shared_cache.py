@@ -11,9 +11,8 @@ user cache directory.
 The shared cache directory should be readable (e.g. a directory containing frequently-downloaded
 weights/checkpoints, managed by the IT/IDT Team at Mila).
 
-TODO:
-This command also sets the environment variables via a block in the `$HOME/.bashrc` file, so that
-these libraries look in the specified user cache for these files.
+This command also sets the environment variables via a block in the `$HOME/.bash_aliases` file.
+This makes these libraries look in the specified user cache for these files.
 """
 from __future__ import annotations
 
@@ -66,44 +65,6 @@ def main(argv: list[str] | None = None):
     setup_cache(user_cache_dir=options.user_cache_dir, shared_cache_dir=options.shared_cache_dir)
 
 
-def _parse_args(argv: list[str] | None) -> Options:
-    try:
-        from simple_parsing import ArgumentParser
-
-        parser = ArgumentParser(description=__doc__)
-        parser.add_arguments(Options, dest="options")
-        args = parser.parse_args()
-
-        options: Options = args.options
-    except ImportError:
-        from argparse import ArgumentParser
-
-        parser = ArgumentParser(description=__doc__)
-        parser.add_argument(
-            "--user_cache_dir",
-            type=Path,
-            default=DEFAULT_USER_CACHE_DIR,
-            help="The user cache directory. Should probably be in $SCRATCH (not $HOME!)",
-        )
-        parser.add_argument(
-            "--shared_cache_dir",
-            type=Path,
-            default=DEFAULT_SHARED_CACHE_DIR,
-            help=(
-                "The shared cache directory. This defaults to the path of the shared cache setup "
-                "by the IDT team on the Mila cluster."
-            ),
-        )
-        args = parser.parse_args(argv)
-        user_cache_dir: Path = args.user_cache_dir
-        shared_cache_dir: Path = args.shared_cache_dir
-        options = Options(
-            user_cache_dir=user_cache_dir,
-            shared_cache_dir=shared_cache_dir,
-        )
-    return options
-
-
 def setup_cache(user_cache_dir: Path, shared_cache_dir: Path) -> None:
     """Set up the user cache directory.
 
@@ -149,6 +110,49 @@ def setup_cache(user_cache_dir: Path, shared_cache_dir: Path) -> None:
     print("DONE!")
 
 
+def _parse_args(argv: list[str] | None) -> Options:
+    try:
+        from simple_parsing import ArgumentParser
+
+        parser = ArgumentParser(description=__doc__)
+        parser.add_arguments(Options, dest="options")
+        # parser.add_argument("-v", "--verbose", action="count", default=0)
+        args = parser.parse_args(argv)
+        # logger.setLevel(max(0, logging.INFO - 10 * args.verbose))
+        options: Options = args.options
+    except ImportError:
+        from argparse import ArgumentParser
+
+        parser = ArgumentParser(description=__doc__)
+        parser.add_argument(
+            "--user_cache_dir",
+            type=Path,
+            default=DEFAULT_USER_CACHE_DIR,
+            help="The user cache directory. Should probably be in $SCRATCH (not $HOME!)",
+        )
+        parser.add_argument(
+            "--shared_cache_dir",
+            type=Path,
+            default=DEFAULT_SHARED_CACHE_DIR,
+            help=(
+                "The shared cache directory. This defaults to the path of the shared cache setup "
+                "by the IDT team on the Mila cluster."
+            ),
+        )
+        # parser.add_argument("-v", "--verbose", action="count", default=0)
+
+        args = parser.parse_args(argv)
+
+        user_cache_dir: Path = args.user_cache_dir
+        shared_cache_dir: Path = args.shared_cache_dir
+        # logger.setLevel(max(0, logging.INFO - 10 * args.verbose))
+        options = Options(
+            user_cache_dir=user_cache_dir,
+            shared_cache_dir=shared_cache_dir,
+        )
+    return options
+
+
 def set_striping_config_for_dir(dir: Path, num_targets: int = 4, chunksize: str = "512k"):
     """Sets up the data striping configuration for the given directory using beegfs-ctl.
 
@@ -165,7 +169,7 @@ def set_striping_config_for_dir(dir: Path, num_targets: int = 4, chunksize: str 
         encoding="utf-8",
     )
     logger.info(f"Set the striping config for {dir}")
-    logger.info(output)
+    logger.debug(output)
 
 
 def set_environment_variables(
@@ -309,7 +313,7 @@ def delete_broken_symlinks_to_shared_cache(user_cache_dir: Path, shared_cache_di
         if file.is_symlink():
             target = file.resolve()
             if _is_child(target, shared_cache_dir) and not target.exists():
-                logger.debug(f"Removing broken symlink: {file}")
+                logger.info(f"Removing broken symlink at {file}")
                 if file.is_dir():
                     file.rmdir()
                 else:
@@ -337,7 +341,18 @@ def create_links(user_cache_dir: Path, shared_cache_dir: Path):
         path_in_user_cache = user_cache_dir / relative_path
 
         if path_in_shared_cache.is_dir():
-            path_in_user_cache.mkdir(exist_ok=True)
+            if not path_in_user_cache.exists():
+                logger.info(f"Creating directory at {path_in_user_cache}")
+                path_in_user_cache.mkdir(exist_ok=True)
+            elif not path_in_user_cache.is_dir():
+                logger.warning(
+                    f"File in the user cache at {path_in_user_cache} where we expected a "
+                    f"directory! Replacing it with a new directory."
+                )
+                path_in_user_cache.unlink()
+                path_in_user_cache.mkdir(exist_ok=True)
+            else:
+                logger.debug(f"Directory already exists at {path_in_user_cache}")
             continue
 
         if not path_in_user_cache.exists():
@@ -355,30 +370,38 @@ def create_links(user_cache_dir: Path, shared_cache_dir: Path):
             continue
 
         # The file in the user cache is a symlink.
-        user_cache_file_target = path_in_user_cache.resolve()
+        user_cache_file_target = path_in_user_cache.readlink()
         if user_cache_file_target == path_in_shared_cache:
             # Symlink from a previous run, nothing to do.
             logger.debug(f"Symlink from a previous run at {path_in_user_cache}")
+            # TODO: Perhaps we could update a progress bar or something?
             continue
 
         if not user_cache_file_target.exists():
             # broken symlink (perhaps from a previous run?)
-            logger.warning(f"Removing broken symlink: {path_in_user_cache}")
+            logger.warning(f"Replacing a broken symlink: {path_in_user_cache}")
             path_in_user_cache.unlink()
             path_in_user_cache.symlink_to(path_in_shared_cache)
             continue
 
         if path_in_shared_cache.is_symlink():
+            # The File in user dir is a symlink that should point to a symlink in the shared cache.
             path_in_shared_cache_target = path_in_shared_cache.resolve()
-            if path_in_shared_cache_target.exists():
-                logger.debug(f"Making a symlink to a symlink at {path_in_user_cache}.")
+            if (
+                path_in_shared_cache_target.exists()
+                and user_cache_file_target == path_in_shared_cache_target
+            ):
+                logger.info(
+                    f"Fixing symlink at {path_in_user_cache} so it points to "
+                    f"{path_in_shared_cache}."
+                )
                 path_in_user_cache.unlink()
                 path_in_user_cache.symlink_to(path_in_shared_cache)
                 continue
             # Shared cache has a broken symlink!
-            logger.error(
-                f"Broken symlink in shared cache at "
-                f"{path_in_shared_cache} -> {path_in_shared_cache_target}"
+            logger.warning(
+                f"Ignoring a broken symlink in shared cache at "
+                f"{path_in_shared_cache} -> {path_in_shared_cache_target}!"
             )
             continue
 
