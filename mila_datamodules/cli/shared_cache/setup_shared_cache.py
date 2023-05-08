@@ -166,14 +166,113 @@ def set_striping_config_for_dir(dir: Path, num_targets: int = 4, chunksize: str 
     )
 
 
-def set_environment_variables(user_cache_dir: Path):
-    """Set the relevant environment variables for each library so they start to use the new cache
-    dir."""
+def set_environment_variables(
+    user_cache_dir: Path, bash_aliases_file: Path = Path("~/.bash_aliases").resolve()
+):
+    """Adds a block of code to ~/.bash_aliases (creating it if necessary) that sets the relevant
+    environment variables for each library so they start to use the new cache dir."""
     # TODO: These changes won't persist. We probably need to add a block of code in .bashrc
+    env_vars = {
+        "HF_HOME": user_cache_dir / "huggingface",
+        "HF_DATASETS_CACHE": user_cache_dir / "huggingface" / "datasets",
+        "TRANSFORMERS_CACHE": user_cache_dir / "huggingface" / "transformers",
+        "TORCH_HOME": user_cache_dir / "torch",
+    }
 
-    os.environ["TORCH_HOME"] = str(user_cache_dir / "torch")
-    os.environ["HF_HOME"] = str(user_cache_dir / "huggingface")
-    os.environ["TRANSFORMERS_CACHE"] = str(user_cache_dir / "huggingface" / "transformers")
+    for key, value in env_vars.items():
+        os.environ[key] = str(value)
+
+    start_flag = "# >>> cache setup >>>"
+    end_flag = "# <<< cache setup <<<"
+    lines_to_add = [
+        start_flag,
+        *(f"export {var_name}={str(var_value)}" for var_name, var_value in env_vars.items()),
+        end_flag,
+    ]
+
+    file = bash_aliases_file
+    if not file.exists():
+        file.touch(0o644)
+        file.write_text("#!/bin/bash\n")
+
+    with open(file, "r") as f:
+        lines = f.readlines()
+
+    block_of_text = "\n".join(lines_to_add) + "\n"
+
+    start_line = start_flag + "\n"
+    end_line = end_flag + "\n"
+
+    _update_start_and_end_flags(file, start_line, end_line)
+
+    if start_line not in lines and end_line not in lines:
+        logger.info(f"Adding a block of text at the bottom of {file}:")
+
+        with open(file, "a") as f:
+            for line in block_of_text.splitlines():
+                logger.debug(line.strip())
+            f.write("\n\n" + block_of_text + "\n")
+
+    elif start_line in lines and end_line in lines:
+        logger.debug(f"Block is already present in {file}.")
+
+        start_index = lines.index(start_line)
+        end_index = lines.index(end_line)
+
+        if all(
+            line.strip() == lines_to_add[i]
+            for i, line in enumerate(lines[start_index : end_index + 1])
+        ):
+            logger.debug("Block has same contents.")
+        else:
+            logger.debug("Updating the context of the block:")
+            new_lines = block_of_text.splitlines(keepends=True)
+            lines[start_index : end_index + 1] = new_lines
+            with open(file, "w") as f:
+                for line in new_lines:
+                    logger.debug(line.strip())
+                f.writelines(lines)
+                if len(lines) == end_index + 1:
+                    # Add an empty line at the end.
+                    f.write("\n")
+    else:
+        logger.error(
+            f"Weird! The block of text is only partially present in {file}! (unable to find both "
+            f"the start and end flags). Doing nothing. \n"
+            f"Consider fixing the {file} file manually and re-running the command, or letting IDT "
+            f"know."
+        )
+
+
+def _update_start_and_end_flags(file: Path, start_flag: str, end_flag: str):
+    # TODO: Keep a list of the previous block flags if we end up changing either the start or end,
+    # so we can identify and replace old blocks too.
+    previous_start_flags = []
+    previous_end_flags = []
+    update_start_and_end_flags = False
+
+    with open(file, "r") as f:
+        lines = f.readlines()
+
+    start_line = start_flag + "\n"
+    end_line = end_flag + "\n"
+
+    for previous_flag in previous_start_flags:
+        if previous_flag + "\n" in lines:
+            index = lines.index(previous_flag + "\n")
+            lines[index] = start_line
+            update_start_and_end_flags = True
+
+    for previous_flag in previous_end_flags:
+        if previous_flag + "\n" in lines:
+            index = lines.index(previous_flag + "\n")
+            lines[index] = end_line
+            update_start_and_end_flags = True
+
+    if update_start_and_end_flags:
+        with open(file, "w") as f:
+            logger.info("Replacing old start and end flags with the new ones.")
+            f.writelines(lines)
 
 
 def is_child(path: Path, parent: Path) -> bool:
