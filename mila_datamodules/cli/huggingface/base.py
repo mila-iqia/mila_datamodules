@@ -63,7 +63,7 @@ def prepare_generic(path: str, name: str, **load_dataset_builder_kwargs) -> HfDa
     slurm_tmpdir = get_slurm_tmpdir()
     from mila_datamodules.cli.shared_cache.setup_shared_cache import logger as setup_cache_logger
 
-    setup_cache_logger.setLevel(logging.WARNING)
+    setup_cache_logger.setLevel(logging.INFO)
     setup_cache_logger.removeHandler(setup_cache_logger.handlers[0])
 
     # Load the dataset under $SCRATCH/cache/huggingface first, since we don't have a shared copy
@@ -91,12 +91,19 @@ def prepare_generic(path: str, name: str, **load_dataset_builder_kwargs) -> HfDa
     dataset_dir = scratch_hf_datasets_cache / path
     relative_path = dataset_dir.relative_to(scratch)
     logger.info(f"Copying dataset from {dataset_dir} -> {slurm_tmpdir / relative_path}")
-    shutil.copytree(
-        scratch / relative_path,
-        slurm_tmpdir / relative_path,
-        symlinks=True,  # TODO: Keep symlinks in source dir as symlinks in destination dir?
-        dirs_exist_ok=True,
-    )
+    try:
+        shutil.copytree(
+            src=scratch / relative_path,
+            dst=slurm_tmpdir / relative_path,
+            symlinks=True,  # TODO: Keep symlinks in source dir as symlinks in destination dir?
+            dirs_exist_ok=True,
+        )
+    except shutil.Error as err:
+        source, dest, messages = zip(*err.args[0])
+        for message in messages:
+            assert isinstance(message, str)
+            if not message.startswith("[Errno 17] File exists"):
+                raise IOError(message)
 
     logger.info("Checking that the dataset was copied correctly to SLURM_TMPDIR...")
     with use_variables(

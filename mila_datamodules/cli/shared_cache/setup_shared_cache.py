@@ -40,7 +40,7 @@ logger.setLevel(logging.INFO)
 
 SCRATCH = Path(os.environ["SCRATCH"])
 DEFAULT_USER_CACHE_DIR = SCRATCH / "cache"
-DEFAULT_SHARED_CACHE_DIR = Path("/network/weights/.shared_cache")
+DEFAULT_SHARED_CACHE_DIR = Path("/network/weights/shared_cache")
 
 
 @dataclass
@@ -65,7 +65,10 @@ def main(argv: list[str] | None = None):
     setup_cache(user_cache_dir=options.user_cache_dir, shared_cache_dir=options.shared_cache_dir)
 
 
-def setup_cache(user_cache_dir: Path, shared_cache_dir: Path) -> None:
+def setup_cache(
+    user_cache_dir: Path = DEFAULT_USER_CACHE_DIR,
+    shared_cache_dir: Path = DEFAULT_SHARED_CACHE_DIR,
+) -> None:
     """Set up the user cache directory.
 
     1. If the user cache directory doesn't exist, creates it.
@@ -320,7 +323,14 @@ def delete_broken_symlinks_to_shared_cache(user_cache_dir: Path, shared_cache_di
                     file.unlink()
 
 
-def create_links(user_cache_dir: Path, shared_cache_dir: Path):
+def _skip_file(path_in_user_cache: Path, path_in_shared_cache: Path) -> bool:
+    if path_in_user_cache.suffix == ".lock":
+        path_in_user_cache.unlink(missing_ok=True)
+        return True
+    return False
+
+
+def create_links(user_cache_dir: Path, shared_cache_dir: Path, skip_file=_skip_file):
     """Create symlinks to the shared cache directory in the user cache directory."""
     # For every file in the shared cache dir, create a (symbolic?) link to it in the user cache dir
 
@@ -336,9 +346,15 @@ def create_links(user_cache_dir: Path, shared_cache_dir: Path):
     #     dirs_exist_ok=True,
     # )
 
+    # TODO: Create the list of all files (exhaust the generator below) and use multiprocessing to
+    # speed this up.
     for path_in_shared_cache in shared_cache_dir.rglob("*"):
         relative_path = path_in_shared_cache.relative_to(shared_cache_dir)
         path_in_user_cache = user_cache_dir / relative_path
+
+        if skip_file(path_in_user_cache, path_in_shared_cache=path_in_shared_cache):
+            logger.debug(f"Skipping {path_in_shared_cache}")
+            continue
 
         if path_in_shared_cache.is_dir():
             if not path_in_user_cache.exists():
@@ -357,6 +373,8 @@ def create_links(user_cache_dir: Path, shared_cache_dir: Path):
 
         if not path_in_user_cache.exists():
             logger.debug(f"Creating a new symlink at {path_in_user_cache}")
+            # NOTE: Remove the file, because it might be a broken symlink.
+            path_in_user_cache.unlink(missing_ok=True)
             path_in_user_cache.symlink_to(path_in_shared_cache)
             continue
 

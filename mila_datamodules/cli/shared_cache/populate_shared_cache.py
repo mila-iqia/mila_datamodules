@@ -2,14 +2,14 @@
 """Downloads stuff from HuggingFace/torchvision/etc that many researchers might want to use.
 
 If you want to add an entry to this file, please send a message to the IDT team. (or specifically
-to Fabrice Normandin)
+to Fabrice Normandin or Satya Ortiz-Gagné)
 """
 from __future__ import annotations
 
 import argparse
 import os
 
-default_shared_cache_dir = "/network/datasets/.weights/.shared_cache"
+default_shared_cache_dir = "/network/datasets/.weights/shared_cache"
 
 
 hf_models_to_download = [
@@ -22,10 +22,11 @@ hf_models_to_download = [
     "google/flan-t5-xxl",
 ]
 
-hf_datasets_to_download: list[tuple[str, list[str]]] = [
+hf_datasets_to_download: list[tuple[str, list[str] | None]] = [
     ("c4", ["en", "realnewslike"]),
     ("gsm8k", ["main", "socratic"]),
     ("wikitext", ["wikitext-103-v1", "wikitext-2-v1", "wikitext-103-raw-v1", "wikitext-2-raw-v1"]),
+    ("EleutherAI/pile", ["all"]),
 ]
 
 torchvision_models_to_download = [
