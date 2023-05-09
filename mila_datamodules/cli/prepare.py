@@ -9,6 +9,7 @@ from typing import Callable
 import rich.logging
 import simple_parsing
 from simple_parsing import ArgumentParser
+from typing_extensions import Protocol
 
 from mila_datamodules.cli.dataset_args import DatasetArguments
 from mila_datamodules.clusters.env_variables import run_job_step_to_get_slurm_env_variables
@@ -38,67 +39,40 @@ current_cluster = Cluster.current_or_error()
 logger = get_logger(__name__)
 
 
+class PreparePlugin(Protocol):
+    def add_prepare_args(
+        self,
+        subparsers: argparse._SubParsersAction[simple_parsing.ArgumentParser],
+    ):
+        ...
+
+    def prepare(
+        self,
+        args_dict: dict,
+    ):
+        ...
+
+
 def add_prepare_arguments(parser: ArgumentParser):
     parser.add_argument("-v", "--verbose", action="count")
     subparsers = parser.add_subparsers(
         title="dataset", description="Which dataset to prepare", dest="dataset"
     )
 
-    add_torchvision_prepare_args(subparsers)
-    add_huggingface_prepare_arguments(subparsers)
+    plugins: list[PreparePlugin] = [TorchVisionPlugin(), HuggingFacePlugin()]
+    _previous_parsers = {}
+    for plugin in plugins:
+        _previous_parsers.update(subparsers.choices)
+        plugin.add_prepare_args(subparsers)
+        plugin_parsers = {
+            k: v for k, v in subparsers.choices.copy().items() if k not in _previous_parsers
+        }
+        for dataset, dataset_parser in plugin_parsers.items():
+            dataset_parser.set_defaults(prepare_fn=plugin.prepare)
+            dataset_parser.set_defaults(dataset=dataset)
 
 
-def add_torchvision_prepare_args(
-    subparsers: argparse._SubParsersAction[simple_parsing.ArgumentParser],
-):
-    # Only add commands for the datasets that we know how to prepare on the current cluster.
-    dataset_types_and_functions = {
-        dataset_type: prepare_dataset_fns[current_cluster]
-        for dataset_type, prepare_dataset_fns in prepare_torchvision_datasets.items()
-        if current_cluster in prepare_dataset_fns
-    }
-    dataset_names_types_and_functions = [
-        (dataset_type.__name__.lower(), dataset_type, preparation_fn)
-        for dataset_type, preparation_fn in dataset_types_and_functions.items()
-    ]
-
-    for dataset_name, dataset_type, prepare_dataset_fn in sorted(
-        dataset_names_types_and_functions
-    ):
-        dataset_parser = subparsers.add_parser(
-            dataset_name, help=f"Prepare the {dataset_name} dataset"
-        )
-        command_line_args = command_line_args_for_dataset.get(dataset_type, VisionDatasetArgs)
-        dataset_parser.add_arguments(command_line_args, dest="dataset_preparation")
-
-        # prepare_dataset_fn.add_arguments(dataset_parser)
-        dataset_parser.set_defaults(function=prepare_dataset_fn)
-
-        dataset_parser.set_defaults(prepare_fn=prepare_torchvision)
-
-
-def add_huggingface_prepare_arguments(
-    subparsers: argparse._SubParsersAction[simple_parsing.ArgumentParser],
-):
-    huggingface_preparation_functions = {
-        dataset_name: prepare_dataset_fns[current_cluster]
-        for dataset_name, prepare_dataset_fns in prepare_huggingface_dataset_fns.items()
-        if current_cluster in prepare_dataset_fns
-    }
-
-    for dataset_name, prepare_hf_dataset_fn in huggingface_preparation_functions.items():
-        dataset_parser = subparsers.add_parser(
-            dataset_name, help=f"Prepare the {dataset_name} dataset from HuggingFace"
-        )
-        assert isinstance(dataset_parser, simple_parsing.ArgumentParser)
-        command_line_args = command_line_args_for_hf_dataset[dataset_name]
-        dataset_parser.add_arguments(command_line_args, dest="dataset_preparation")
-        dataset_parser.set_defaults(function=prepare_hf_dataset_fn)
-
-        dataset_parser.set_defaults(prepare_fn=prepare_huggingface)
-
-
-def prepare(args):
+def prepare(args: argparse.Namespace):
     """Prepare a dataset."""
     args_dict = vars(args)
 
@@ -137,77 +111,126 @@ def prepare(args):
     prepare_fn(args_dict)
 
 
-def prepare_torchvision(args_dict: dict):
-    dataset: str = args_dict.pop("dataset")
-    function: Callable = args_dict.pop("function")
-    dataset_arguments = args_dict.pop("dataset_preparation")
+class TorchVisionPlugin(PreparePlugin):
+    def add_prepare_args(
+        self,
+        subparsers: argparse._SubParsersAction[simple_parsing.ArgumentParser],
+    ):
+        # Only add commands for the datasets that we know how to prepare on the current cluster.
+        dataset_types_and_functions = {
+            dataset_type: prepare_dataset_fns[current_cluster]
+            for dataset_type, prepare_dataset_fns in prepare_torchvision_datasets.items()
+            if current_cluster in prepare_dataset_fns
+        }
+        dataset_names_types_and_functions = [
+            (dataset_type.__name__.lower(), dataset_type, preparation_fn)
+            for dataset_type, preparation_fn in dataset_types_and_functions.items()
+        ]
 
-    kwargs = args_dict
+        for dataset_name, dataset_type, prepare_dataset_fn in sorted(
+            dataset_names_types_and_functions
+        ):
+            dataset_parser = subparsers.add_parser(
+                dataset_name, help=f"Prepare the {dataset_name} dataset"
+            )
+            command_line_args = command_line_args_for_dataset.get(dataset_type, VisionDatasetArgs)
+            dataset_parser.add_arguments(command_line_args, dest="dataset_preparation")
+            dataset_parser.set_defaults(function=prepare_dataset_fn)
+            # dataset_parser.set_defaults(prepare_fn=self.prepare)
 
-    if dataset_arguments:
-        assert isinstance(dataset_arguments, DatasetArguments)
-        additional_kwargs = dataset_arguments.to_dataset_kwargs()
-        assert not any(k in kwargs for k in additional_kwargs)
-        kwargs.update(additional_kwargs)
+    def prepare(self, args_dict: dict):
+        dataset: str = args_dict.pop("dataset")
+        function: Callable = args_dict.pop("function")
+        dataset_arguments = args_dict.pop("dataset_preparation")
 
-    output = function(**kwargs)
+        kwargs = args_dict
 
-    logger.setLevel(logging.INFO)
+        if dataset_arguments:
+            assert isinstance(dataset_arguments, DatasetArguments)
+            additional_kwargs = dataset_arguments.to_dataset_kwargs()
+            assert not any(k in kwargs for k in additional_kwargs)
+            kwargs.update(additional_kwargs)
 
-    new_root = output
+        output = function(**kwargs)
 
-    import torchvision.datasets
+        logger.setLevel(logging.INFO)
 
-    # FIXME: Ugly AF, just there for the demo:
-    dataset_class = {
-        k: v for k, v in vars(torchvision.datasets).items() if k.lower() == dataset
-    }.popitem()[1]
+        new_root = output
 
-    kwargs.update(root=new_root)
-    code_snippet = (
-        f"{dataset_class.__name__}(" + ", ".join(f"{k}={v!r}" for k, v in kwargs.items()) + ")"
-    )
-    slurm_tmpdir = get_slurm_tmpdir()
-    code_snippet = (
-        (code_snippet)
-        .replace(f'"{slurm_tmpdir}', 'os.environ["SLURM_TMPDIR"] + "')
-        .replace(f"'{slurm_tmpdir}", "os.environ['SLURM_TMPDIR'] + '")
-    )
-    # fn = logger.info if verbose > 0 else print
-    logger.info(
-        "Here's how you can use this prepared dataset in your job:\n"
-        + "\n"
-        + "```python\n"
-        + "import os\n"
-        + code_snippet
-        + "\n```"
-    )
+        import torchvision.datasets
+
+        # FIXME: Ugly AF, just there for the demo:
+        dataset_class = {
+            k: v for k, v in vars(torchvision.datasets).items() if k.lower() == dataset
+        }.popitem()[1]
+
+        kwargs.update(root=new_root)
+        code_snippet = (
+            f"{dataset_class.__name__}(" + ", ".join(f"{k}={v!r}" for k, v in kwargs.items()) + ")"
+        )
+        slurm_tmpdir = get_slurm_tmpdir()
+        code_snippet = (
+            (code_snippet)
+            .replace(f'"{slurm_tmpdir}', 'os.environ["SLURM_TMPDIR"] + "')
+            .replace(f"'{slurm_tmpdir}", "os.environ['SLURM_TMPDIR'] + '")
+        )
+        # fn = logger.info if verbose > 0 else print
+        logger.info(
+            "Here's how you can use this prepared dataset in your job:\n"
+            + "\n"
+            + "```python\n"
+            + "import os\n"
+            + code_snippet
+            + "\n```"
+        )
 
 
-def prepare_huggingface(args_dict: dict):
-    args_dict.pop("dataset")
-    function: Callable = args_dict.pop("function")
-    dataset_arguments = args_dict.pop("dataset_preparation", DatasetArguments())
+class HuggingFacePlugin(PreparePlugin):
+    def add_prepare_args(
+        self,
+        subparsers: argparse._SubParsersAction[simple_parsing.ArgumentParser],
+    ):
+        huggingface_preparation_functions = {
+            dataset_name: prepare_dataset_fns[current_cluster]
+            for dataset_name, prepare_dataset_fns in prepare_huggingface_dataset_fns.items()
+            if current_cluster in prepare_dataset_fns
+        }
 
-    kwargs = args_dict
+        for dataset_name, prepare_hf_dataset_fn in huggingface_preparation_functions.items():
+            dataset_parser = subparsers.add_parser(
+                dataset_name, help=f"Prepare the {dataset_name} dataset from HuggingFace"
+            )
+            assert isinstance(dataset_parser, simple_parsing.ArgumentParser)
+            command_line_args = command_line_args_for_hf_dataset[dataset_name]
+            dataset_parser.add_arguments(command_line_args, dest="dataset_preparation")
+            dataset_parser.set_defaults(function=prepare_hf_dataset_fn)
 
-    if dataset_arguments:
-        assert isinstance(dataset_arguments, DatasetArguments)
-        additional_kwargs = dataset_arguments.to_dataset_kwargs()
-        assert not any(k in kwargs for k in additional_kwargs)
-        kwargs.update(additional_kwargs)
+            # dataset_parser.set_defaults(prepare_fn=self.prepare)
 
-    output = function(**kwargs)
+    def prepare(self, args_dict: dict):
+        args_dict.pop("dataset")
+        function: Callable = args_dict.pop("function")
+        dataset_arguments = args_dict.pop("dataset_preparation", DatasetArguments())
 
-    logger.setLevel(logging.INFO)
+        kwargs = args_dict
 
-    assert isinstance(output, HfDatasetsEnvVariables)
-    logger.info(
-        "The following environment variables have been set in this process, but will "
-        "probably also need to also be added in the job script:"
-    )
-    for key, value in asdict(output).items():
-        print(f"export {key}={value}")
+        if dataset_arguments:
+            assert isinstance(dataset_arguments, DatasetArguments)
+            additional_kwargs = dataset_arguments.to_dataset_kwargs()
+            assert not any(k in kwargs for k in additional_kwargs)
+            kwargs.update(additional_kwargs)
+
+        output = function(**kwargs)
+
+        logger.setLevel(logging.INFO)
+
+        assert isinstance(output, HfDatasetsEnvVariables)
+        logger.info(
+            "The following environment variables have been set in this process, but will "
+            "probably also need to also be added in the job script:"
+        )
+        for key, value in asdict(output).items():
+            print(f"export {key}={value}")
 
 
 def get_env_variables_to_use():
