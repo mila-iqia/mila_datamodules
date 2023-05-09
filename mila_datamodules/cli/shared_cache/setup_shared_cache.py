@@ -16,6 +16,7 @@ This makes these libraries look in the specified user cache for these files.
 """
 from __future__ import annotations
 
+import functools
 import logging
 import os
 import shlex
@@ -24,7 +25,7 @@ import warnings
 from dataclasses import dataclass
 from logging import getLogger as get_logger
 from pathlib import Path
-from typing import Callable, Iterable, TypeVar
+from typing import Callable, Iterable, Sequence, TypeVar
 
 logger = get_logger(__name__)
 
@@ -45,6 +46,18 @@ DEFAULT_USER_CACHE_DIR = SCRATCH / "cache"
 DEFAULT_SHARED_CACHE_DIR = Path("/network/weights/shared_cache")
 
 
+IGNORE_DIRS = ["__pycache__", ".env"]
+"""Don't create symlinks to files in directories in the shared cache whose name matches any of
+these patterns."""
+
+IGNORE_FILES = ["*.lock"]
+"""Don't create symlinks to files in the shared cache that match any of these patterns."""
+
+
+T = TypeVar("T")
+Predicate = Callable[[T], bool]
+
+
 @dataclass
 class Options:
     """Options for the setup_cache command."""
@@ -63,7 +76,7 @@ class Options:
 
 
 def main(argv: list[str] | None = None):
-    options = _parse_args(argv)
+    options: Options = _parse_args(argv)
     setup_cache(user_cache_dir=options.user_cache_dir, shared_cache_dir=options.shared_cache_dir)
 
 
@@ -95,8 +108,11 @@ def setup_cache(
         )
 
     set_striping_config_for_dir(user_cache_dir)
+
     delete_broken_symlinks_to_shared_cache(user_cache_dir, shared_cache_dir)
+
     create_links(user_cache_dir, shared_cache_dir)
+
     bash_aliases_file = "~/.bash_aliases"
     bash_aliases_file_changed = set_environment_variables(
         user_cache_dir, bash_aliases_file=bash_aliases_file
@@ -113,49 +129,6 @@ def setup_cache(
         )
 
     print("DONE!")
-
-
-def _parse_args(argv: list[str] | None) -> Options:
-    try:
-        from simple_parsing import ArgumentParser
-
-        parser = ArgumentParser(description=__doc__)
-        parser.add_arguments(Options, dest="options")
-        # parser.add_argument("-v", "--verbose", action="count", default=0)
-        args = parser.parse_args(argv)
-        # logger.setLevel(max(0, logging.INFO - 10 * args.verbose))
-        options: Options = args.options
-    except ImportError:
-        from argparse import ArgumentParser
-
-        parser = ArgumentParser(description=__doc__)
-        parser.add_argument(
-            "--user_cache_dir",
-            type=Path,
-            default=DEFAULT_USER_CACHE_DIR,
-            help="The user cache directory. Should probably be in $SCRATCH (not $HOME!)",
-        )
-        parser.add_argument(
-            "--shared_cache_dir",
-            type=Path,
-            default=DEFAULT_SHARED_CACHE_DIR,
-            help=(
-                "The shared cache directory. This defaults to the path of the shared cache setup "
-                "by the IDT team on the Mila cluster."
-            ),
-        )
-        # parser.add_argument("-v", "--verbose", action="count", default=0)
-
-        args = parser.parse_args(argv)
-
-        user_cache_dir: Path = args.user_cache_dir
-        shared_cache_dir: Path = args.shared_cache_dir
-        # logger.setLevel(max(0, logging.INFO - 10 * args.verbose))
-        options = Options(
-            user_cache_dir=user_cache_dir,
-            shared_cache_dir=shared_cache_dir,
-        )
-    return options
 
 
 def set_striping_config_for_dir(dir: Path, num_targets: int = 4, chunksize: str = "512k"):
@@ -269,54 +242,6 @@ def set_environment_variables(
     return False
 
 
-def _update_start_and_end_flags(file: Path, start_flag: str, end_flag: str) -> bool:
-    """Replaces old versions of the start and end flags with the new ones, if they exist.
-
-    Returns whether the file was modified.
-    """
-    # TODO: Keep a list of the previous block flags if we end up changing either the start or end,
-    # so we can identify and replace old blocks too.
-    previous_start_flags = []
-    previous_end_flags = []
-    update_start_and_end_flags = False
-
-    with open(file, "r") as f:
-        lines = f.readlines()
-
-    start_line = start_flag + "\n"
-    end_line = end_flag + "\n"
-
-    for previous_flag in previous_start_flags:
-        if previous_flag + "\n" in lines:
-            index = lines.index(previous_flag + "\n")
-            lines[index] = start_line
-            update_start_and_end_flags = True
-
-    for previous_flag in previous_end_flags:
-        if previous_flag + "\n" in lines:
-            index = lines.index(previous_flag + "\n")
-            lines[index] = end_line
-            update_start_and_end_flags = True
-
-    if update_start_and_end_flags:
-        with open(file, "w") as f:
-            logger.info("Replacing old start and end flags with the new ones.")
-            f.writelines(lines)
-            return True
-    return False
-
-
-def _is_child(path: Path, parent: Path) -> bool:
-    """Return True if the path is under the parent directory."""
-    if path == parent:
-        return False
-    try:
-        path.relative_to(parent)
-        return True
-    except ValueError:
-        return False
-
-
 def delete_broken_symlinks_to_shared_cache(user_cache_dir: Path, shared_cache_dir: Path):
     """Delete all symlinks in the user cache directory that point to files that don't exist anymore
     in the shared cache directory."""
@@ -331,37 +256,11 @@ def delete_broken_symlinks_to_shared_cache(user_cache_dir: Path, shared_cache_di
 
 
 def _skip_file(path_in_shared_cache: Path) -> bool:
-    if path_in_shared_cache.suffix == ".lock":
-        return True
-    return False
+    return _matches_pattern(path_in_shared_cache, IGNORE_FILES)
 
 
 def _skip_dir(path_in_shared_cache: Path) -> bool:
-    if path_in_shared_cache.name == "__pycache__":
-        return True
-    return False
-
-
-T = TypeVar("T")
-Predicate = Callable[[T], bool]
-
-
-def _tree(
-    directory: Path,
-    skip_file: Predicate[Path] | None = None,
-    skip_dir: Predicate[Path] | None = None,
-) -> Iterable[Path]:
-    for path in directory.iterdir():
-        if path.is_dir():
-            if not skip_dir or not skip_dir(path):
-                yield path
-                yield from _tree(path, skip_file=skip_file, skip_dir=skip_dir)
-        elif not skip_file or not skip_file(path):
-            yield path
-
-
-def _is_broken_symlink(path: Path) -> bool:
-    return path.is_symlink() and not path.exists()
+    return _matches_pattern(path_in_shared_cache, IGNORE_DIRS)
 
 
 def create_links(
@@ -485,6 +384,119 @@ def _create_link(path_in_user_cache: Path, path_in_shared_cache: Path) -> None:
         f"{path_in_shared_cache}. (points to {user_cache_file_target} instead?) "
         f"Leaving it as-is."
     )
+
+
+def _parse_args(argv: list[str] | None) -> Options:
+    try:
+        from simple_parsing import ArgumentParser
+
+        parser = ArgumentParser(description=__doc__)
+        parser.add_arguments(Options, dest="options")
+        # parser.add_argument("-v", "--verbose", action="count", default=0)
+        args = parser.parse_args(argv)
+        # logger.setLevel(max(0, logging.INFO - 10 * args.verbose))
+        options: Options = args.options
+    except ImportError:
+        from argparse import ArgumentParser
+
+        parser = ArgumentParser(description=__doc__)
+        parser.add_argument(
+            "--user_cache_dir",
+            type=Path,
+            default=DEFAULT_USER_CACHE_DIR,
+            help="The user cache directory. Should probably be in $SCRATCH (not $HOME!)",
+        )
+        parser.add_argument(
+            "--shared_cache_dir",
+            type=Path,
+            default=DEFAULT_SHARED_CACHE_DIR,
+            help=(
+                "The shared cache directory. This defaults to the path of the shared cache setup "
+                "by the IDT team on the Mila cluster."
+            ),
+        )
+        # parser.add_argument("-v", "--verbose", action="count", default=0)
+
+        args = parser.parse_args(argv)
+
+        user_cache_dir: Path = args.user_cache_dir
+        shared_cache_dir: Path = args.shared_cache_dir
+        # logger.setLevel(max(0, logging.INFO - 10 * args.verbose))
+        options = Options(
+            user_cache_dir=user_cache_dir,
+            shared_cache_dir=shared_cache_dir,
+        )
+    return options
+
+
+def _update_start_and_end_flags(file: Path, start_flag: str, end_flag: str) -> bool:
+    """Replaces old versions of the start and end flags with the new ones, if they exist.
+
+    Returns whether the file was modified.
+    """
+    # TODO: Keep a list of the previous block flags if we end up changing either the start or end,
+    # so we can identify and replace old blocks too.
+    previous_start_flags = []
+    previous_end_flags = []
+    update_start_and_end_flags = False
+
+    with open(file, "r") as f:
+        lines = f.readlines()
+
+    start_line = start_flag + "\n"
+    end_line = end_flag + "\n"
+
+    for previous_flag in previous_start_flags:
+        if previous_flag + "\n" in lines:
+            index = lines.index(previous_flag + "\n")
+            lines[index] = start_line
+            update_start_and_end_flags = True
+
+    for previous_flag in previous_end_flags:
+        if previous_flag + "\n" in lines:
+            index = lines.index(previous_flag + "\n")
+            lines[index] = end_line
+            update_start_and_end_flags = True
+
+    if update_start_and_end_flags:
+        with open(file, "w") as f:
+            logger.info("Replacing old start and end flags with the new ones.")
+            f.writelines(lines)
+            return True
+    return False
+
+
+def _matches_pattern(path: str | Path, patterns: str | Sequence[str]) -> bool:
+    path = Path(path)
+    patterns = [patterns] if isinstance(patterns, str) else list(patterns)
+    return any(
+        path in _files_in_dir_matching_pattern(path.parent, pattern) for pattern in patterns
+    )
+
+
+@functools.lru_cache(maxsize=None)
+def _files_in_dir_matching_pattern(dir: Path, pattern: str) -> list[Path]:
+    # Reduce redundant calls to dir.glob(pattern) (which needs to list out the dir contents)
+    # IDEA: Could add a system audit hook to invalidate the cache if we add files in any of `dirs`?
+    return list(dir.glob(pattern))
+
+
+def _tree(
+    directory: Path,
+    skip_file: Predicate[Path] | None = None,
+    skip_dir: Predicate[Path] | None = None,
+) -> Iterable[Path]:
+    for path in directory.iterdir():
+        if path.is_dir():
+            if not skip_dir or not skip_dir(path):
+                yield path
+                yield from _tree(path, skip_file=skip_file, skip_dir=skip_dir)
+        elif not skip_file or not skip_file(path):
+            yield path
+
+
+def _is_broken_symlink(path: Path) -> bool:
+    return path.is_symlink() and not path.exists()
 
 
 if __name__ == "__main__":
