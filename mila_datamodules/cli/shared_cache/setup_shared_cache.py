@@ -20,9 +20,11 @@ import logging
 import os
 import shlex
 import subprocess
+import warnings
 from dataclasses import dataclass
 from logging import getLogger as get_logger
 from pathlib import Path
+from typing import Callable, Iterable, TypeVar
 
 logger = get_logger(__name__)
 
@@ -176,7 +178,9 @@ def set_striping_config_for_dir(dir: Path, num_targets: int = 4, chunksize: str 
 
 
 def set_environment_variables(
-    user_cache_dir: Path, bash_aliases_file: str | Path = "~/.bash_aliases"
+    user_cache_dir: Path,
+    bash_aliases_file: str | Path = "~/.bash_aliases",
+    add_block_to_bash_aliases: bool = True,
 ) -> bool:
     """Adds a block of code to the bash_aliases file (creating it if necessary) that sets some
     relevant environment variables for each library so they start to use the new cache dir.
@@ -184,7 +188,6 @@ def set_environment_variables(
     Also sets the environment variables in `os.environ` so the current process gets them. Returns
     whether the contents of the bash aliases file was changed.
     """
-    # TODO: These changes won't persist. We probably need to add a block of code in .bashrc
     bash_aliases_file = Path(bash_aliases_file).expanduser().resolve()
     file = bash_aliases_file
 
@@ -197,6 +200,9 @@ def set_environment_variables(
 
     for key, value in env_vars.items():
         os.environ[key] = str(value)
+
+    if not add_block_to_bash_aliases:
+        return False
 
     start_flag = "# >>> cache setup >>>"
     end_flag = "# <<< cache setup <<<"
@@ -313,122 +319,170 @@ def delete_broken_symlinks_to_shared_cache(user_cache_dir: Path, shared_cache_di
     """Delete all symlinks in the user cache directory that point to files that don't exist anymore
     in the shared cache directory."""
     for file in user_cache_dir.rglob("*"):
-        if file.is_symlink():
-            target = file.resolve()
-            if _is_child(target, shared_cache_dir) and not target.exists():
-                logger.info(f"Removing broken symlink at {file}")
-                if file.is_dir():
-                    file.rmdir()
-                else:
-                    file.unlink()
+        if (
+            file.is_symlink()
+            and not file.exists()
+            and file.readlink().is_relative_to(shared_cache_dir)
+        ):
+            logger.info(f"Removing broken symlink at {file}")
+            file.unlink()
 
 
-def _skip_file(path_in_user_cache: Path, path_in_shared_cache: Path) -> bool:
-    if path_in_user_cache.suffix == ".lock":
-        path_in_user_cache.unlink(missing_ok=True)
+def _skip_file(path_in_shared_cache: Path) -> bool:
+    if path_in_shared_cache.suffix == ".lock":
         return True
     return False
 
 
-def create_links(user_cache_dir: Path, shared_cache_dir: Path, skip_file=_skip_file):
+def _skip_dir(path_in_shared_cache: Path) -> bool:
+    if path_in_shared_cache.name == "__pycache__":
+        return True
+    return False
+
+
+T = TypeVar("T")
+Predicate = Callable[[T], bool]
+
+
+def _tree(
+    directory: Path,
+    skip_file: Predicate[Path] | None = None,
+    skip_dir: Predicate[Path] | None = None,
+) -> Iterable[Path]:
+    for path in directory.iterdir():
+        if path.is_dir():
+            if not skip_dir or not skip_dir(path):
+                yield path
+                yield from _tree(path, skip_file=skip_file, skip_dir=skip_dir)
+        elif not skip_file or not skip_file(path):
+            yield path
+
+
+def _is_broken_symlink(path: Path) -> bool:
+    return path.is_symlink() and not path.exists()
+
+
+def create_links(
+    user_cache_dir: Path,
+    shared_cache_dir: Path,
+    skip_file: Predicate[Path] = _skip_file,
+    skip_dir: Predicate[Path] = _skip_dir,
+):
     """Create symlinks to the shared cache directory in the user cache directory."""
     # For every file in the shared cache dir, create a (symbolic?) link to it in the user cache dir
 
     # TODO: Using `shutil.copytree` raises a bunch of errors at the end. I'm not sure why.
     # Using the more direct method below instead. One disadvantage is that we can't really use
     # `shutil.ignore_dirs` which would be useful to ignore some directories in the shared cache.
-    logger.info(f"Creating symlinks in {user_cache_dir} to files in {shared_cache_dir}...")
-    # shutil.copytree(
-    #     shared_cache_dir,
-    #     user_cache_dir,
-    #     symlinks=True,
-    #     copy_function=_custom_copy_fn,
-    #     dirs_exist_ok=True,
-    # )
+    logger.info(f"Creating symlinks in {user_cache_dir} to files in {shared_cache_dir}")
 
     # TODO: Create the list of all files (exhaust the generator below) and use multiprocessing to
     # speed this up.
-    for path_in_shared_cache in shared_cache_dir.rglob("*"):
+
+    files_in_shared_cache = list(_tree(shared_cache_dir, skip_file=skip_file, skip_dir=skip_dir))
+
+    from tqdm.rich import tqdm
+    from tqdm.std import TqdmExperimentalWarning
+
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", category=TqdmExperimentalWarning)
+        pbar = tqdm(files_in_shared_cache, unit="Files")
+
+    for path_in_shared_cache in pbar:
         relative_path = path_in_shared_cache.relative_to(shared_cache_dir)
         path_in_user_cache = user_cache_dir / relative_path
 
-        if skip_file(path_in_user_cache, path_in_shared_cache=path_in_shared_cache):
-            logger.debug(f"Skipping {path_in_shared_cache}")
-            continue
+        _create_link(
+            path_in_user_cache=path_in_user_cache,
+            path_in_shared_cache=path_in_shared_cache,
+        )
 
-        if path_in_shared_cache.is_dir():
-            if not path_in_user_cache.exists():
-                logger.info(f"Creating directory at {path_in_user_cache}")
-                path_in_user_cache.mkdir(exist_ok=True)
-            elif not path_in_user_cache.is_dir():
-                logger.warning(
-                    f"File in the user cache at {path_in_user_cache} where we expected a "
-                    f"directory! Replacing it with a new directory."
-                )
-                path_in_user_cache.unlink()
-                path_in_user_cache.mkdir(exist_ok=True)
-            else:
-                logger.debug(f"Directory already exists at {path_in_user_cache}")
-            continue
+
+def _create_link(path_in_user_cache: Path, path_in_shared_cache: Path) -> None:
+    """Create a symlink in the user cache directory to the file in the shared cache directory.
+
+    TODO: Need to refactor this, way too complicated for my taste.
+    TODO: Could possibly return the saved storage space (in bytes)?
+    """
+    if _is_broken_symlink(path_in_shared_cache):
+        logger.warning(f"Ignoring a broken symlink in shared cache at {path_in_shared_cache}!")
+        return
+
+    if path_in_shared_cache.is_dir():
+        if _is_broken_symlink(path_in_user_cache):
+            logger.info(f"Replacing broken symlink at {path_in_user_cache} with a new directory.")
+            path_in_user_cache.unlink()
+            path_in_user_cache.mkdir(exist_ok=False)
+            return
+
+        if path_in_user_cache.is_symlink():
+            # TODO: Weird case here. Do we replace the symlink with a directory?
+            logger.warning(
+                f"Unexpected symlink at {path_in_user_cache} (expected a 'real' directory!)."
+            )
+            raise NotImplementedError("TODO: What to do in this case?")
 
         if not path_in_user_cache.exists():
-            logger.debug(f"Creating a new symlink at {path_in_user_cache}")
-            # NOTE: Remove the file, because it might be a broken symlink.
-            path_in_user_cache.unlink(missing_ok=True)
-            path_in_user_cache.symlink_to(path_in_shared_cache)
-            continue
+            logger.info(f"Creating directory at {path_in_user_cache}")
+            path_in_user_cache.mkdir(exist_ok=True)
+            return
 
-        if not path_in_user_cache.is_symlink():
-            logger.info(
-                f"Replacing duplicate file {path_in_user_cache} with a symlink to the "
-                f"same file in the shared cache."
-            )
-            path_in_user_cache.unlink()
-            path_in_user_cache.symlink_to(path_in_shared_cache)
-            continue
-
-        # The file in the user cache is a symlink.
-        user_cache_file_target = path_in_user_cache.readlink()
-        if user_cache_file_target == path_in_shared_cache:
-            # Symlink from a previous run, nothing to do.
-            logger.debug(f"Symlink from a previous run at {path_in_user_cache}")
-            # TODO: Perhaps we could update a progress bar or something?
-            continue
-
-        if not user_cache_file_target.exists():
-            # broken symlink (perhaps from a previous run?)
-            logger.warning(f"Replacing a broken symlink: {path_in_user_cache}")
-            path_in_user_cache.unlink()
-            path_in_user_cache.symlink_to(path_in_shared_cache)
-            continue
-
-        if path_in_shared_cache.is_symlink():
-            # The File in user dir is a symlink that should point to a symlink in the shared cache.
-            path_in_shared_cache_target = path_in_shared_cache.resolve()
-            if (
-                path_in_shared_cache_target.exists()
-                and user_cache_file_target == path_in_shared_cache_target
-            ):
-                logger.info(
-                    f"Fixing symlink at {path_in_user_cache} so it points to "
-                    f"{path_in_shared_cache}."
-                )
-                path_in_user_cache.unlink()
-                path_in_user_cache.symlink_to(path_in_shared_cache)
-                continue
-            # Shared cache has a broken symlink!
+        if not path_in_user_cache.is_dir():
             logger.warning(
-                f"Ignoring a broken symlink in shared cache at "
-                f"{path_in_shared_cache} -> {path_in_shared_cache_target}!"
+                f"File in the user cache at {path_in_user_cache} where we expected a "
+                f"directory! Replacing it with a new directory."
             )
-            continue
+            path_in_user_cache.unlink()
+            path_in_user_cache.mkdir(exist_ok=True)
+            return
 
-        # Symlink that points to a different file? Do nothing in this case.
-        logger.warning(
-            f"Found a Weird symlink at {path_in_user_cache} that doesn't point to "
-            f"{path_in_shared_cache}. (points to {user_cache_file_target} instead?) "
-            f"Leaving it as-is."
+        logger.debug(f"Directory already exists at {path_in_user_cache}")
+        return
+
+    if _is_broken_symlink(path_in_user_cache):
+        logger.debug(f"Replacing broken symlink at {path_in_user_cache}")
+        path_in_user_cache.unlink(missing_ok=False)
+        path_in_user_cache.symlink_to(path_in_shared_cache)
+        return
+
+    if not path_in_user_cache.exists():
+        logger.debug(f"Creating a new symlink at {path_in_user_cache}")
+        # NOTE: Remove the file, because it might be a broken symlink.
+        path_in_user_cache.symlink_to(path_in_shared_cache)
+        return
+
+    if not path_in_user_cache.is_symlink():
+        logger.info(
+            f"Replacing duplicate downloaded file {path_in_user_cache} with a symlink to the "
+            f"same file in the shared cache."
         )
+        path_in_user_cache.unlink()
+        path_in_user_cache.symlink_to(path_in_shared_cache)
+        return
+
+    # The file in the user cache is a symlink.
+    user_cache_file_target = path_in_user_cache.readlink()
+
+    if user_cache_file_target == path_in_shared_cache:
+        # Symlink from a previous run, nothing to do.
+        logger.debug(f"Symlink from a previous run at {path_in_user_cache}")
+        return
+
+    # Note: Shouldn't happen, since we already should have removed broken symlinks in the
+    # previous step.
+    if not user_cache_file_target.exists():
+        # broken symlink (perhaps from a previous run?)
+        logger.warning(f"Replacing a broken symlink: {path_in_user_cache}")
+        path_in_user_cache.unlink()
+        path_in_user_cache.symlink_to(path_in_shared_cache)
+        return
+
+    # Symlink that points to a different file? Do nothing in this case.
+    logger.warning(
+        f"Found a Weird symlink at {path_in_user_cache} that doesn't point to "
+        f"{path_in_shared_cache}. (points to {user_cache_file_target} instead?) "
+        f"Leaving it as-is."
+    )
 
 
 if __name__ == "__main__":
