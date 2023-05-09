@@ -1,15 +1,11 @@
 #!/network/weights/shared_cache/.env/bin/python
 """Sets up a user cache directory for commonly used libraries, while reusing shared cache entries.
 
-Use this to avoid having to download files to the $HOME directory, as well as to remove
-duplicated downloads and free up space in your $HOME and $SCRATCH directories.
-
-The user cache directory should be writeable, and doesn't need to be empty.
 This command adds symlinks to (some of) the files contained in the *shared* cache directory to this
 user cache directory.
 
-The shared cache directory should be readable (e.g. a directory containing frequently-downloaded
-weights/checkpoints, managed by the IT/IDT Team at Mila).
+Use this to avoid having to download files to the $HOME directory, as well as to remove
+duplicated downloads and free up space in your $HOME and $SCRATCH directories.
 
 This command also sets the environment variables via a block in the `$HOME/.bash_aliases` file.
 This makes these libraries look in the specified user cache for these files.
@@ -28,8 +24,6 @@ from pathlib import Path
 from typing import Callable, Iterable, Sequence, TypeVar
 
 logger = get_logger(__name__)
-
-# TODO: The log messages don't appear unless we have the rich logging handler setup.
 
 try:
     import rich.logging
@@ -168,8 +162,11 @@ def set_environment_variables(
     env_vars = {
         "HF_HOME": user_cache_dir / "huggingface",
         "HF_DATASETS_CACHE": user_cache_dir / "huggingface" / "datasets",
-        # "TRANSFORMERS_CACHE": user_cache_dir / "huggingface" / "transformers",
         "TORCH_HOME": user_cache_dir / "torch",
+        # TODO: Possibly unset these variables, in case users already have them set somewhere?
+        # OR: Raise a warning if the user has those variables set in their env, because they might
+        # prevent the cache from being used correctly.
+        # "TRANSFORMERS_CACHE": user_cache_dir / "huggingface" / "transformers",
     }
 
     for key, value in env_vars.items():
