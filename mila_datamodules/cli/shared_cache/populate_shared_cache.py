@@ -23,10 +23,11 @@ hf_models_to_download = [
 ]
 
 hf_datasets_to_download: list[tuple[str, list[str] | None]] = [
-    ("c4", ["en", "realnewslike"]),
+    ("c4", ["en", "realnewslike", "en.noclean", "en.noblocklist"]),
     ("gsm8k", ["main", "socratic"]),
     ("wikitext", ["wikitext-103-v1", "wikitext-2-v1", "wikitext-103-raw-v1", "wikitext-2-raw-v1"]),
     ("EleutherAI/pile", ["all"]),
+    ("togethercomputer/RedPajama-Data-1T", None),
 ]
 
 torchvision_models_to_download = [
@@ -34,6 +35,8 @@ torchvision_models_to_download = [
     "resnet50",
     "resnet101",
 ]
+_offload_folder = "/tmp/offload"
+_num_procs = 16
 
 
 def main(argv: list[str] | None = None):
@@ -53,6 +56,12 @@ def main(argv: list[str] | None = None):
     from datasets import load_dataset  # noqa
     from transformers import AutoModel, AutoConfig  # noqa
 
+    for dataset, configs in hf_datasets_to_download:
+        configs = configs or [None]
+        for config in configs:
+            print(f"Downloading {dataset} {config}")
+            load_dataset(dataset, config, num_proc=_num_procs)
+
     for model in hf_models_to_download:
         print(f"Downloading {model}")
 
@@ -65,14 +74,13 @@ def main(argv: list[str] | None = None):
             model,
             resume_download=True,
             device_map="auto",
-            offload_folder="/tmp/offload",
+            offload_folder=_offload_folder,
         )
-
-    for dataset, configs in hf_datasets_to_download:
-        for config in configs:
-            print(f"Downloading {dataset} {config}")
-            load_dataset(dataset, config, num_proc=16)
 
     for model in torchvision_models_to_download:
         print(f"Downloading {model}")
         torch.hub.load("pytorch/vision", model, weights="DEFAULT")
+
+
+if __name__ == "__main__":
+    main()

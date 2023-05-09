@@ -1,4 +1,4 @@
-#!/home/mila/n/normandf/.conda/envs/datamodules/bin/python
+#!/network/weights/shared_cache/.env/bin/python
 """Sets up a user cache directory for commonly used libraries, while reusing shared cache entries.
 
 Use this to avoid having to download files to the $HOME directory, as well as to remove
