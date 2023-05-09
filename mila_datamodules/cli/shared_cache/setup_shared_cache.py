@@ -188,13 +188,14 @@ def set_environment_variables(
     Also sets the environment variables in `os.environ` so the current process gets them. Returns
     whether the contents of the bash aliases file was changed.
     """
+    logger.info("Setting environment variables.")
     bash_aliases_file = Path(bash_aliases_file).expanduser().resolve()
     file = bash_aliases_file
 
     env_vars = {
         "HF_HOME": user_cache_dir / "huggingface",
         "HF_DATASETS_CACHE": user_cache_dir / "huggingface" / "datasets",
-        "TRANSFORMERS_CACHE": user_cache_dir / "huggingface" / "transformers",
+        # "TRANSFORMERS_CACHE": user_cache_dir / "huggingface" / "transformers",
         "TORCH_HOME": user_cache_dir / "torch",
     }
 
@@ -203,6 +204,7 @@ def set_environment_variables(
 
     if not add_block_to_bash_aliases:
         return False
+    logger.info(f"Adding text block to {bash_aliases_file}")
 
     start_flag = "# >>> cache setup >>>"
     end_flag = "# <<< cache setup <<<"
@@ -379,19 +381,19 @@ def create_links(
     # TODO: Create the list of all files (exhaust the generator below) and use multiprocessing to
     # speed this up.
 
-    files_in_shared_cache = list(_tree(shared_cache_dir, skip_file=skip_file, skip_dir=skip_dir))
+    paths_in_shared_cache = list(_tree(shared_cache_dir, skip_file=skip_file, skip_dir=skip_dir))
+    paths_in_user_cache = [
+        user_cache_dir / path.relative_to(shared_cache_dir) for path in paths_in_shared_cache
+    ]
 
     from tqdm.rich import tqdm
     from tqdm.std import TqdmExperimentalWarning
 
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore", category=TqdmExperimentalWarning)
-        pbar = tqdm(files_in_shared_cache, unit="Files")
+        pbar = tqdm(list(zip(paths_in_user_cache, paths_in_shared_cache)), unit="Files")
 
-    for path_in_shared_cache in pbar:
-        relative_path = path_in_shared_cache.relative_to(shared_cache_dir)
-        path_in_user_cache = user_cache_dir / relative_path
-
+    for path_in_user_cache, path_in_shared_cache in pbar:
         _create_link(
             path_in_user_cache=path_in_user_cache,
             path_in_shared_cache=path_in_shared_cache,
