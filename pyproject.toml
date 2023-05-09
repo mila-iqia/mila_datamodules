@@ -28,6 +28,10 @@ pytest-regressions = "^2.4.2"
 [tool.poetry.scripts]
 mila_datamodules = "mila_datamodules.cli.main:main"
 
+[tool.poetry.plugins."mila_datamodules.prepare_plugin"]
+"torchvision" = "mila_datamodules.cli.torchvision.plugin:TorchVisionPlugin"
+"huggingface" = "mila_datamodules.cli.huggingface.plugin:HuggingFacePlugin"
+
 [tool.black]
 line-length = 99
 
