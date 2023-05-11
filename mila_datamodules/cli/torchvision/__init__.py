@@ -8,6 +8,7 @@ import torchvision.datasets as tvd
 from typing_extensions import Literal
 
 from mila_datamodules.cli.blocks import (
+    AddDatasetNameToPreparedDatasetsFile,
     CallDatasetConstructor,
     Compose,
     CopyFiles,
@@ -15,10 +16,11 @@ from mila_datamodules.cli.blocks import (
     MakeSymlinksToDatasetFiles,
     MoveFiles,
     PrepareDatasetFn,
+    ReuseAlreadyPreparedDatasetOnSameNode,
     StopOnSuccess,
 )
 from mila_datamodules.cli.dataset_args import DatasetArguments
-from mila_datamodules.cli.torchvision.base import VisionDatasetArgs
+from mila_datamodules.cli.torchvision.base import VisionDatasetArgs, dataset_name
 from mila_datamodules.cli.torchvision.coco import (
     CocoCaptionArgs,
     CocoDetectionArgs,
@@ -159,9 +161,25 @@ prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareDatasetFn]] = {
         # TODO: Write a customized `PrepareVisionDataset` for ImageNet that uses Olexa's magic tar
         # command.
         cluster: Compose(
-            StopOnSuccess(CallDatasetConstructor(tvd.ImageNet)),
+            StopOnSuccess(
+                CallDatasetConstructor(tvd.ImageNet)
+            ),  # Try creating the dataset from the root.
+            StopOnSuccess(
+                ReuseAlreadyPreparedDatasetOnSameNode(
+                    tvd.ImageNet,
+                    [
+                        "ILSVRC2012_devkit_t12.tar.gz",
+                        "ILSVRC2012_img_train.tar",
+                        "ILSVRC2012_img_val.tar",
+                        "md5sums",
+                        "meta.bin",
+                        "train",
+                    ],
+                )
+            ),
             MakeSymlinksToDatasetFiles(f"{datasets_dir}/imagenet"),
             CallDatasetConstructor(tvd.ImageNet),
+            AddDatasetNameToPreparedDatasetsFile(dataset_name(tvd.ImageNet)),
         )
         for cluster, datasets_dir in standardized_torchvision_datasets_dir.items()
     },

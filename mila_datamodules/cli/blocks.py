@@ -11,10 +11,10 @@ from zipfile import ZipFile
 
 from typing_extensions import Concatenate
 
-from mila_datamodules.cli.utils import is_local_main, runs_on_local_main_process_first
+from mila_datamodules.cli.types import D, D_co, P
+from mila_datamodules.cli.utils import is_local_main, rich_pbar, runs_on_local_main_process_first
+from mila_datamodules.clusters.utils import get_slurm_tmpdir
 from mila_datamodules.utils import copy_fn
-
-from .types import D, D_co, P
 
 logger = get_logger(__name__)
 # from simple_parsing import ArgumentParser
@@ -101,7 +101,177 @@ class CallDatasetConstructor(PrepareDatasetFn[D_co, P]):
         return str(root)
 
 
-def _recursive_list_files(root: Path, ignore_prefix: tuple[str, ...] = (".",)) -> Iterable[Path]:
+PREPARED_DATASETS_FILE = "prepared_datasets.txt"
+
+
+# TODO: Check if the dataset is already setup in another SLURM_TMPDIR, and if so,
+# create hard links to the dataset files.
+class AddDatasetNameToPreparedDatasetsFile(PrepareDatasetFn):
+    def __init__(self, dataset_name: str) -> None:
+        super().__init__()
+        self.dataset_name = dataset_name
+
+    def __call__(self, root: str | Path, /, *args, **kwargs) -> str:
+        with open(Path(root) / PREPARED_DATASETS_FILE, "w") as f:
+            datasets = [line.strip() for line in f.readlines()]
+
+            datasets = set(datasets)
+            datasets.add(self.dataset_name)
+            f.seek(0)
+            f.writelines(dataset + "\n" for dataset in sorted(datasets))
+        return str(root)
+
+
+def get_prepared_datasets_from_file(p: Path) -> list[str]:
+    with open(p, "r") as f:
+        return [line.strip() for line in f.readlines()]
+
+
+class ReuseAlreadyPreparedDatasetOnSameNode(PrepareDatasetFn[D_co, P]):
+    """Load the dataset by reusing a previously-prepared copy of the dataset on the same node.
+
+    If no copy is available, raises a `RuntimeError`.
+    NOTE: This is meant to be used wrapped by a `StopOnSuccess` inside a `Compose`. For example:
+
+    ```python
+    prepare_imagenet = Compose(
+        # Try creating the dataset from the root directory. Stop if this works, else continue.
+        StopOnSuccess(CallDatasetConstructor(tvd.ImageNet)),
+        # Try creating the dataset by reusing a previously prepared copy on the same node.
+        # Stop if this works, otherwise continue.
+        StopOnSuccess(
+            ReuseAlreadyPreparedDatasetOnSameNode(
+                tvd.ImageNet,
+                prepared_dataset_files_or_directories=[
+                    "ILSVRC2012_devkit_t12.tar.gz",
+                    "ILSVRC2012_img_train.tar",
+                    "ILSVRC2012_img_val.tar",
+                    "md5sums",
+                    "meta.bin",
+                    "train",
+                ],
+            )
+        ),
+        MakeSymlinksToDatasetFiles(f"{datasets_dir}/imagenet"),
+        CallDatasetConstructor(tvd.ImageNet),
+        AddDatasetToPreparedDatasetsFile(tvd.ImageNet),
+    )
+    """
+
+    def __init__(
+        self,
+        dataset_type: type[D_co] | Callable[Concatenate[str, P], D_co],
+        prepared_dataset_files_or_directories: list[str],
+    ) -> None:
+        super().__init__()
+        self.dataset_type = dataset_type
+        self.dataset_files_or_directories = prepared_dataset_files_or_directories
+        # TODO: Make this less torchvision-specific.
+        self.dataset_name = getattr(dataset_type, "__name__", str(dataset_type)).lower()
+
+    def __call__(self, root: str | Path, *dataset_args: P.args, **dataset_kwargs: P.kwargs) -> str:
+        potential_dirs = cache_dirs_on_same_node_with_dataset_already_prepared(
+            self.dataset_name, cache_dir=str(Path(root).relative_to(get_slurm_tmpdir()))
+        )
+
+        for potential_dir in potential_dirs:
+            all_files_or_dirs_that_should_exist = [
+                potential_dir / relative_path_to_file_or_dir
+                for relative_path_to_file_or_dir in self.dataset_files_or_directories
+            ]
+
+            if not all(p.exists() for p in all_files_or_dirs_that_should_exist):
+                logger.debug(
+                    f"The SLURM_TMPDIR at {potential_dir} doesn't contain all the necessary files "
+                    f"for this dataset."
+                )
+                continue
+
+            logger.debug(f"Listing all the dataset files in {potential_dir}")
+            all_files_to_link: set[Path] = set()
+            for file_or_dir in all_files_or_dirs_that_should_exist:
+                if file_or_dir.is_dir():
+                    all_files_to_link.update(_tree(file_or_dir))
+                else:
+                    all_files_to_link.add(file_or_dir)
+
+            link_paths_to_file_paths = {
+                root / file.relative_to(potential_dir): file for file in all_files_to_link
+            }
+            if all(link_path.exists() for link_path in link_paths_to_file_paths):
+                logger.debug(f"Links all already present in {root}!")
+            else:
+                logger.info(
+                    f"Creating hard links in {root} pointing to the files in {potential_dir}."
+                )
+                make_links_to_dataset_files(link_paths_to_file_paths)
+
+            root = CallDatasetConstructor(self.dataset_type, extract_and_verify_archives=False)(
+                root, *dataset_args, **dataset_kwargs
+            )
+            logger.info(f"SUCCESS! Dataset was already prepared in {potential_dir}!")
+            # TODO: If calling the dataset constructor doesn't work for some reason, perhaps we
+            # should remove all the hard links we just created?
+            return root
+
+        logger.info("Unable to find an already prepared version of this dataset on this node.")
+        raise RuntimeError()
+
+
+def make_links_to_dataset_files(link_path_to_file_path: dict[Path, Path]):
+    pbar = rich_pbar(list(link_path_to_file_path.items()), unit="Files", desc="Making links")
+    for link_path, file_path in pbar:
+        assert file_path.exists(), file_path
+        # Make a symlink in the local scratch directory to the archive on the network.
+        if link_path.exists():
+            continue
+        link_path.parent.mkdir(parents=True, exist_ok=True)
+        # NOTE: Inverse order of arguments compared to `Path.symlink_to`:
+        # Make `link_path` a hard link to `file_path`.
+        # logger.debug(f"Making hard link from {link_path} -> {file_path}")
+        file_path.link_to(link_path)
+
+
+def cache_dirs_on_same_node_with_dataset_already_prepared(
+    dataset: str, cache_dir="cache"
+) -> list[Path]:
+    # TODO: `cache` is currently only created when using HuggingFace datasets.
+    slurm_tmpdir = get_slurm_tmpdir()
+    other_slurm_tmpdirs = [
+        p for p in slurm_tmpdir.parent.iterdir() if p.is_dir() and p != slurm_tmpdir
+    ]
+
+    def _can_be_read(d: Path) -> bool:
+        try:
+            next(d.iterdir())
+            logger.debug(f"Able to read from other {d} (owned by {d.owner()})!")
+            return True
+        except IOError as err:
+            logger.debug(f"Unable to read from {d}: {err}")
+            return False
+
+    logger.debug(f"Other slurm TMPDIRS: {other_slurm_tmpdirs}")
+    directories_that_can_be_read = [d for d in other_slurm_tmpdirs if _can_be_read(d)]
+    # Look in those to check if any have a `cache` folder and possibly a file that shows which
+    # dataset was prepared.
+    usable_dirs = [
+        d
+        for d in directories_that_can_be_read
+        if (d / cache_dir).is_dir() and (d / cache_dir / "prepared_datasets.txt").exists()
+    ]
+
+    prepared_datasets_per_dir = {
+        (d / cache_dir): get_prepared_datasets_from_file(d / cache_dir / "prepared_datasets.txt")
+        for d in usable_dirs
+    }
+    potential_directories = []
+    for other_prepared_datasets_dir, prepared_datasets_in_dir in prepared_datasets_per_dir.items():
+        if dataset in prepared_datasets_in_dir:
+            potential_directories.append(other_prepared_datasets_dir)
+    return potential_directories
+
+
+def _tree(root: Path, ignore_prefix: tuple[str, ...] = (".",)) -> Iterable[Path]:
     if not root.exists():
         return []
 
@@ -113,16 +283,16 @@ def _recursive_list_files(root: Path, ignore_prefix: tuple[str, ...] = (".",)) -
         if entry.is_dir():
             # NOTE: The Path objects here will have the right prefix (including `root`). No need
             # to add it.
-            yield from _recursive_list_files(entry, ignore_prefix=ignore_prefix)
+            yield from _tree(entry, ignore_prefix=ignore_prefix)
 
 
-def dataset_files_in_source_dir(
+def all_files_in_dir(
     source: str | Path, ignore_prefixes=(".", "scripts", "README")
 ) -> dict[str, Path]:
     source = Path(source).expanduser().resolve()
     return {
         str(file.relative_to(source)): file
-        for file in _recursive_list_files(Path(source), ignore_prefix=ignore_prefixes)
+        for file in _tree(Path(source), ignore_prefix=ignore_prefixes)
     }
 
 
@@ -145,7 +315,7 @@ class MakeSymlinksToDatasetFiles(PrepareDatasetFn[D_co, P]):
         self.relative_paths_to_files: dict[str, Path]
         if isinstance(source_dir_or_relative_paths_to_files, (str, Path)):
             source = source_dir_or_relative_paths_to_files
-            self.relative_paths_to_files = dataset_files_in_source_dir(source)
+            self.relative_paths_to_files = all_files_in_dir(source)
         else:
             self.relative_paths_to_files = {
                 str(k): Path(v) for k, v in source_dir_or_relative_paths_to_files.items()

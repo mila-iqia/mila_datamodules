@@ -3,10 +3,15 @@ from __future__ import annotations
 import contextlib
 import functools
 import os
+import warnings
 from typing import Callable, TypeVar
 
 import torch
 import torch.distributed
+import tqdm
+from tqdm.rich import tqdm_rich
+from tqdm.std import TqdmExperimentalWarning
+from typing_extensions import ParamSpec
 
 from mila_datamodules.clusters.cluster import Cluster
 from mila_datamodules.clusters.utils import get_slurm_tmpdir
@@ -87,3 +92,25 @@ def replace_dir_name_with_SLURM_TMPDIR(some_string: str) -> str:
 
     new_name = some_string.replace(str(slurm_tmpdir), "os.environ['SLURM_TMPDIR']")
     return new_name
+
+
+_P = ParamSpec("_P")
+PbarType = TypeVar("PbarType", bound=tqdm.std.tqdm)
+
+
+def _tqdm_rich_pbar(
+    fn: Callable[_P, PbarType] = tqdm_rich,
+):
+    @functools.wraps(fn)
+    def _fn(
+        *args: _P.args,
+        **kwargs: _P.kwargs,
+    ) -> PbarType:
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=TqdmExperimentalWarning)
+            return fn(*args, **kwargs)
+
+    return _fn
+
+
+rich_pbar = _tqdm_rich_pbar()
