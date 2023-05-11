@@ -5,7 +5,6 @@ import typing
 from typing import Any, Callable
 
 import torchvision.datasets as tvd
-from torch.utils.data import Dataset
 from typing_extensions import ParamSpec, Protocol, TypeVar
 
 if typing.TYPE_CHECKING:
@@ -16,7 +15,7 @@ else:
 VD = TypeVar("VD", bound=tvd.VisionDataset, default=tvd.VisionDataset)
 VD_co = TypeVar("VD_co", bound=tvd.VisionDataset, default=tvd.VisionDataset, covariant=True)
 D = TypeVar("D")
-D_co = TypeVar("D_co", covariant=True, bound=Dataset)
+D_co = TypeVar("D_co", covariant=True)
 
 C = TypeVar("C", bound=Callable)
 T = TypeVar("T")

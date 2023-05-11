@@ -14,7 +14,7 @@ from mila_datamodules.cli.blocks import (
     Compose,
     ExtractArchives,
     MakeSymlinksToDatasetFiles,
-    StopOnSuccess,
+    SkipRestIfThisWorks,
 )
 from mila_datamodules.cli.torchvision.base import VisionDatasetArgs
 from mila_datamodules.clusters.utils import get_slurm_tmpdir
@@ -62,7 +62,7 @@ def prepare_coco(
     split: CocoSplit,
 ):
     return Compose(
-        StopOnSuccess(
+        SkipRestIfThisWorks(
             _check_coco_is_setup(dataset_type, variant=variant, split=split),
             continue_if_raised=FileNotFoundError,
         ),

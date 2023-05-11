@@ -12,7 +12,7 @@ from mila_datamodules.cli.blocks import (
     Compose,
     CopyFiles,
     MakeSymlinksToDatasetFiles,
-    StopOnSuccess,
+    SkipRestIfThisWorks,
 )
 from mila_datamodules.cli.dataset_args import DatasetArguments
 from mila_datamodules.clusters.utils import get_slurm_tmpdir
@@ -24,7 +24,7 @@ Split = Literal["train-standard", "train-challenge", "val"]
 # (train-standard, train-challenge, val) x (small=True, small=False)
 def prepare_places365(datasets_dir: Path):
     return Compose(
-        StopOnSuccess(
+        SkipRestIfThisWorks(
             CallDatasetConstructor(tvd.Places365),
             continue_if_raised=(FileNotFoundError, RuntimeError),
         ),

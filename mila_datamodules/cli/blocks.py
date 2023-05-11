@@ -112,19 +112,67 @@ class AddDatasetNameToPreparedDatasetsFile(PrepareDatasetFn):
         self.dataset_name = dataset_name
 
     def __call__(self, root: str | Path, /, *args, **kwargs) -> str:
-        with open(Path(root) / PREPARED_DATASETS_FILE, "w") as f:
-            datasets = [line.strip() for line in f.readlines()]
+        prepared_datasets_file = Path(root) / PREPARED_DATASETS_FILE
 
-            datasets = set(datasets)
-            datasets.add(self.dataset_name)
-            f.seek(0)
-            f.writelines(dataset + "\n" for dataset in sorted(datasets))
+        if prepared_datasets_file.exists():
+            datasets = prepared_datasets_file.read_text().splitlines(keepends=False)
+        else:
+            datasets = []
+
+        if self.dataset_name in datasets:
+            logger.debug(f"Dataset {self.dataset_name} is already in the prepared datasets file.")
+            return str(root)
+
+        with open(prepared_datasets_file, "a") as f:
+            logger.info(
+                f"Adding the '{self.dataset_name}' to the prepared datasets file at "
+                f"{prepared_datasets_file}."
+            )
+            f.write(self.dataset_name + "\n")
         return str(root)
 
 
 def get_prepared_datasets_from_file(p: Path) -> list[str]:
     with open(p, "r") as f:
         return [line.strip() for line in f.readlines()]
+
+
+class MakePreparedDatasetUsableByOthersOnSameNode(PrepareDatasetFn[D_co, P]):
+    def __init__(self, readable_files_or_directories: list[str | Path] | None) -> None:
+        super().__init__()
+        self.readable_files_or_directories = readable_files_or_directories
+
+    def __call__(self, root: str | Path, *dataset_args: P.args, **dataset_kwargs: P.kwargs) -> str:
+        root = Path(root)
+        files_to_make_readonly_to_others = (
+            list(_tree(root))
+            if not self.readable_files_or_directories
+            else [
+                root / f
+                for file_or_dir in self.readable_files_or_directories
+                for f in _tree(file_or_dir)
+            ]
+        )
+        # TODO: Make the
+
+        parent_dirs: set[Path] = set()
+        for file in files_to_make_readonly_to_others:
+            parent_dirs.update(file.parents)
+
+        user = root.owner()
+        for parent_dir in parent_dirs:
+            if parent_dir.owner() == user:
+                logger.debug(f"Making dir {parent_dir} readable by others on the same node.")
+                parent_dir.chmod(parent_dir.stat().st_mode | 0o755)
+
+        for file in rich_pbar(files_to_make_readonly_to_others, desc="Making files readable..."):
+            file.chmod(0o755)
+
+        # raise NotImplementedError(
+        #     "TODO: Make the `root` directory and (only) the dataset files within it readable by "
+        #     "others"
+        # )
+        return str(root)
 
 
 class ReuseAlreadyPreparedDatasetOnSameNode(PrepareDatasetFn[D_co, P]):
@@ -271,7 +319,8 @@ def cache_dirs_on_same_node_with_dataset_already_prepared(
     return potential_directories
 
 
-def _tree(root: Path, ignore_prefix: tuple[str, ...] = (".",)) -> Iterable[Path]:
+def _tree(root: str | Path, ignore_prefix: tuple[str, ...] = (".",)) -> Iterable[Path]:
+    root = Path(root)
     if not root.exists():
         return []
 
@@ -534,7 +583,7 @@ class Compose(PrepareDatasetFn[D_co, P]):
         return str(root)
 
 
-class StopOnSuccess(PrepareDatasetFn[D, P]):
+class SkipRestIfThisWorks(PrepareDatasetFn[D, P]):
     """Raises a special Stop exception when running the given callable doesn't raise an exception.
 
     If an exception of a type matching one in `exceptions` is raised by the function, the exception
