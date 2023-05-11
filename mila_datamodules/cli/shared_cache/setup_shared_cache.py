@@ -23,28 +23,29 @@ from logging import getLogger as get_logger
 from pathlib import Path
 from typing import Callable, Iterable, Sequence, TypeVar
 
+from simple_parsing import field
+
 logger = get_logger(__name__)
+logger.setLevel(logging.INFO)
 
 try:
     import rich.logging
 
     logger.addHandler(rich.logging.RichHandler(rich_tracebacks=True))
-    RICH_LOGGING = True
 except ImportError:
-    RICH_LOGGING = False
+    pass
 
-logger.setLevel(logging.INFO)
 
 SCRATCH = Path(os.environ["SCRATCH"])
 DEFAULT_USER_CACHE_DIR = SCRATCH / "cache"
 DEFAULT_SHARED_CACHE_DIR = Path("/network/weights/shared_cache")
 
 
-IGNORE_DIRS = ["__pycache__", ".env"]
+IGNORE_DIRS = ("__pycache__", ".env")
 """Don't create symlinks to files in directories in the shared cache whose name matches any of
 these patterns."""
 
-IGNORE_FILES = ["*.lock"]
+IGNORE_FILES = ("*.lock",)
 """Don't create symlinks to files in the shared cache that match any of these patterns."""
 
 
@@ -68,15 +69,30 @@ class Options:
     This defaults to the path of the shared cache setup by the IDT team on the Mila cluster.
     """
 
+    subdirectory: str = ""
+    """Only create links for files in this subdirectory of the shared cache."""
+
+    verbose: int = field(default=0, action="count", alias="-v")
+    """Logging verbosity.
+
+    The default logging level is `INFO`. Use -v to increase the verbosity to `DEBUG`.
+    """
+
 
 def main(argv: list[str] | None = None):
     options: Options = _parse_args(argv)
-    setup_cache(user_cache_dir=options.user_cache_dir, shared_cache_dir=options.shared_cache_dir)
+    logger.setLevel(_log_level(options.verbose))
+    setup_cache(
+        user_cache_dir=options.user_cache_dir,
+        shared_cache_dir=options.shared_cache_dir,
+        subdirectory=options.subdirectory,
+    )
 
 
 def setup_cache(
     user_cache_dir: Path = DEFAULT_USER_CACHE_DIR,
     shared_cache_dir: Path = DEFAULT_SHARED_CACHE_DIR,
+    subdirectory: str = "",
 ) -> None:
     """Set up the user cache directory.
 
@@ -105,7 +121,7 @@ def setup_cache(
 
     delete_broken_symlinks_to_shared_cache(user_cache_dir, shared_cache_dir)
 
-    create_links(user_cache_dir, shared_cache_dir)
+    create_links(user_cache_dir / subdirectory, shared_cache_dir / subdirectory)
 
     bash_aliases_file = "~/.bash_aliases"
     bash_aliases_file_changed = set_environment_variables(
@@ -142,101 +158,6 @@ def set_striping_config_for_dir(dir: Path, num_targets: int = 4, chunksize: str 
         encoding="utf-8",
     )
     logger.debug(output)
-
-
-def set_environment_variables(
-    user_cache_dir: Path,
-    bash_aliases_file: str | Path = "~/.bash_aliases",
-    add_block_to_bash_aliases: bool = True,
-) -> bool:
-    """Adds a block of code to the bash_aliases file (creating it if necessary) that sets some
-    relevant environment variables for each library so they start to use the new cache dir.
-
-    Also sets the environment variables in `os.environ` so the current process gets them. Returns
-    whether the contents of the bash aliases file was changed.
-    """
-    logger.info("Setting environment variables.")
-    bash_aliases_file = Path(bash_aliases_file).expanduser().resolve()
-    file = bash_aliases_file
-
-    env_vars = {
-        "HF_HOME": user_cache_dir / "huggingface",
-        "HF_DATASETS_CACHE": user_cache_dir / "huggingface" / "datasets",
-        "TORCH_HOME": user_cache_dir / "torch",
-        # TODO: Possibly unset these variables, in case users already have them set somewhere?
-        # OR: Raise a warning if the user has those variables set in their env, because they might
-        # prevent the cache from being used correctly.
-        # "TRANSFORMERS_CACHE": user_cache_dir / "huggingface" / "transformers",
-    }
-
-    for key, value in env_vars.items():
-        os.environ[key] = str(value)
-
-    if not add_block_to_bash_aliases:
-        return False
-    logger.info(f"Adding text block to {bash_aliases_file}")
-
-    start_flag = "# >>> cache setup >>>"
-    end_flag = "# <<< cache setup <<<"
-    lines_to_add = [
-        start_flag,
-        *(f"export {var_name}={str(var_value)}" for var_name, var_value in env_vars.items()),
-        end_flag,
-    ]
-
-    if not file.exists():
-        file.touch(0o644)
-        file.write_text("#!/bin/bash\n")
-
-    with open(file, "r") as f:
-        lines = f.readlines()
-    block_of_text = "\n".join(lines_to_add) + "\n"
-    start_line = start_flag + "\n"
-    end_line = end_flag + "\n"
-
-    _update_start_and_end_flags(file, start_line, end_line)
-
-    if start_line not in lines and end_line not in lines:
-        logger.info(f"Adding a block of text at the bottom of {file}:")
-        with open(file, "a") as f:
-            for line in block_of_text.splitlines():
-                logger.debug(line.strip())
-            f.write("\n\n" + block_of_text + "\n")
-        return True
-
-    if start_line in lines and end_line in lines:
-        logger.debug(f"Block is already present in {file}.")
-
-        start_index = lines.index(start_line)
-        end_index = lines.index(end_line)
-
-        if all(
-            line.strip() == lines_to_add[i]
-            for i, line in enumerate(lines[start_index : end_index + 1])
-        ):
-            logger.debug("Block has same contents.")
-            return False
-        else:
-            logger.debug("Updating the context of the block:")
-            new_lines = block_of_text.splitlines(keepends=True)
-            lines[start_index : end_index + 1] = new_lines
-            with open(file, "w") as f:
-                for line in new_lines:
-                    logger.debug(line.strip())
-                f.writelines(lines)
-                if len(lines) == end_index + 1:
-                    # Add an empty line at the end.
-                    f.write("\n")
-
-            return True
-
-    logger.error(
-        f"Weird! The block of text is only partially present in {file}! (unable to find both "
-        f"the start and end flags). Doing nothing. \n"
-        f"Consider fixing the {file} file manually and re-running the command, or letting IDT "
-        f"know."
-    )
-    return False
 
 
 def delete_broken_symlinks_to_shared_cache(user_cache_dir: Path, shared_cache_dir: Path):
@@ -290,6 +211,8 @@ def create_links(
         pbar = tqdm(list(zip(paths_in_user_cache, paths_in_shared_cache)), unit="Files")
 
     for path_in_user_cache, path_in_shared_cache in pbar:
+        # TODO: Add a cool progress bar box like in Milabench!
+        # pbar.set_description(f"{path_in_shared_cache}")
         _create_link(
             path_in_user_cache=path_in_user_cache,
             path_in_shared_cache=path_in_shared_cache,
@@ -380,6 +303,113 @@ def _create_link(path_in_user_cache: Path, path_in_shared_cache: Path) -> None:
         f"Found a Weird symlink at {path_in_user_cache} that doesn't point to "
         f"{path_in_shared_cache}. (points to {user_cache_file_target} instead?) "
         f"Leaving it as-is."
+    )
+
+
+def set_environment_variables(
+    user_cache_dir: Path,
+    bash_aliases_file: str | Path = "~/.bash_aliases",
+    add_block_to_bash_aliases: bool = True,
+) -> bool:
+    """Adds a block of code to the bash_aliases file (creating it if necessary) that sets some
+    relevant environment variables for each library so they start to use the new cache dir.
+
+    Also sets the environment variables in `os.environ` so the current process gets them. Returns
+    whether the contents of the bash aliases file was changed.
+    """
+    logger.info("Setting environment variables.")
+    bash_aliases_file = Path(bash_aliases_file).expanduser().resolve()
+    file = bash_aliases_file
+
+    env_vars = {
+        "HF_HOME": user_cache_dir / "huggingface",
+        "HF_DATASETS_CACHE": user_cache_dir / "huggingface" / "datasets",
+        "TORCH_HOME": user_cache_dir / "torch",
+        # TODO: Possibly unset these variables, in case users already have them set somewhere?
+        # OR: Raise a warning if the user has those variables set in their env, because they might
+        # prevent the cache from being used correctly.
+        # "TRANSFORMERS_CACHE": user_cache_dir / "huggingface" / "transformers",
+    }
+
+    for key, value in env_vars.items():
+        os.environ[key] = str(value)
+
+    if not add_block_to_bash_aliases:
+        return False
+    logger.info(f"Looking for the text block with variables in {bash_aliases_file}")
+
+    start_flag = "# >>> cache setup >>>"
+    end_flag = "# <<< cache setup <<<"
+    lines_to_add = [
+        start_flag,
+        *(f"export {var_name}={str(var_value)}" for var_name, var_value in env_vars.items()),
+        end_flag,
+    ]
+
+    if not file.exists():
+        file.touch(0o644)
+        file.write_text("#!/bin/bash\n")
+
+    with open(file, "r") as f:
+        lines = f.readlines()
+    block_of_text = "\n".join(lines_to_add) + "\n"
+    start_line = start_flag + "\n"
+    end_line = end_flag + "\n"
+
+    _update_start_and_end_flags(file, start_line, end_line)
+
+    if start_line not in lines and end_line not in lines:
+        logger.info(f"Adding a block of text at the bottom of {file}:")
+        with open(file, "a") as f:
+            for line in block_of_text.splitlines():
+                logger.debug(line.strip())
+            f.write("\n\n" + block_of_text + "\n")
+        return True
+
+    if start_line in lines and end_line in lines:
+        logger.debug(f"Block is already present in {file}.")
+
+        start_index = lines.index(start_line)
+        end_index = lines.index(end_line)
+
+        if all(
+            line.strip() == lines_to_add[i]
+            for i, line in enumerate(lines[start_index : end_index + 1])
+        ):
+            logger.info("Block already has the right contents. Doing nothing.")
+            return False
+        else:
+            logger.info("Updating the context of the block:")
+            new_lines = block_of_text.splitlines(keepends=True)
+            lines[start_index : end_index + 1] = new_lines
+            with open(file, "w") as f:
+                for line in new_lines:
+                    logger.debug(line.strip())
+                f.writelines(lines)
+                if len(lines) == end_index + 1:
+                    # Add an empty line at the end.
+                    f.write("\n")
+
+            return True
+
+    logger.error(
+        f"Weird! The block of text is only partially present in {file}! (unable to find both "
+        f"the start and end flags). Doing nothing. \n"
+        f"Consider fixing the {file} file manually and re-running the command, or letting IDT "
+        f"know."
+    )
+    return False
+
+
+def _log_level(verbose: int) -> int:
+    return (
+        logging.DEBUG
+        if verbose > 1
+        else logging.INFO
+        if verbose == 1
+        else logging.WARNING
+        if verbose == 0
+        else logging.ERROR
     )
 
 

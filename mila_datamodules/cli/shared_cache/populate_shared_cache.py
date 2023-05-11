@@ -1,4 +1,4 @@
-#!/home/mila/n/normandf/.conda/envs/datamodules/bin/python
+#!/network/weights/shared_cache/.env/bin/python
 """Downloads stuff from HuggingFace/torchvision/etc that many researchers might want to use.
 
 If you want to add an entry to this file, please send a message to the IDT team. (or specifically
@@ -14,12 +14,14 @@ default_shared_cache_dir = "/network/datasets/.weights/shared_cache"
 
 hf_models_to_download = [
     "gpt2",
-    "bigscience/bloom",
+    "facebook/opt-2.7b",
+    "facebook/opt-6.7b",
     "facebook/opt-13b",
     "facebook/opt-30b",
     "facebook/opt-66b",
     "t5-large",
     "google/flan-t5-xxl",
+    "bigscience/bloom",
 ]
 
 hf_datasets_to_download: list[tuple[str, list[str] | None]] = [
@@ -27,7 +29,7 @@ hf_datasets_to_download: list[tuple[str, list[str] | None]] = [
     ("gsm8k", ["main", "socratic"]),
     ("wikitext", ["wikitext-103-v1", "wikitext-2-v1", "wikitext-103-raw-v1", "wikitext-2-raw-v1"]),
     ("EleutherAI/pile", ["all"]),
-    ("togethercomputer/RedPajama-Data-1T", None),
+    # ("togethercomputer/RedPajama-Data-1T", None), # TODO: Seems to be a bit buggy.
 ]
 
 torchvision_models_to_download = [
