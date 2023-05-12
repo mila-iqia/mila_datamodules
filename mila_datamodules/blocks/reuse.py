@@ -7,7 +7,7 @@ from typing import Any, Callable
 from typing_extensions import Concatenate
 
 from mila_datamodules.blocks.base import CallDatasetFn
-from mila_datamodules.blocks.path_utils import check_bit, tree
+from mila_datamodules.blocks.path_utils import has_permission, tree
 from mila_datamodules.blocks.types import PrepareDatasetFn
 from mila_datamodules.cli.utils import rich_pbar
 from mila_datamodules.clusters.utils import get_slurm_tmpdir
@@ -176,9 +176,9 @@ def cache_dirs_on_same_node_with_dataset_already_prepared(
             return (
                 d.exists()
                 and d.is_dir()
-                and check_bit(d, "x", "others")
+                and has_permission(d, "x", "others")
                 and (d / PREPARED_DATASETS_FILE).exists()
-                and check_bit(d / PREPARED_DATASETS_FILE, "r", "others")
+                and has_permission(d / PREPARED_DATASETS_FILE, "r", "others")
                 and dataset_name in get_prepared_datasets_from_file(d / PREPARED_DATASETS_FILE)
             )
         except IOError as err:
@@ -201,70 +201,147 @@ def cache_dirs_on_same_node_with_dataset_already_prepared(
 
 # TODO: Check if the dataset is already setup in another SLURM_TMPDIR, and if so,
 # create hard links to the dataset files.
-class AddDatasetNameToPreparedDatasetsFile(PrepareDatasetFn):
+class AddDatasetNameToPreparedDatasetsFile(PrepareDatasetFn[D_co, P]):
     def __init__(self, dataset_name: str) -> None:
         super().__init__()
         self.dataset_name = dataset_name
 
-    def __call__(self, root: str | Path, /, *args, **kwargs) -> str:
-        prepared_datasets_file = Path(root) / PREPARED_DATASETS_FILE
-
-        if prepared_datasets_file.exists():
-            datasets = prepared_datasets_file.read_text().splitlines(keepends=False)
-        else:
-            datasets = []
-
-        if self.dataset_name in datasets:
-            logger.debug(f"Dataset {self.dataset_name} is already in the prepared datasets file.")
-            return str(root)
-
-        with open(prepared_datasets_file, "a") as f:
-            logger.info(
-                f"Adding the '{self.dataset_name}' to the prepared datasets file at "
-                f"{prepared_datasets_file}."
-            )
-            f.write(self.dataset_name + "\n")
+    def __call__(self, root: str | Path, /, *args: P.args, **kwargs: P.kwargs) -> str:
+        # TODO: Use a yaml file so we can save more information than just the dataset name.
+        # TODO: Also save the *args and **kwargs in the file so we can check if the chosen split
+        # was already processed.
+        add_dataset_name_to_prepared_datasets_file(self.dataset_name, str(root), *args, **kwargs)
         return str(root)
 
 
 def get_prepared_datasets_from_file(prepared_datasets_file: str | Path) -> list[str]:
+    prepared_datasets_file = Path(prepared_datasets_file)
+    if not prepared_datasets_file.exists():
+        return []
     with open(prepared_datasets_file, "r") as f:
         return [line.strip() for line in f.readlines()]
 
 
+def add_dataset_name_to_prepared_datasets_file(
+    dataset_name: str, root: str, *args, **kwargs
+) -> None:
+    prepared_datasets_file = Path(root) / PREPARED_DATASETS_FILE
+    if prepared_datasets_file.exists():
+        datasets = prepared_datasets_file.read_text().splitlines(keepends=False)
+    else:
+        datasets = []
+
+    if dataset_name in datasets:
+        logger.debug(f"Dataset {dataset_name} is already in the prepared datasets file.")
+        return str(root)
+
+    with open(prepared_datasets_file, "a") as f:
+        logger.info(
+            f"Adding the '{dataset_name}' to the prepared datasets file at "
+            f"{prepared_datasets_file}."
+        )
+        f.write(dataset_name + "\n")
+
+
+class SkipIfAlreadyPrepared(PrepareDatasetFn[D_co, P]):
+    def __init__(self, dataset_name: str) -> None:
+        super().__init__()
+        self.dataset_name = dataset_name
+
+    def __call__(self, root: str | Path, *dataset_args: P.args, **dataset_kwargs: P.kwargs) -> str:
+        if is_already_prepared(self.dataset_name, root, *dataset_args, **dataset_kwargs):
+            from mila_datamodules.blocks.compose import Compose
+
+            raise Compose.Stop
+        return str(root)
+
+
+def is_already_prepared(
+    dataset_name: str, root: str | Path, *dataset_args, **dataset_kwagrs
+) -> bool:
+    prepared_datasets_file = Path(root) / PREPARED_DATASETS_FILE
+    if prepared_datasets_file.exists() and dataset_name in get_prepared_datasets_from_file(
+        prepared_datasets_file
+    ):
+        logger.info(f"Dataset {dataset_name} has already been prepared in {root}!")
+        return True
+    logger.info(f"Dataset {dataset_name} wasn't found in the prepared datasets file. Continuing.")
+
+    return False
+
+
 class MakePreparedDatasetUsableByOthersOnSameNode(PrepareDatasetFn[D_co, P]):
-    def __init__(self, readable_files_or_directories: list[str | Path] | None) -> None:
+    def __init__(self, readable_files_or_directories: list[str] | None) -> None:
         super().__init__()
         self.readable_files_or_directories = readable_files_or_directories
 
     def __call__(self, root: str | Path, *dataset_args: P.args, **dataset_kwargs: P.kwargs) -> str:
-        root = Path(root)
-        files_to_make_readonly_to_others = (
-            list(tree(root))
-            if not self.readable_files_or_directories
-            else [
-                root / f
-                for file_or_dir in self.readable_files_or_directories
-                for f in tree(file_or_dir)
-            ]
+        make_prepared_dataset_usable_by_others_on_same_node(
+            root, self.readable_files_or_directories
         )
-        # TODO: Make the
-
-        parent_dirs: set[Path] = set()
-        for file in files_to_make_readonly_to_others:
-            parent_dirs.update(file.parents)
-
-        user = root.owner()
-        for parent_dir in parent_dirs:
-            if parent_dir.owner() == user:
-                logger.debug(f"Making dir {parent_dir} readable by others on the same node.")
-                parent_dir.chmod(parent_dir.stat().st_mode | 0o755)
-
-        for file in rich_pbar(files_to_make_readonly_to_others, desc="Making files readable..."):
-            file.chmod(0o755)
-
-        # raise NotImplementedError(
-        #     "TODO: Make the `root` directory and (only) the dataset files within it readable by "
-        #     "others"
-        # )
         return str(root)
+
+
+def make_prepared_dataset_usable_by_others_on_same_node(
+    root: str | Path, files_or_dirs_in_root: list[str] | None
+) -> None:
+    root = Path(root)
+
+    dataset_files: list[Path] = []
+    if files_or_dirs_in_root is None:
+        dataset_files = list(tree(root))
+    else:
+        for relative_path_to_file_or_dir in files_or_dirs_in_root:
+            file_or_dir = root / relative_path_to_file_or_dir
+            if file_or_dir.is_dir():
+                dataset_files.extend(tree(file_or_dir))
+            else:
+                dataset_files.append(file_or_dir)
+
+    assert all(p.exists() for p in dataset_files)
+
+    files_to_make_readonly_to_others = [
+        file
+        for file in rich_pbar(dataset_files, desc="Checking permissions on dataset files")
+        if not has_permission(file, "r", "others")
+    ]
+    if not files_to_make_readonly_to_others:
+        logger.info("All dataset files are already marked as readable by others.")
+        return
+
+    if len(files_to_make_readonly_to_others) < len(dataset_files):
+        _total = len(dataset_files)
+        _n_with_permissions_already = _total - len(files_to_make_readonly_to_others)
+        logger.debug(
+            f"There are already {_n_with_permissions_already}/{_total} files with read "
+            f"permissions for others."
+        )
+
+    user = root.owner()
+    logger.info(
+        f"Making {len(files_to_make_readonly_to_others)} dataset files in {root} "
+        f"readable by others on the same node."
+    )
+
+    parent_directories: list[Path] = []
+    # Make all the dirs from / to `root` executable, so that other users can access the dataset
+    # files but can't read the files in the intermediate directories (e.g. SLURM_TMPDIR)
+    for parent_dir in [p for p in root.parents if p.owner() == user]:
+        logger.debug(f"Marking {parent_dir} as executable by others on the same node.")
+        parent_dir.chmod(parent_dir.stat().st_mode | 0b000_001_001)
+        parent_directories.append(parent_dir)
+
+    logger.info(f"Making the {root} directory readable by others on the same node.")
+    logger.info(
+        "NOTE: Other users won't be able to read files from "
+        + (
+            f"any of the parent directories ({','.join(str(p) for p in parent_directories[:-1])} "
+            f"or {parent_directories[-1]})."
+            if len(parent_directories) > 1
+            else str(root.parent)
+        )
+    )
+    root.chmod(root.stat().st_mode | 0b000_101_101)
+
+    for file in rich_pbar(files_to_make_readonly_to_others, desc="Making files readable..."):
+        file.chmod(file.stat().st_mode | 0b000_100_100)

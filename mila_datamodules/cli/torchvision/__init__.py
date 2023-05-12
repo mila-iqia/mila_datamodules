@@ -20,6 +20,9 @@ from mila_datamodules.blocks import (
     ReuseAlreadyPreparedDatasetOnSameNode,
     SkipRestIfThisWorks,
 )
+from mila_datamodules.blocks.reuse import (
+    SkipIfAlreadyPrepared,
+)
 from mila_datamodules.cli.dataset_args import DatasetArguments
 from mila_datamodules.cli.torchvision.base import VisionDatasetArgs
 from mila_datamodules.cli.torchvision.coco import (
@@ -185,9 +188,13 @@ prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareDatasetFn]] = {
         for cluster, datasets_dir in standardized_torchvision_datasets_dir.items()
     },
     tvd.ImageNet: {
-        # TODO: Write a customized `PrepareVisionDataset` for ImageNet that uses Olexa's magic tar
-        # command.
+        # TODO: Write a customized function for ImageNet that uses Olexa's magic tar
+        # commands (preferably in Python form).
+        # TODO: Add command-line args to select the ImageNet split.
         cluster: Compose(
+            # Check if the dataset is already said to be implemented
+            # (in the prepared datasets file)
+            SkipIfAlreadyPrepared(dataset_name(tvd.ImageNet)),
             Compose(
                 # Try creating the dataset from the root directory. Skip the rest of this inner
                 # list of operations if this works.
@@ -205,6 +212,8 @@ prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareDatasetFn]] = {
                             "meta.bin",
                             "train",
                         ],
+                        # TODO: Add a way to specify additional files depending on the dataset
+                        # kwargs that get passed.
                         # {"split": {"train": "train", "val": "val"}}
                     )
                 ),
@@ -222,9 +231,7 @@ prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareDatasetFn]] = {
                 # Call the constructor to verify the checksums and extract the archives in `root`.
                 CallDatasetFn(tvd.ImageNet),
             ),
-            # Always do these steps, even if the dataset is already prepared:
-            # CallDatasetConstructor(tvd.ImageNet),
-            AddDatasetNameToPreparedDatasetsFile(dataset_name(tvd.ImageNet)),
+            # Always do these steps after preparing the dataset for the first time.
             MakePreparedDatasetUsableByOthersOnSameNode(
                 [
                     "ILSVRC2012_devkit_t12.tar.gz",
@@ -235,6 +242,7 @@ prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareDatasetFn]] = {
                     "train",
                 ],
             ),
+            AddDatasetNameToPreparedDatasetsFile(dataset_name(tvd.ImageNet)),
         )
         for cluster, datasets_dir in standardized_torchvision_datasets_dir.items()
     },

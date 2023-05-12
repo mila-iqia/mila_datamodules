@@ -106,20 +106,23 @@ class ExtractArchives(PrepareDatasetFn[D_co, P]):
 
     @runs_on_local_main_process_first
     def __call__(self, root: str | Path, *dataset_args: P.args, **dataset_kwargs: P.kwargs) -> str:
-        logger.info(f"Extracting archives in {root}...")
-        for archive, dest in self.archives.items():
-            archive = Path(archive)
-            assert not dest.is_absolute()
-
-            dest = root / dest
-            logger.debug(f"Extracting {archive} in {dest}")
-            if archive.suffix == ".zip":
-                with ZipFile(root / archive) as zf:
-                    zf.extractall(str(dest))
-            else:
-                unpack_archive(archive, extract_dir=dest)
-
+        extract_archives(root, self.archives)
         return str(root)
+
+
+def extract_archives(root: str, archives: dict[str, Path]):
+    logger.info(f"Extracting archives in {root}...")
+    for archive, dest in archives.items():
+        archive = Path(archive)
+        assert not dest.is_absolute()
+
+        dest = root / dest
+        logger.debug(f"Extracting {archive} in {dest}")
+        if archive.suffix == ".zip":
+            with ZipFile(root / archive) as zf:
+                zf.extractall(str(dest))
+        else:
+            unpack_archive(archive, extract_dir=dest)
 
 
 class MoveFiles(PrepareDatasetFn[D, P]):

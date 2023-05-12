@@ -89,3 +89,25 @@ class SkipRestIfThisWorks(PrepareDatasetFn[D, P]):
             logger.info("Success!")
             raise Compose.Stop()
         return str(root)
+
+
+class SkipRestIf(PrepareDatasetFn[D_co, P]):
+    """Raises a special Stop exception when running the given callable doesn't raise an exception.
+
+    If an exception of a type matching one in `exceptions` is raised by the function, the exception
+    is ignored. Other exceptions are raised.
+
+    This is used to short-cut the list of operations to perform inside a `Compose` block.
+    """
+
+    def __init__(
+        self,
+        function: Callable[Concatenate[str, P], Any],
+    ):
+        self.function = function
+
+    def __call__(self, root: str | Path, *dataset_args: P.args, **dataset_kwargs: P.kwargs) -> str:
+        output = self.function(str(root), *dataset_args, **dataset_kwargs)
+        if output:
+            raise Compose.Stop()
+        return str(root)
