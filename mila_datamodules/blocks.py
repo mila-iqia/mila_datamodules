@@ -11,9 +11,9 @@ from zipfile import ZipFile
 
 from typing_extensions import Concatenate
 
-from mila_datamodules.cli.types import D, D_co, P
 from mila_datamodules.cli.utils import is_local_main, rich_pbar, runs_on_local_main_process_first
 from mila_datamodules.clusters.utils import get_slurm_tmpdir
+from mila_datamodules.types import D, D_co, P
 from mila_datamodules.utils import copy_fn
 
 logger = get_logger(__name__)

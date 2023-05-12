@@ -13,8 +13,8 @@ from typing_extensions import Concatenate, ParamSpec
 
 from mila_datamodules.cli.dataset_args import DatasetArguments
 from mila_datamodules.cli.torchvision import PrepareDatasetFn, prepare_torchvision_datasets
-from mila_datamodules.cli.types import VD
 from mila_datamodules.clusters import CURRENT_CLUSTER
+from mila_datamodules.types import VD
 
 P = ParamSpec("P", default=Any)
 no_internet = pytest.mark.disable_socket

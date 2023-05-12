@@ -4,7 +4,7 @@ import dataclasses
 from dataclasses import dataclass
 from typing import Generic
 
-from .types import T
+from ..types import T
 
 
 @dataclass
