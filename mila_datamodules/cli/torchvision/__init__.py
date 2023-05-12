@@ -163,10 +163,11 @@ prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareDatasetFn]] = {
         # command.
         cluster: Compose(
             Compose(
-                # Try creating the dataset from the root directory. Skip the rest if this works.
+                # Try creating the dataset from the root directory. Skip the rest of this inner
+                # list of operations if this works.
                 SkipRestIfThisWorks(CallDatasetConstructor(tvd.ImageNet)),
                 # Try creating the dataset by reusing a previously prepared copy on the same node.
-                # Skip the rest if this works.
+                # Skip the rest of this inner list if this works.
                 SkipRestIfThisWorks(
                     ReuseAlreadyPreparedDatasetOnSameNode(
                         tvd.ImageNet,
@@ -180,6 +181,7 @@ prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareDatasetFn]] = {
                         ],
                     )
                 ),
+                # repare the dataset since it wasn't already.
                 MakeSymlinksToDatasetFiles(
                     {
                         archive: f"{datasets_dir}/imagenet/{archive}"
@@ -193,6 +195,7 @@ prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareDatasetFn]] = {
                 # Call the constructor to verify the checksums and extract the archives in `root`.
                 CallDatasetConstructor(tvd.ImageNet),
             ),
+            # Always do these steps, even if the dataset is already prepared:
             # CallDatasetConstructor(tvd.ImageNet),
             AddDatasetNameToPreparedDatasetsFile(dataset_name(tvd.ImageNet)),
             MakePreparedDatasetUsableByOthersOnSameNode(
