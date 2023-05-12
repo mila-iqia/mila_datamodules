@@ -8,7 +8,7 @@ import torchvision.datasets as tvd
 from typing_extensions import Literal
 
 from mila_datamodules.blocks import (
-    CallDatasetConstructor,
+    CallDatasetFn,
     Compose,
     CopyFiles,
     MakeSymlinksToDatasetFiles,
@@ -25,7 +25,7 @@ Split = Literal["train-standard", "train-challenge", "val"]
 def prepare_places365(datasets_dir: Path):
     return Compose(
         SkipRestIfThisWorks(
-            CallDatasetConstructor(tvd.Places365),
+            CallDatasetFn(tvd.Places365),
             continue_if_raised=(FileNotFoundError, RuntimeError),
         ),
         CopyFiles(
@@ -83,7 +83,7 @@ def prepare_places365(datasets_dir: Path):
         ),
         # NOTE: Calling tvd.Places365(..., download=True) raises an error if the archives have
         # already been extracted.
-        CallDatasetConstructor(
+        CallDatasetFn(
             tvd.Places365,
             extract_and_verify_archives=True,
         ),

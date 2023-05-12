@@ -10,7 +10,7 @@ import torchvision.datasets as tvd
 from typing_extensions import TypeVar
 
 from mila_datamodules.blocks import (
-    CallDatasetConstructor,
+    CallDatasetFn,
     Compose,
     ExtractArchives,
     MakeSymlinksToDatasetFiles,
@@ -37,7 +37,7 @@ def _check_coco_is_setup(dataset_type: type[CocoType], variant: CocoVariant, spl
         *args: P.args,
         **kwargs: P.kwargs,
     ) -> str:
-        fn = CallDatasetConstructor(dataset_type, get_index=0)
+        fn = CallDatasetFn(dataset_type, get_index=0)
         fn(
             f"{root}/{split}2017",
             annFile=f"{root}/annotations/{variant}_{split}2017.json",

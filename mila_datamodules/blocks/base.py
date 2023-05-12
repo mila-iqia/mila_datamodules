@@ -19,7 +19,7 @@ from mila_datamodules.utils import copy_fn
 logger = get_logger(__name__)
 
 
-class CallDatasetConstructor(PrepareDatasetFn[D_co, P]):
+class CallDatasetFn(PrepareDatasetFn[D_co, P]):
     """Function that calls the dataset constructor with the given arguments.
 
     Parameters

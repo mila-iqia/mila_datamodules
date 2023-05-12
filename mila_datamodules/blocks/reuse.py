@@ -6,7 +6,7 @@ from typing import Any, Callable
 
 from typing_extensions import Concatenate
 
-from mila_datamodules.blocks.base import CallDatasetConstructor
+from mila_datamodules.blocks.base import CallDatasetFn
 from mila_datamodules.blocks.path_utils import check_bit, tree
 from mila_datamodules.blocks.types import PrepareDatasetFn
 from mila_datamodules.cli.utils import rich_pbar
@@ -114,7 +114,7 @@ def reuse_already_prepared_dataset_on_same_node(
             logger.info(f"Creating hard links in {root} pointing to the files in {potential_dir}.")
             make_links_to_dataset_files(link_paths_to_file_paths)
 
-        root = CallDatasetConstructor(dataset_fn, extract_and_verify_archives=False)(
+        root = CallDatasetFn(dataset_fn, extract_and_verify_archives=False)(
             root, *dataset_args, **dataset_kwargs
         )
         logger.info(f"SUCCESS! Dataset was already prepared in {potential_dir}!")

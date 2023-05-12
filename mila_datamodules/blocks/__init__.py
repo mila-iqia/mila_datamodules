@@ -1,4 +1,4 @@
-from .base import CallDatasetConstructor, CopyFiles, ExtractArchives, MoveFiles, move_files
+from .base import CallDatasetFn, CopyFiles, ExtractArchives, MoveFiles, move_files
 from .compose import Compose, SkipRestIfThisWorks
 from .links import (
     MakeSymlinksToDatasetFiles,
@@ -13,7 +13,7 @@ from .types import PrepareDatasetFn
 
 __all__ = [
     "AddDatasetNameToPreparedDatasetsFile",
-    "CallDatasetConstructor",
+    "CallDatasetFn",
     "Compose",
     "CopyFiles",
     "ExtractArchives",

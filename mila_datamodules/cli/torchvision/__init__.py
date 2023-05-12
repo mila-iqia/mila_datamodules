@@ -9,7 +9,7 @@ from typing_extensions import Literal
 
 from mila_datamodules.blocks import (
     AddDatasetNameToPreparedDatasetsFile,
-    CallDatasetConstructor,
+    CallDatasetFn,
     Compose,
     CopyFiles,
     ExtractArchives,
@@ -46,7 +46,7 @@ standardized_torchvision_datasets_dir = {
 prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareDatasetFn]] = {
     tvd.Caltech101: {
         cluster: Compose(
-            SkipRestIfThisWorks(CallDatasetConstructor(tvd.Caltech101)),
+            SkipRestIfThisWorks(CallDatasetFn(tvd.Caltech101)),
             MakeSymlinksToDatasetFiles(
                 {
                     f"caltech101/{p}": f"{datasets_dir}/caltech101/{p}"
@@ -56,26 +56,26 @@ prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareDatasetFn]] = {
                     ]
                 }
             ),
-            CallDatasetConstructor(tvd.Caltech101, extract_and_verify_archives=True),
+            CallDatasetFn(tvd.Caltech101, extract_and_verify_archives=True),
         )
         for cluster, datasets_dir in standardized_torchvision_datasets_dir.items()
     },
     tvd.Caltech256: {
         cluster: Compose(
-            SkipRestIfThisWorks(CallDatasetConstructor(tvd.Caltech256)),
+            SkipRestIfThisWorks(CallDatasetFn(tvd.Caltech256)),
             MakeSymlinksToDatasetFiles(
                 {
                     f"caltech256/{p}": f"{datasets_dir}/caltech256/{p}"
                     for p in ["256_ObjectCategories.tar"]
                 }
             ),
-            CallDatasetConstructor(tvd.Caltech256, extract_and_verify_archives=True),
+            CallDatasetFn(tvd.Caltech256, extract_and_verify_archives=True),
         )
         for cluster, datasets_dir in standardized_torchvision_datasets_dir.items()
     },
     tvd.CelebA: {
         cluster: Compose(
-            SkipRestIfThisWorks(CallDatasetConstructor(tvd.CelebA)),
+            SkipRestIfThisWorks(CallDatasetFn(tvd.CelebA)),
             MakeSymlinksToDatasetFiles(f"{datasets_dir}/celeba"),
             # Torchvision will look into a celeba directory to preprocess
             # the dataset, so we move the files a new directory.
@@ -86,41 +86,41 @@ prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareDatasetFn]] = {
                     "Img/*": "celeba/*",
                 }
             ),
-            CallDatasetConstructor(tvd.CelebA, extract_and_verify_archives=True),
+            CallDatasetFn(tvd.CelebA, extract_and_verify_archives=True),
         )
         for cluster, datasets_dir in standardized_torchvision_datasets_dir.items()
     },
     tvd.CIFAR10: {
         cluster: Compose(
-            SkipRestIfThisWorks(CallDatasetConstructor(tvd.CIFAR10)),
+            SkipRestIfThisWorks(CallDatasetFn(tvd.CIFAR10)),
             MakeSymlinksToDatasetFiles(
                 {"cifar-10-python.tar.gz": (f"{datasets_dir}/cifar10/cifar-10-python.tar.gz")}
             ),
-            CallDatasetConstructor(tvd.CIFAR10, extract_and_verify_archives=True),
+            CallDatasetFn(tvd.CIFAR10, extract_and_verify_archives=True),
         )
         for cluster, datasets_dir in standardized_torchvision_datasets_dir.items()
     },
     tvd.CIFAR100: {
         cluster: Compose(
-            SkipRestIfThisWorks(CallDatasetConstructor(tvd.CIFAR100)),
+            SkipRestIfThisWorks(CallDatasetFn(tvd.CIFAR100)),
             MakeSymlinksToDatasetFiles(
                 {"cifar-100-python.tar.gz": (f"{datasets_dir}/cifar100/cifar-100-python.tar.gz")}
             ),
-            CallDatasetConstructor(tvd.CIFAR100, extract_and_verify_archives=True),
+            CallDatasetFn(tvd.CIFAR100, extract_and_verify_archives=True),
         )
         for cluster, datasets_dir in standardized_torchvision_datasets_dir.items()
     },
     tvd.Cityscapes: {
         cluster: Compose(
-            SkipRestIfThisWorks(CallDatasetConstructor(tvd.Cityscapes)),
+            SkipRestIfThisWorks(CallDatasetFn(tvd.Cityscapes)),
             MakeSymlinksToDatasetFiles(f"{datasets_dir}/cityscapes"),
-            CallDatasetConstructor(tvd.Cityscapes),
+            CallDatasetFn(tvd.Cityscapes),
         )
         for cluster, datasets_dir in standardized_torchvision_datasets_dir.items()
     },
     tvd.FashionMNIST: {
         cluster: Compose(
-            SkipRestIfThisWorks(CallDatasetConstructor(tvd.FashionMNIST)),
+            SkipRestIfThisWorks(CallDatasetFn(tvd.FashionMNIST)),
             # Make symlinks + rename in one step:
             MakeSymlinksToDatasetFiles(
                 {
@@ -133,7 +133,7 @@ prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareDatasetFn]] = {
                     ]
                 }
             ),
-            CallDatasetConstructor(tvd.FashionMNIST, extract_and_verify_archives=True),
+            CallDatasetFn(tvd.FashionMNIST, extract_and_verify_archives=True),
         )
         # )
         for cluster, datasets_dir in standardized_torchvision_datasets_dir.items()
@@ -142,7 +142,7 @@ prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareDatasetFn]] = {
     # user (within '2017', '2018', '2019', '2021_train', '2021_train_mini', '2021_valid')
     tvd.INaturalist: {
         cluster: Compose(
-            SkipRestIfThisWorks(CallDatasetConstructor(tvd.INaturalist)),
+            SkipRestIfThisWorks(CallDatasetFn(tvd.INaturalist)),
             # Make symlinks + rename in one step:
             MakeSymlinksToDatasetFiles(
                 {
@@ -154,7 +154,7 @@ prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareDatasetFn]] = {
                     }.items()
                 }
             ),
-            CallDatasetConstructor(tvd.INaturalist, extract_and_verify_archives=True),
+            CallDatasetFn(tvd.INaturalist, extract_and_verify_archives=True),
         )
         for cluster, datasets_dir in standardized_torchvision_datasets_dir.items()
     },
@@ -165,7 +165,7 @@ prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareDatasetFn]] = {
             Compose(
                 # Try creating the dataset from the root directory. Skip the rest of this inner
                 # list of operations if this works.
-                SkipRestIfThisWorks(CallDatasetConstructor(tvd.ImageNet)),
+                SkipRestIfThisWorks(CallDatasetFn(tvd.ImageNet)),
                 # Try creating the dataset by reusing a previously prepared copy on the same node.
                 # Skip the rest of this inner list if this works.
                 SkipRestIfThisWorks(
@@ -193,7 +193,7 @@ prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareDatasetFn]] = {
                     }
                 ),
                 # Call the constructor to verify the checksums and extract the archives in `root`.
-                CallDatasetConstructor(tvd.ImageNet),
+                CallDatasetFn(tvd.ImageNet),
             ),
             # Always do these steps, even if the dataset is already prepared:
             # CallDatasetConstructor(tvd.ImageNet),
@@ -213,18 +213,18 @@ prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareDatasetFn]] = {
     },
     tvd.KMNIST: {
         cluster: Compose(
-            SkipRestIfThisWorks(CallDatasetConstructor(tvd.KMNIST)),
+            SkipRestIfThisWorks(CallDatasetFn(tvd.KMNIST)),
             MakeSymlinksToDatasetFiles(datasets_dir / "kmnist"),
             # Torchvision will look into a KMNIST/raw directory to
             # preprocess the dataset
             MoveFiles({"*": "KMNIST/raw/*"}),
-            CallDatasetConstructor(tvd.KMNIST, extract_and_verify_archives=True),
+            CallDatasetFn(tvd.KMNIST, extract_and_verify_archives=True),
         )
         for cluster, datasets_dir in standardized_torchvision_datasets_dir.items()
     },
     tvd.MNIST: {
         cluster: Compose(
-            SkipRestIfThisWorks(CallDatasetConstructor(tvd.MNIST)),
+            SkipRestIfThisWorks(CallDatasetFn(tvd.MNIST)),
             MakeSymlinksToDatasetFiles(
                 {
                     f"MNIST/raw/{filename}": f"{datasets_dir}/mnist/{filename}"
@@ -236,13 +236,13 @@ prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareDatasetFn]] = {
                     ]
                 }
             ),
-            CallDatasetConstructor(tvd.MNIST, extract_and_verify_archives=True),
+            CallDatasetFn(tvd.MNIST, extract_and_verify_archives=True),
         )
         for cluster, datasets_dir in standardized_torchvision_datasets_dir.items()
     },
     tvd.QMNIST: {
         cluster: Compose(
-            SkipRestIfThisWorks(CallDatasetConstructor(tvd.QMNIST)),
+            SkipRestIfThisWorks(CallDatasetFn(tvd.QMNIST)),
             MakeSymlinksToDatasetFiles(
                 {
                     f"QMNIST/raw/{p}": f"/network/datasets/qmnist/{p}"
@@ -258,23 +258,23 @@ prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareDatasetFn]] = {
                     ]
                 }
             ),
-            CallDatasetConstructor(tvd.QMNIST, extract_and_verify_archives=True),
+            CallDatasetFn(tvd.QMNIST, extract_and_verify_archives=True),
         )
         for cluster, datasets_dir in standardized_torchvision_datasets_dir.items()
     },
     tvd.STL10: {
         cluster: Compose(
-            SkipRestIfThisWorks(CallDatasetConstructor(tvd.STL10)),
+            SkipRestIfThisWorks(CallDatasetFn(tvd.STL10)),
             MakeSymlinksToDatasetFiles(
                 {p: f"{datasets_folder}/stl10/{p}" for p in ["stl10_binary.tar.gz"]}
             ),
-            CallDatasetConstructor(tvd.STL10, extract_and_verify_archives=True),
+            CallDatasetFn(tvd.STL10, extract_and_verify_archives=True),
         )
         for cluster, datasets_folder in standardized_torchvision_datasets_dir.items()
     },
     tvd.SVHN: {
         cluster: Compose(
-            SkipRestIfThisWorks(CallDatasetConstructor(tvd.SVHN)),
+            SkipRestIfThisWorks(CallDatasetFn(tvd.SVHN)),
             MakeSymlinksToDatasetFiles(
                 {
                     p: f"{datasets_dir}/svhn/{p}"
@@ -288,7 +288,7 @@ prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareDatasetFn]] = {
                     ]
                 },
             ),
-            CallDatasetConstructor(tvd.SVHN, extract_and_verify_archives=True),
+            CallDatasetFn(tvd.SVHN, extract_and_verify_archives=True),
         )
         for cluster, datasets_dir in standardized_torchvision_datasets_dir.items()
     },
@@ -299,7 +299,7 @@ prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareDatasetFn]] = {
     tvd.UCF101: {
         cluster: Compose(
             SkipRestIfThisWorks(
-                lambda root, *args, **kwargs: CallDatasetConstructor(tvd.UCF101)(
+                lambda root, *args, **kwargs: CallDatasetFn(tvd.UCF101)(
                     str(Path(root) / "UCF-101"), *args, **kwargs
                 ),
                 # CallDatasetConstructor(tvd.UCF101),
@@ -329,7 +329,7 @@ prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareDatasetFn]] = {
             # TODO: Weird, but we need to add this "UCF-101" folder to the "root" argument for it
             # to work.
             # lambda root, *args, **kwargs: str(Path(root) / "UCF-101"),
-            lambda root, *args, **kwargs: CallDatasetConstructor(tvd.UCF101)(
+            lambda root, *args, **kwargs: CallDatasetFn(tvd.UCF101)(
                 str(Path(root) / "UCF-101"), *args, **kwargs
             ),
         )
