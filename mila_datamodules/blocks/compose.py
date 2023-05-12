@@ -14,10 +14,20 @@ logger = get_logger(__name__)
 
 
 class Compose(PrepareDatasetFn[D_co, P]):
+    """Calls functions in order.
+
+    The functions take a string as their first positional argument.
+
+    If one of the functions returns a string, it is passed as the positional argument to the next
+    function.
+    If the output of one of the functions isn't a string, it is ignored, and same argument is
+    passed to the next function.
+    """
+
     class Stop(Exception):
         pass
 
-    def __init__(self, *callables: PrepareDatasetFn[D_co, P]) -> None:
+    def __init__(self, *callables: Callable[Concatenate[str, P], str]) -> None:
         self.callables = callables
 
     @runs_on_local_main_process_first
@@ -27,6 +37,7 @@ class Compose(PrepareDatasetFn[D_co, P]):
         *dataset_args: P.args,
         **dataset_kwargs: P.kwargs,
     ) -> str:
+        root = str(root)
         try:
             for c in self.callables:
                 # TODO: Check that nesting `runs_on_local_main_process_first` decorators isn't a
@@ -34,7 +45,7 @@ class Compose(PrepareDatasetFn[D_co, P]):
                 root = c(root, *dataset_args, **dataset_kwargs)
         except self.Stop:
             pass
-        return str(root)
+        return root
 
 
 class SkipRestIfThisWorks(PrepareDatasetFn[D, P]):

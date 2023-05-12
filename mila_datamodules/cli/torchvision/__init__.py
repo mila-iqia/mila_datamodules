@@ -21,7 +21,7 @@ from mila_datamodules.blocks import (
     SkipRestIfThisWorks,
 )
 from mila_datamodules.cli.dataset_args import DatasetArguments
-from mila_datamodules.cli.torchvision.base import VisionDatasetArgs, dataset_name
+from mila_datamodules.cli.torchvision.base import VisionDatasetArgs
 from mila_datamodules.cli.torchvision.coco import (
     CocoCaptionArgs,
     CocoDetectionArgs,
@@ -31,6 +31,7 @@ from mila_datamodules.cli.torchvision.coco import (
 from mila_datamodules.cli.torchvision.places365 import Places365Args, prepare_places365
 from mila_datamodules.clusters.cluster import Cluster
 from mila_datamodules.clusters.utils import get_slurm_tmpdir
+from mila_datamodules.utils import dataset_name
 
 # NOTE: For some datasets, we have datasets stored in folders with the same structure. This here is
 # only really used to prevent repeating a bit of code in the dictionary below.
@@ -142,19 +143,44 @@ prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareDatasetFn]] = {
     # user (within '2017', '2018', '2019', '2021_train', '2021_train_mini', '2021_valid')
     tvd.INaturalist: {
         cluster: Compose(
-            SkipRestIfThisWorks(CallDatasetFn(tvd.INaturalist)),
-            # Make symlinks + rename in one step:
-            MakeSymlinksToDatasetFiles(
-                {
-                    tv_expects_name: f"{datasets_dir}/inat/{our_archive_name}"
-                    for tv_expects_name, our_archive_name in {
-                        "2021_train.tgz": "train.tar.gz",
-                        "2021_train_mini.tgz": "train_mini.tar.gz",
-                        "2021_valid.tgz": "val.tar.gz",
-                    }.items()
-                }
+            Compose(
+                SkipRestIfThisWorks(CallDatasetFn(tvd.INaturalist)),
+                SkipRestIfThisWorks(
+                    ReuseAlreadyPreparedDatasetOnSameNode(
+                        tvd.INaturalist,
+                        prepared_dataset_files_or_directories=[
+                            "2021_train_mini.tgz",
+                            "2021_train.tgz",
+                            "2021_valid.tgz",
+                            "train",
+                        ],
+                    ),
+                ),
+                # Make symlinks + rename in one step:
+                MakeSymlinksToDatasetFiles(
+                    {
+                        tv_expects_name: f"{datasets_dir}/inat/{our_archive_name}"
+                        for tv_expects_name, our_archive_name in {
+                            "2021_train.tgz": "train.tar.gz",
+                            "2021_train_mini.tgz": "train_mini.tar.gz",
+                            "2021_valid.tgz": "val.tar.gz",
+                        }.items()
+                    }
+                ),
+                CallDatasetFn(tvd.INaturalist, extract_and_verify_archives=True),
             ),
-            CallDatasetFn(tvd.INaturalist, extract_and_verify_archives=True),
+            # TODO: Here there's something interesting. For other splits, other folders will have
+            # been created (e.g. valid or train_mini). Therefore, we need to store which split was
+            # used in the file.
+            MakePreparedDatasetUsableByOthersOnSameNode(
+                readable_files_or_directories=[
+                    "2021_train_mini.tgz",
+                    "2021_train.tgz",
+                    "2021_valid.tgz",
+                    "train",
+                ],
+            ),
+            AddDatasetNameToPreparedDatasetsFile(dataset_name(tvd.INaturalist)),
         )
         for cluster, datasets_dir in standardized_torchvision_datasets_dir.items()
     },
@@ -179,6 +205,7 @@ prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareDatasetFn]] = {
                             "meta.bin",
                             "train",
                         ],
+                        # {"split": {"train": "train", "val": "val"}}
                     )
                 ),
                 # repare the dataset since it wasn't already.

@@ -52,10 +52,13 @@ class ReuseAlreadyPreparedDatasetOnSameNode(PrepareDatasetFn[D_co, P]):
         self,
         dataset_type: Callable[Concatenate[str, P], D_co],
         prepared_dataset_files_or_directories: list[str],
+        extra_files_depending_on_dataset_kwargs: dict[str, dict[Any, str | list[str]]]
+        | None = None,
     ) -> None:
         super().__init__()
         self.dataset_type = dataset_type
         self.dataset_files_or_directories = prepared_dataset_files_or_directories
+        self.extra_files_depending_on_kwargs = extra_files_depending_on_dataset_kwargs or {}
         # TODO: Make this less torchvision-specific.
         self.dataset_name = getattr(dataset_type, "__name__", str(dataset_type)).lower()
 

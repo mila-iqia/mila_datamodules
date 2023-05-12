@@ -14,7 +14,7 @@ from typing_extensions import Concatenate
 from mila_datamodules.blocks.types import PrepareDatasetFn
 from mila_datamodules.cli.utils import is_local_main, runs_on_local_main_process_first
 from mila_datamodules.types import D, D_co, P
-from mila_datamodules.utils import copy_fn
+from mila_datamodules.utils import copy_fn, dataset_name
 
 logger = get_logger(__name__)
 
@@ -37,11 +37,11 @@ class CallDatasetFn(PrepareDatasetFn[D_co, P]):
 
     def __init__(
         self,
-        dataset_type: type[D_co] | Callable[Concatenate[str, P], D_co],
+        dataset_fn: type[D_co] | Callable[Concatenate[str, P], D_co],
         extract_and_verify_archives: bool = False,
         get_index: int | None = 0,
     ):
-        self.dataset_type = dataset_type
+        self.dataset_fn = dataset_fn
         self.extract_and_verify_archives = extract_and_verify_archives
         self.get_index = get_index
 
@@ -67,7 +67,7 @@ class CallDatasetFn(PrepareDatasetFn[D_co, P]):
             if self.extract_and_verify_archives
             else f"Checking if the dataset is properly set up in {root}."
         )
-        fn_name = getattr(self.dataset_type, "__name__", str(self.dataset_type))
+        fn_name = dataset_name(self.dataset_fn)
         fn_call_message = f"{fn_name}({root!r}"
         if dataset_args or dataset_kwargs:
             fn_call_message += ", "
@@ -78,7 +78,7 @@ class CallDatasetFn(PrepareDatasetFn[D_co, P]):
         fn_call_message += ")"
         logger.debug(f"Calling {fn_call_message}")
 
-        dataset_instance = self.dataset_type(str(root), *dataset_args, **dataset_kwargs)
+        dataset_instance = self.dataset_fn(str(root), *dataset_args, **dataset_kwargs)
         if is_local_main():
             logger.info(f"Successfully read dataset:\n{dataset_instance}")
 

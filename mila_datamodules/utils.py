@@ -185,3 +185,7 @@ def cpus_per_node() -> int:
     import multiprocessing
 
     return multiprocessing.cpu_count()
+
+
+def dataset_name(dataset_type: type | Callable) -> str:
+    return getattr(dataset_type, "__name__", str(dataset_type)).lower()
