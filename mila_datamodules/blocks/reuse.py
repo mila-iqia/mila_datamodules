@@ -12,6 +12,7 @@ from mila_datamodules.blocks.types import PrepareDatasetFn
 from mila_datamodules.cli.utils import rich_pbar
 from mila_datamodules.clusters.utils import get_slurm_tmpdir
 from mila_datamodules.types import D_co, P
+from mila_datamodules.utils import dataset_name
 
 logger = get_logger(__name__)
 PREPARED_DATASETS_FILE = "prepared_datasets.txt"
@@ -50,28 +51,40 @@ class ReuseAlreadyPreparedDatasetOnSameNode(PrepareDatasetFn[D_co, P]):
 
     def __init__(
         self,
-        dataset_type: Callable[Concatenate[str, P], D_co],
+        dataset_fn: Callable[Concatenate[str, P], D_co],
         prepared_dataset_files_or_directories: list[str],
-        extra_files_depending_on_dataset_kwargs: dict[str, dict[Any, str | list[str]]]
-        | None = None,
+        extra_files_depending_on_kwargs: dict[str, dict[Any, str | list[str]]] | None = None,
     ) -> None:
         super().__init__()
-        self.dataset_type = dataset_type
+        self.dataset_fn = dataset_fn
         self.dataset_files_or_directories = prepared_dataset_files_or_directories
-        self.extra_files_depending_on_kwargs = extra_files_depending_on_dataset_kwargs or {}
+        self.extra_files_depending_on_kwargs = extra_files_depending_on_kwargs or {}
         # TODO: Make this less torchvision-specific.
-        self.dataset_name = getattr(dataset_type, "__name__", str(dataset_type)).lower()
+        self.dataset_name = dataset_name(dataset_fn)
 
     def __call__(self, root: str | Path, *dataset_args: P.args, **dataset_kwargs: P.kwargs) -> str:
-        path = reuse_already_prepared_dataset_on_same_node(
+        dataset_files_or_directories = self.dataset_files_or_directories.copy()
+        for kwarg, value_to_extra_files_or_dirs in self.extra_files_depending_on_kwargs.items():
+            if dataset_kwargs.get(kwarg) in value_to_extra_files_or_dirs:
+                extra_path_or_paths = value_to_extra_files_or_dirs[dataset_kwargs[kwarg]]
+                if isinstance(extra_path_or_paths, (str, Path)):
+                    dataset_files_or_directories.append(extra_path_or_paths)
+                else:
+                    dataset_files_or_directories.extend(extra_path_or_paths)
+
+        success = reuse_already_prepared_dataset_on_same_node(
             root=Path(root),
             dataset_name=self.dataset_name,
-            dataset_fn=self.dataset_type,
-            dataset_files_or_directories=self.dataset_files_or_directories,
+            dataset_fn=self.dataset_fn,
+            dataset_files_or_directories=dataset_files_or_directories,
             *dataset_args,
             **dataset_kwargs,
         )
-        return str(path)
+        if success:
+            return str(root)
+        else:
+            # Raise an error so the SkipIf... block stops.
+            raise RuntimeError()
 
 
 def reuse_already_prepared_dataset_on_same_node(
@@ -81,7 +94,7 @@ def reuse_already_prepared_dataset_on_same_node(
     dataset_files_or_directories: list[str],
     *dataset_args: P.args,
     **dataset_kwargs: P.kwargs,
-) -> Path:
+) -> bool:
     potential_dirs = cache_dirs_on_same_node_with_dataset_already_prepared(
         root=root,
         dataset_name=dataset_name,
@@ -123,10 +136,10 @@ def reuse_already_prepared_dataset_on_same_node(
         logger.info(f"SUCCESS! Dataset was already prepared in {potential_dir}!")
         # TODO: If calling the dataset constructor doesn't work for some reason, perhaps we
         # should remove all the hard links we just created?
-        return root
+        return True
 
     logger.info("Unable to find an already prepared version of this dataset on this node.")
-    raise RuntimeError()
+    return False
 
 
 def make_links_to_dataset_files(link_path_to_file_path: dict[Path, Path]):
