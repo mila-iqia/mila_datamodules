@@ -7,7 +7,7 @@ from pathlib import Path
 import torchvision.datasets as tvd
 from typing_extensions import Literal
 
-from mila_datamodules.cli.blocks import (
+from mila_datamodules.blocks import (
     CallDatasetConstructor,
     Compose,
     CopyFiles,

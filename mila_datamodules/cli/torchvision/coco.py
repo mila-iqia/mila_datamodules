@@ -9,7 +9,7 @@ from typing import Literal
 import torchvision.datasets as tvd
 from typing_extensions import TypeVar
 
-from mila_datamodules.cli.blocks import (
+from mila_datamodules.blocks import (
     CallDatasetConstructor,
     Compose,
     ExtractArchives,
