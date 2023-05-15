@@ -2,23 +2,26 @@ from __future__ import annotations
 
 import dataclasses
 import typing
-from typing import Any, Callable
+from typing import Any, Callable, TypeVar, Union
 
 import torchvision.datasets as tvd
-from typing_extensions import ParamSpec, Protocol, TypeVar
+from typing_extensions import Concatenate, ParamSpec, Protocol
 
 if typing.TYPE_CHECKING:
-    P = ParamSpec("P", default=...)
+    P = ParamSpec("P")
 else:
     P = ParamSpec("P", default=Any)
 
-VD = TypeVar("VD", bound=tvd.VisionDataset, default=tvd.VisionDataset)
-VD_co = TypeVar("VD_co", bound=tvd.VisionDataset, default=tvd.VisionDataset, covariant=True)
+VD = TypeVar("VD", bound=tvd.VisionDataset)
+VD_co = TypeVar("VD_co", bound=tvd.VisionDataset, covariant=True)
 D = TypeVar("D")
 D_co = TypeVar("D_co", covariant=True)
 
 C = TypeVar("C", bound=Callable)
 T = TypeVar("T")
+
+DatasetFn = Union[type[D_co], Callable[P, D_co]]
+DatasetFnWithStrArg = Union[type[D_co], Callable[Concatenate[str, P], D_co]]
 
 
 class Dataclass(Protocol):

@@ -6,7 +6,7 @@ import os
 from dataclasses import dataclass
 from logging import getLogger as get_logger
 from pathlib import Path
-from typing import Any, Callable, Union
+from typing import Any, Callable
 
 import yaml
 
@@ -16,13 +16,13 @@ from mila_datamodules.blocks.path_utils import has_permission, tree
 from mila_datamodules.blocks.types import PrepareDatasetFn
 from mila_datamodules.cli.utils import rich_pbar
 from mila_datamodules.clusters.utils import get_slurm_tmpdir
-from mila_datamodules.types import D_co, P
+from mila_datamodules.types import D, D_co, P
 from mila_datamodules.utils import dataset_name
 
 logger = get_logger(__name__)
 PREPARED_DATASETS_FILE = "prepared_datasets.yaml"
 
-DatasetFn = Union[type[D_co], Callable[P, D_co]]
+DatasetFn = Callable[P, D_co]
 
 
 @dataclass(frozen=True)
@@ -48,7 +48,7 @@ class PreparedDatasetEntry:
     prepared_at: str
 
 
-class ReuseAlreadyPreparedDatasetOnSameNode(PrepareDatasetFn[D_co, P]):
+class ReuseAlreadyPreparedDatasetOnSameNode(PrepareDatasetFn[D, P]):
     """Load the dataset by reusing a previously-prepared copy of the dataset on the same node.
 
     If no copy is available, raises a `RuntimeError`.
@@ -77,33 +77,42 @@ class ReuseAlreadyPreparedDatasetOnSameNode(PrepareDatasetFn[D_co, P]):
         CallDatasetConstructor(tvd.ImageNet),
         AddDatasetToPreparedDatasetsFile(tvd.ImageNet),
     )
+    ```
+
+
+    TODO: Create the prepared datasets file as the first file in the cache dir, so that we avoid
+    issues when the directory is being unlinked. OR: We could just remove the 'x' permissions on
+    the root folder before removing it (at the end of the job, inside slurm).
     """
 
     def __init__(
         self,
-        dataset_fn: DatasetFn[D_co, P],
-        prepared_dataset_files_or_directories: list[str],
+        dataset_fn: DatasetFnWithStrArg[D, P],
+        prepared_files_or_dirs: list[str] | None = None,
         extra_files_depending_on_kwargs: dict[str, dict[Any, str | list[str]]] | None = None,
     ) -> None:
         super().__init__()
         self.dataset_fn = dataset_fn
-        self.dataset_files_or_directories = prepared_dataset_files_or_directories
+        self.dataset_files_or_directories = prepared_files_or_dirs
         self.extra_files_depending_on_kwargs = extra_files_depending_on_kwargs or {}
-        # TODO: Make this less torchvision-specific.
         self.dataset_name = dataset_name(dataset_fn)
 
     def __call__(self, root: str | Path, *dataset_args: P.args, **dataset_kwargs: P.kwargs) -> str:
         root = Path(root)
-        dataset_files_or_directories = self.dataset_files_or_directories.copy()
-        for kwarg, value_to_extra_files_or_dirs in self.extra_files_depending_on_kwargs.items():
-            if dataset_kwargs.get(kwarg) in value_to_extra_files_or_dirs:
-                extra_path_or_paths = value_to_extra_files_or_dirs[dataset_kwargs.get(kwarg)]
-                logger.info(f"Also sharing {extra_path_or_paths} with other users on this node.")
-                if isinstance(extra_path_or_paths, (str, Path)):
-                    dataset_files_or_directories.append(str(root / extra_path_or_paths))
-                else:
-                    dataset_files_or_directories.extend(str(root / p) for p in extra_path_or_paths)
-
+        if self.dataset_files_or_directories is None:
+            dataset_files_or_directories = None
+        else:
+            dataset_files_or_directories = self.dataset_files_or_directories.copy()
+            if self.extra_files_depending_on_kwargs:
+                dataset_files_or_directories.extend(
+                    _extra_values_based_on_kwargs(
+                        root,
+                        extra_files_depending_on_kwargs=self.extra_files_depending_on_kwargs,
+                        dataset_fn=self.dataset_fn,
+                        *dataset_args,
+                        **dataset_kwargs,
+                    )
+                )
         success = reuse_already_prepared_dataset_on_same_node(
             root=Path(root),
             dataset_name=self.dataset_name,
@@ -121,8 +130,8 @@ class ReuseAlreadyPreparedDatasetOnSameNode(PrepareDatasetFn[D_co, P]):
 
 # TODO: Check if the dataset is already setup in another SLURM_TMPDIR, and if so,
 # create hard links to the dataset files.
-class AddDatasetNameToPreparedDatasetsFile(PrepareDatasetFn[D_co, P]):
-    def __init__(self, dataset_fn: type[D_co] | Callable[P, D_co]) -> None:
+class AddToPreparedDatasetsFile(PrepareDatasetFn[D, P]):
+    def __init__(self, dataset_fn: Callable[P, D]) -> None:
         super().__init__()
         self.dataset_fn = dataset_fn
         self.dataset_name = dataset_name(dataset_fn)
@@ -135,8 +144,8 @@ class AddDatasetNameToPreparedDatasetsFile(PrepareDatasetFn[D_co, P]):
         return str(root)
 
 
-class SkipIfAlreadyPrepared(PrepareDatasetFn[D_co, P]):
-    def __init__(self, dataset_fn: type[D_co] | Callable[P, D_co]) -> None:
+class SkipIfAlreadyPrepared(PrepareDatasetFn[D, P]):
+    def __init__(self, dataset_fn: Callable[P, D]) -> None:
         super().__init__()
         self.dataset_fn = dataset_fn
         self.dataset_name = dataset_name(dataset_fn)
@@ -147,20 +156,24 @@ class SkipIfAlreadyPrepared(PrepareDatasetFn[D_co, P]):
         return str(root)
 
 
-class MakePreparedDatasetUsableByOthersOnSameNode(PrepareDatasetFn[D_co, P]):
+class MakePreparedDatasetUsableByOthersOnSameNode(PrepareDatasetFn[D, P]):
+    # TODO: Also make the files read-only to the user that creates them!
+    # Could also store whether the dataset was prepared in "read-only mode" in the prepared
+    # datasets file.
+
     def __init__(
         self,
-        readable_files_or_directories: list[str] | None,
-        dataset_fn: type[D_co] | Callable[P, D_co] | None = None,
+        dataset_fn: type[D_co] | Callable[P, D_co],
+        prepared_files_or_dirs: list[str],
         extra_files_depending_on_kwargs: dict[str, dict[Any, str | list[str]]] | None = None,
     ) -> None:
         super().__init__()
-        if readable_files_or_directories is None and extra_files_depending_on_kwargs:
+        if prepared_files_or_dirs is None and extra_files_depending_on_kwargs:
             raise RuntimeError(
-                f"Cannot use {readable_files_or_directories=} and extra_files_depending_on_kwargs"
+                f"Cannot use {prepared_files_or_dirs=} and extra_files_depending_on_kwargs"
             )
 
-        self.readable_files_or_directories = readable_files_or_directories
+        self.readable_files_or_directories = prepared_files_or_dirs
         self.extra_files_depending_on_kwargs = extra_files_depending_on_kwargs or {}
         self.dataset_fn = dataset_fn
 
@@ -293,8 +306,8 @@ def cache_dirs_on_same_node_with_dataset_already_prepared(
                 and has_permission(d / PREPARED_DATASETS_FILE, "r", "others")
                 and dataset_name in get_prepared_datasets_from_file(d / PREPARED_DATASETS_FILE)
             )
-        except IOError as err:
-            logger.debug(f"Unable to read from {d}: {err}")
+        except IOError:
+            # logger.debug(f"Unable to read from {d}.")
             return False
 
     node_name = os.environ.get("SLURMD_NODENAME", "the current node")
@@ -324,7 +337,7 @@ def get_prepared_datasets_from_file(
 
 
 def add_dataset_to_prepared_datasets_file(
-    dataset_fn: DatasetFn[D_co, P],
+    dataset_fn: DatasetFn[D, P],
     root: str | Path,
     *dataset_args: P.args,
     **dataset_kwargs: P.kwargs,
@@ -341,8 +354,11 @@ def add_dataset_to_prepared_datasets_file(
         prepared_at=str(root),
     )
 
-    previous_content = yaml.full_load(prepared_datasets_file.read_text()) or []
-    previous_entries = [PreparedDatasetEntry(**entry) for entry in previous_content]
+    if prepared_datasets_file.exists():
+        previous_content = yaml.full_load(prepared_datasets_file.read_text()) or []
+        previous_entries = [PreparedDatasetEntry(**entry) for entry in previous_content]
+    else:
+        previous_entries = []
 
     # TODO: Use a there is already a prepared entry at a different `root`, still use it!
     if new_entry in previous_entries:
@@ -367,7 +383,7 @@ def add_dataset_to_prepared_datasets_file(
 
 
 def is_already_prepared(
-    dataset_fn: type[D_co] | Callable[P, D_co],
+    dataset_fn: DatasetFn[P, D],
     root: str | Path,
     *dataset_args: P.args,
     **dataset_kwagrs: P.kwargs,
@@ -387,7 +403,7 @@ def is_already_prepared(
 def _extra_values_based_on_kwargs(
     root: str | Path,
     extra_files_depending_on_kwargs: dict[str, dict[Any, str | list[str]]],
-    dataset_fn: type[D_co] | Callable[P, D_co] | None = None,
+    dataset_fn: DatasetFn[P, D] | None = None,
     *dataset_args: P.args,
     **dataset_kwargs: P.kwargs,
 ) -> list[str]:

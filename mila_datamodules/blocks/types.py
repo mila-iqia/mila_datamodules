@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from logging import getLogger as get_logger
 from pathlib import Path
-from typing import Protocol
+from typing import Callable, Protocol
 
-from mila_datamodules.types import D_co, P
+from typing_extensions import Concatenate
+
+from mila_datamodules.types import D, P
 
 logger = get_logger(__name__)
 # from simple_parsing import ArgumentParser
@@ -13,7 +15,10 @@ logger = get_logger(__name__)
 # Callable[Concatenate[str, P], str].
 
 
-class PrepareDatasetFn(Protocol[D_co, P]):
+# TODO: This is too complicated.
+class PrepareDatasetFn(Protocol[D, P]):
+    dataset_fn: type[D] | Callable[Concatenate[str, P], D]
+
     def __call__(
         self,
         root: str | Path,

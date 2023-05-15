@@ -6,23 +6,17 @@ import subprocess
 from logging import getLogger as get_logger
 from pathlib import Path
 from shutil import unpack_archive
-from typing import Callable, Iterable, Union
+from typing import Generic, Iterable
 from zipfile import ZipFile
 
-from typing_extensions import Concatenate
-
-from mila_datamodules.blocks.types import PrepareDatasetFn
 from mila_datamodules.cli.utils import is_local_main, runs_on_local_main_process_first
-from mila_datamodules.types import D, D_co, P
+from mila_datamodules.types import D_co, DatasetFnWithStrArg, P
 from mila_datamodules.utils import copy_fn, dataset_name
 
 logger = get_logger(__name__)
 
-DatasetFn = Union[type[D_co], Callable[P, D_co]]
-DatasetFnWithStrArg = Union[type[D_co], Callable[Concatenate[str, P], D_co]]
 
-
-class CallDatasetFn(PrepareDatasetFn[D_co, P]):
+class CallDatasetFn(Generic[D_co, P]):
     """Function that calls the dataset constructor with the given arguments.
 
     Parameters
@@ -40,7 +34,7 @@ class CallDatasetFn(PrepareDatasetFn[D_co, P]):
 
     def __init__(
         self,
-        dataset_fn: type[D_co] | Callable[Concatenate[str, P], D_co],
+        dataset_fn: DatasetFnWithStrArg[D_co, P],
         extract_and_verify_archives: bool = False,
         get_index: int | None = 0,
     ):
@@ -92,7 +86,7 @@ class CallDatasetFn(PrepareDatasetFn[D_co, P]):
         return str(root)
 
 
-class ExtractArchives(PrepareDatasetFn[D_co, P]):
+class ExtractArchives:
     """Extract some archives files in a subfolder of the `root` directory."""
 
     def __init__(self, archives: dict[str, str | Path]):
@@ -108,13 +102,14 @@ class ExtractArchives(PrepareDatasetFn[D_co, P]):
         self.archives = {glob: Path(path) for glob, path in archives.items()}
 
     @runs_on_local_main_process_first
-    def __call__(self, root: str | Path, *dataset_args: P.args, **dataset_kwargs: P.kwargs) -> str:
+    def __call__(self, root: str | Path, *dataset_args, **dataset_kwargs) -> str:
         extract_archives(root, self.archives)
         return str(root)
 
 
-def extract_archives(root: str, archives: dict[str, Path]):
+def extract_archives(root: str | Path, archives: dict[str, Path]):
     logger.info(f"Extracting archives in {root}...")
+    root = Path(root)
     for archive, dest in archives.items():
         archive = Path(archive)
         assert not dest.is_absolute()
@@ -128,7 +123,7 @@ def extract_archives(root: str, archives: dict[str, Path]):
             unpack_archive(archive, extract_dir=dest)
 
 
-class MoveFiles(PrepareDatasetFn[D, P]):
+class MoveFiles:
     """Reorganize datasets' files in the `root` directory."""
 
     def __init__(self, files: dict[str, str | Path]):
@@ -147,12 +142,7 @@ class MoveFiles(PrepareDatasetFn[D, P]):
         self.files = {source: Path(destination) for source, destination in files.items()}
 
     @runs_on_local_main_process_first
-    def __call__(
-        self,
-        root: str | Path,
-        *dataset_args: P.args,
-        **dataset_kwargs: P.kwargs,
-    ) -> str:
+    def __call__(self, root: str | Path, *dataset_args, **dataset_kwargs) -> str:
         root = Path(root)
         move_files(root, self.files)
         return str(root)
@@ -192,7 +182,7 @@ def move_files(root: Path, files: dict[str, Path]) -> None:
             shutil.move(source_file_or_dir, dest_dir)
 
 
-class CopyFiles(PrepareDatasetFn[D, P]):
+class CopyFiles:
     """Copies some files from the cluster to the `root` directory."""
 
     def __init__(
@@ -207,12 +197,7 @@ class CopyFiles(PrepareDatasetFn[D, P]):
         self.ignore_dirs = ignore_dirs
 
     @runs_on_local_main_process_first
-    def __call__(
-        self,
-        root: str | Path,
-        *constructor_args: P.args,
-        **constructor_kwargs: P.kwargs,
-    ):
+    def __call__(self, root: str | Path, *constructor_args, **constructor_kwargs):
         root = Path(root)
         logger.info(f"Copying files from the network filesystem to {root}.")
         copy_files(root, self.relative_paths_to_cluster_path, self.ignore_dirs)

@@ -13,7 +13,7 @@ from .links import (
     make_symlinks_to_dataset_files,
 )
 from .reuse import (
-    AddDatasetNameToPreparedDatasetsFile,
+    AddToPreparedDatasetsFile,
     MakePreparedDatasetUsableByOthersOnSameNode,
     ReuseAlreadyPreparedDatasetOnSameNode,
     add_dataset_to_prepared_datasets_file,
@@ -24,7 +24,7 @@ from .types import PrepareDatasetFn
 
 __all__ = [
     "add_dataset_to_prepared_datasets_file",
-    "AddDatasetNameToPreparedDatasetsFile",
+    "AddToPreparedDatasetsFile",
     "CallDatasetFn",
     "Compose",
     "copy_files",

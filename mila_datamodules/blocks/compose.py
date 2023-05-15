@@ -8,7 +8,7 @@ from typing_extensions import Concatenate
 
 from mila_datamodules.blocks.types import PrepareDatasetFn
 from mila_datamodules.cli.utils import runs_on_local_main_process_first
-from mila_datamodules.types import D, D_co, P
+from mila_datamodules.types import D, D_co, DatasetFnWithStrArg, P
 
 logger = get_logger(__name__)
 
@@ -27,7 +27,7 @@ class Compose(PrepareDatasetFn[D_co, P]):
     class Stop(Exception):
         pass
 
-    def __init__(self, *callables: Callable[Concatenate[str, P], str]) -> None:
+    def __init__(self, *callables: DatasetFnWithStrArg[Any, P]) -> None:
         self.callables = callables
 
     @runs_on_local_main_process_first
@@ -42,10 +42,21 @@ class Compose(PrepareDatasetFn[D_co, P]):
             for c in self.callables:
                 # TODO: Check that nesting `runs_on_local_main_process_first` decorators isn't a
                 # problem.
-                root = c(root, *dataset_args, **dataset_kwargs)
+                # logger.debug(f"Calling {c} with {root}, {dataset_args=}, {dataset_kwargs=}")
+                output = c(root, *dataset_args, **dataset_kwargs)
+                if isinstance(output, str):
+                    root = output
         except self.Stop:
             pass
         return root
+
+    @property
+    def dataset_fn(self) -> DatasetFnWithStrArg[D_co, P] | None:
+        """Gets the dataset_fn from one of the callables, if it exists."""
+        dataset_fn = None
+        for fn in self.callables:
+            dataset_fn = dataset_fn or getattr(fn, "dataset_fn", None)
+        return dataset_fn
 
 
 class SkipRestIfThisWorks(PrepareDatasetFn[D, P]):
@@ -92,12 +103,9 @@ class SkipRestIfThisWorks(PrepareDatasetFn[D, P]):
 
 
 class SkipRestIf(PrepareDatasetFn[D_co, P]):
-    """Raises a special Stop exception when running the given callable doesn't raise an exception.
+    """Raises a special Stop exception when the output of the function is truthy.
 
-    If an exception of a type matching one in `exceptions` is raised by the function, the exception
-    is ignored. Other exceptions are raised.
-
-    This is used to short-cut the list of operations to perform inside a `Compose` block.
+    This is used to skip the rest of the operations in a `Compose` block.
     """
 
     def __init__(
