@@ -19,9 +19,21 @@ def set_permission(
     flag: Literal["r", "w", "x", "read", "write", "execute"],
     who: Literal["u", "g", "o", "user", "group", "others"],
     value: bool,
-) -> bool:
+) -> None:
     """Sets the selected bit to a value of `1` or `0` for the given file or directory."""
-    raise NotImplementedError("todo")
+    path = Path(path)
+    mask = 0b100 if flag.startswith("r") else 0b010 if flag.startswith("w") else 0b001
+    mask <<= 6 if who.startswith("u") else 3 if who.startswith("g") else 0
+    mode = path.stat().st_mode
+    if value:
+        raise NotImplementedError("Test this.")
+        # We now have a mask with a 1 at the right position and zeroes everywhere else.
+        path.chmod(mode | mask)
+    else:
+        # bitwise and the current mode with a mask with 1's everywhere except at the right
+        # position
+        raise NotImplementedError("todo")
+        # path.chmod(mode & ~mask) # note, this isn't correct.
 
 
 def tree(root: str | Path, ignore_prefix: tuple[str, ...] = (".",)) -> Iterable[Path]:

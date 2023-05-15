@@ -6,17 +6,16 @@ import os
 from dataclasses import dataclass
 from logging import getLogger as get_logger
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Generic
 
 import yaml
 
 from mila_datamodules.blocks.base import CallDatasetFn, DatasetFnWithStrArg
 from mila_datamodules.blocks.compose import Compose
 from mila_datamodules.blocks.path_utils import has_permission, tree
-from mila_datamodules.blocks.types import PrepareDatasetFn
 from mila_datamodules.cli.utils import rich_pbar
 from mila_datamodules.clusters.utils import get_slurm_tmpdir
-from mila_datamodules.types import D, D_co, P
+from mila_datamodules.types import Concatenate, D, D_co, P
 from mila_datamodules.utils import dataset_name
 
 logger = get_logger(__name__)
@@ -48,37 +47,11 @@ class PreparedDatasetEntry:
     prepared_at: str
 
 
-class ReuseAlreadyPreparedDatasetOnSameNode(PrepareDatasetFn[D, P]):
+class ReuseAlreadyPreparedDatasetOnSameNode(Generic[D, P]):
     """Load the dataset by reusing a previously-prepared copy of the dataset on the same node.
 
     If no copy is available, raises a `RuntimeError`.
-    NOTE: This is meant to be used wrapped by a `StopOnSuccess` inside a `Compose`. For example:
-
-    ```python
-    prepare_imagenet = Compose(
-        # Try creating the dataset from the root directory. Stop if this works, else continue.
-        StopOnSuccess(CallDatasetConstructor(tvd.ImageNet)),
-        # Try creating the dataset by reusing a previously prepared copy on the same node.
-        # Stop if this works, otherwise continue.
-        StopOnSuccess(
-            ReuseAlreadyPreparedDatasetOnSameNode(
-                tvd.ImageNet,
-                prepared_dataset_files_or_directories=[
-                    "ILSVRC2012_devkit_t12.tar.gz",
-                    "ILSVRC2012_img_train.tar",
-                    "ILSVRC2012_img_val.tar",
-                    "md5sums",
-                    "meta.bin",
-                    "train",
-                ],
-            )
-        ),
-        MakeSymlinksToDatasetFiles(f"{datasets_dir}/imagenet"),
-        CallDatasetConstructor(tvd.ImageNet),
-        AddDatasetToPreparedDatasetsFile(tvd.ImageNet),
-    )
-    ```
-
+    NOTE: This is meant to be used wrapped by a `SkipRestIfThisWorks` inside a `Compose`.
 
     TODO: Create the prepared datasets file as the first file in the cache dir, so that we avoid
     issues when the directory is being unlinked. OR: We could just remove the 'x' permissions on
@@ -87,8 +60,8 @@ class ReuseAlreadyPreparedDatasetOnSameNode(PrepareDatasetFn[D, P]):
 
     def __init__(
         self,
-        dataset_fn: DatasetFnWithStrArg[D, P],
-        prepared_files_or_dirs: list[str] | None = None,
+        dataset_fn: Callable[Concatenate[str, P], D],
+        prepared_files_or_dirs: list[str],
         extra_files_depending_on_kwargs: dict[str, dict[Any, str | list[str]]] | None = None,
     ) -> None:
         super().__init__()
@@ -99,20 +72,17 @@ class ReuseAlreadyPreparedDatasetOnSameNode(PrepareDatasetFn[D, P]):
 
     def __call__(self, root: str | Path, *dataset_args: P.args, **dataset_kwargs: P.kwargs) -> str:
         root = Path(root)
-        if self.dataset_files_or_directories is None:
-            dataset_files_or_directories = None
-        else:
-            dataset_files_or_directories = self.dataset_files_or_directories.copy()
-            if self.extra_files_depending_on_kwargs:
-                dataset_files_or_directories.extend(
-                    _extra_values_based_on_kwargs(
-                        root,
-                        extra_files_depending_on_kwargs=self.extra_files_depending_on_kwargs,
-                        dataset_fn=self.dataset_fn,
-                        *dataset_args,
-                        **dataset_kwargs,
-                    )
+        dataset_files_or_directories = self.dataset_files_or_directories.copy()
+        if self.extra_files_depending_on_kwargs:
+            dataset_files_or_directories.extend(
+                _extra_values_based_on_kwargs(
+                    root,
+                    extra_files_depending_on_kwargs=self.extra_files_depending_on_kwargs,
+                    dataset_fn=self.dataset_fn,
+                    *dataset_args,
+                    **dataset_kwargs,
                 )
+            )
         success = reuse_already_prepared_dataset_on_same_node(
             root=Path(root),
             dataset_name=self.dataset_name,
@@ -130,7 +100,7 @@ class ReuseAlreadyPreparedDatasetOnSameNode(PrepareDatasetFn[D, P]):
 
 # TODO: Check if the dataset is already setup in another SLURM_TMPDIR, and if so,
 # create hard links to the dataset files.
-class AddToPreparedDatasetsFile(PrepareDatasetFn[D, P]):
+class AddToPreparedDatasetsFile(Generic[D, P]):
     def __init__(self, dataset_fn: Callable[P, D]) -> None:
         super().__init__()
         self.dataset_fn = dataset_fn
@@ -144,26 +114,28 @@ class AddToPreparedDatasetsFile(PrepareDatasetFn[D, P]):
         return str(root)
 
 
-class SkipIfAlreadyPrepared(PrepareDatasetFn[D, P]):
+class SkipIfAlreadyPrepared(Generic[D, P]):
     def __init__(self, dataset_fn: Callable[P, D]) -> None:
         super().__init__()
         self.dataset_fn = dataset_fn
         self.dataset_name = dataset_name(dataset_fn)
 
-    def __call__(self, root: str | Path, *dataset_args: P.args, **dataset_kwargs: P.kwargs) -> str:
+    def __call__(
+        self, root: str | Path, /, *dataset_args: P.args, **dataset_kwargs: P.kwargs
+    ) -> str:
         if is_already_prepared(self.dataset_fn, root=root, *dataset_args, **dataset_kwargs):
             raise Compose.Stop
         return str(root)
 
 
-class MakePreparedDatasetUsableByOthersOnSameNode(PrepareDatasetFn[D, P]):
+class MakePreparedDatasetUsableByOthersOnSameNode(Generic[D, P]):
     # TODO: Also make the files read-only to the user that creates them!
     # Could also store whether the dataset was prepared in "read-only mode" in the prepared
     # datasets file.
 
     def __init__(
         self,
-        dataset_fn: type[D_co] | Callable[P, D_co],
+        dataset_fn: Callable[P, D],
         prepared_files_or_dirs: list[str],
         extra_files_depending_on_kwargs: dict[str, dict[Any, str | list[str]]] | None = None,
     ) -> None:
@@ -177,7 +149,9 @@ class MakePreparedDatasetUsableByOthersOnSameNode(PrepareDatasetFn[D, P]):
         self.extra_files_depending_on_kwargs = extra_files_depending_on_kwargs or {}
         self.dataset_fn = dataset_fn
 
-    def __call__(self, root: str | Path, *dataset_args: P.args, **dataset_kwargs: P.kwargs) -> str:
+    def __call__(
+        self, root: str | Path, /, *dataset_args: P.args, **dataset_kwargs: P.kwargs
+    ) -> str:
         root = Path(root)
         if self.readable_files_or_directories is None:
             readable_files_or_directories = None
@@ -337,7 +311,7 @@ def get_prepared_datasets_from_file(
 
 
 def add_dataset_to_prepared_datasets_file(
-    dataset_fn: DatasetFn[D, P],
+    dataset_fn: Callable[P, Any],
     root: str | Path,
     *dataset_args: P.args,
     **dataset_kwargs: P.kwargs,

@@ -13,7 +13,7 @@ from mila_datamodules.types import D, D_co, DatasetFnWithStrArg, P
 logger = get_logger(__name__)
 
 
-class Compose(PrepareDatasetFn[D_co, P]):
+class Compose(PrepareDatasetFn[D, P]):
     """Calls functions in order.
 
     The functions take a string as their first positional argument.

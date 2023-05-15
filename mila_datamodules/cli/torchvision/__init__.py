@@ -57,7 +57,7 @@ def reuse_across_nodes(
     prepared_files_or_dirs: list[str],
     extra_files_depending_on_kwargs: dict[str, dict[Any, str | list[str]]] | None = None,
     dataset_fn: Callable[Concatenate[str, P], D] | None = None,
-):
+) -> Compose[D, P]:
     dataset_fn = dataset_fn or step.dataset_fn
     if not dataset_fn:
         raise RuntimeError("Need to pass a dataset_fn or a step with a dataset_fn attribute.")
@@ -90,7 +90,7 @@ def prepare_vision_dataset(
     prepared_files_or_dirs: list[str],
     extra_files_depending_on_kwargs: dict[str, dict[Any, str | list[str]]] | None = None,
     dataset_fn: Callable[Concatenate[str, P], D] | None = None,
-):
+) -> Compose[D, P]:
     dataset_fn = dataset_fn or preparation_step.dataset_fn
     if not dataset_fn:
         raise RuntimeError("Need to pass a dataset_type or a step with a dataset_type attribute.")
@@ -101,7 +101,7 @@ def prepare_vision_dataset(
             extra_files_depending_on_kwargs=extra_files_depending_on_kwargs,
             dataset_fn=dataset_fn,
         ),
-        # dataset_fn=dataset_fn,
+        dataset_fn=dataset_fn,
     )
 
 
