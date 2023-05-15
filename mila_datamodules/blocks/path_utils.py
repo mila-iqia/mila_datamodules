@@ -10,7 +10,7 @@ def has_permission(
     who: Literal["u", "g", "o", "user", "group", "others"],
 ) -> bool:
     mask = 0b100 if flag.startswith("r") else 0b010 if flag.startswith("w") else 0b001
-    mask << 6 if who.startswith("u") else mask << 3 if who.startswith("g") else mask
+    mask <<= 6 if who.startswith("u") else 3 if who.startswith("g") else 0
     return Path(path).stat().st_mode & mask == mask
 
 
