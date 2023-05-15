@@ -18,7 +18,7 @@ from datasets import DownloadConfig, Version, load_dataset, load_dataset_builder
 from simple_parsing import field
 
 from mila_datamodules.cli.dataset_args import DatasetArguments
-from mila_datamodules.cli.shared_cache.setup_shared_cache import (
+from mila_datamodules.cli.shared_cache.setup import (
     setup_cache,
 )
 from mila_datamodules.clusters.cluster import Cluster

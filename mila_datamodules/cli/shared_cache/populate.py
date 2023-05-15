@@ -19,7 +19,13 @@ hf_models_to_download = [
     "facebook/opt-13b",
     "facebook/opt-30b",
     "facebook/opt-66b",
+    "t5-base",
+    "t5-small",
     "t5-large",
+    "t5-3b",
+    "t5-11b",
+    "google/t5-v1_1-large",
+    "google/t5-v1_1-base",
     "google/flan-t5-xxl",
     "bigscience/bloom",
 ]
@@ -29,6 +35,7 @@ hf_datasets_to_download: list[tuple[str, list[str] | None]] = [
     ("gsm8k", ["main", "socratic"]),
     ("wikitext", ["wikitext-103-v1", "wikitext-2-v1", "wikitext-103-raw-v1", "wikitext-2-raw-v1"]),
     ("EleutherAI/pile", ["all"]),
+    ("allenai/c4", ["multilingual"]),
     # ("togethercomputer/RedPajama-Data-1T", None), # TODO: Seems to be a bit buggy.
 ]
 
