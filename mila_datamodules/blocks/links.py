@@ -7,13 +7,15 @@ from typing import Mapping
 from mila_datamodules.blocks.path_utils import all_files_in_dir
 from mila_datamodules.blocks.types import PrepareDatasetFn
 from mila_datamodules.cli.utils import runs_on_local_main_process_first
-from mila_datamodules.types import D_co, P
+from mila_datamodules.types import D, P
 
 logger = get_logger(__name__)
 
 
-class MakeSymlinksToDatasetFiles(PrepareDatasetFn[D_co, P]):
+class MakeSymlinksToDatasetFiles(PrepareDatasetFn[D, P]):
     """Creates symlinks to the datasets' files in the `root` directory."""
+
+    dataset_fn = None
 
     def __init__(
         self,

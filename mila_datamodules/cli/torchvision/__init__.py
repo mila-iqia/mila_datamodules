@@ -3,7 +3,7 @@ from __future__ import annotations
 import dataclasses
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable
 
 import torchvision.datasets as tvd
 from typing_extensions import Concatenate, Literal
@@ -35,7 +35,7 @@ from mila_datamodules.cli.torchvision.coco import (
 from mila_datamodules.cli.torchvision.places365 import Places365Args, prepare_places365
 from mila_datamodules.clusters.cluster import Cluster
 from mila_datamodules.clusters.utils import get_slurm_tmpdir
-from mila_datamodules.types import VD, D, P
+from mila_datamodules.types import D, P
 
 
 def skip_if_already_prepared(
@@ -55,13 +55,20 @@ def skip_if_already_prepared(
 def reuse_across_nodes(
     step: PrepareDatasetFn[D, P],
     prepared_files_or_dirs: list[str],
-    extra_files_depending_on_kwargs: dict,
+    extra_files_depending_on_kwargs: dict[str, dict[Any, str | list[str]]] | None = None,
     dataset_fn: Callable[Concatenate[str, P], D] | None = None,
 ):
     dataset_fn = dataset_fn or step.dataset_fn
     if not dataset_fn:
         raise RuntimeError("Need to pass a dataset_fn or a step with a dataset_fn attribute.")
     return Compose(
+        # TODO: This looks in other SLURM_TMPDIRs after checking if the dataset was listed in the
+        # prepared datasets file, but before checking if it can be loaded from the
+        # current job's SLURM_TMPDIR with the dataset function. Can this cause any issues? In what
+        # cases could the user have the dataset already prepared, but the entry isn't in the
+        # prepared datasets file? (perhaps this saves us from the case where the preparation is
+        # interrupted, since perhaps ImageFolder datasets could load correctly, even though the
+        # dataset isn't 100% preprocessed correctly?)
         SkipRestIfThisWorks(
             ReuseAlreadyPreparedDatasetOnSameNode(
                 dataset_fn,
@@ -79,20 +86,22 @@ def reuse_across_nodes(
 
 
 def prepare_vision_dataset(
-    actual_preparation_step: PrepareDatasetFn[VD, P],
+    preparation_step: PrepareDatasetFn[D, P],
     prepared_files_or_dirs: list[str],
-    extra_files_depending_on_kwargs: dict,
-    dataset_fn: Callable[Concatenate[str, P], VD] | None = None,
+    extra_files_depending_on_kwargs: dict[str, dict[Any, str | list[str]]] | None = None,
+    dataset_fn: Callable[Concatenate[str, P], D] | None = None,
 ):
-    dataset_fn = dataset_fn or actual_preparation_step.dataset_fn
+    dataset_fn = dataset_fn or preparation_step.dataset_fn
     if not dataset_fn:
         raise RuntimeError("Need to pass a dataset_type or a step with a dataset_type attribute.")
     return skip_if_already_prepared(
         reuse_across_nodes(
-            actual_preparation_step,
+            preparation_step,
             prepared_files_or_dirs=prepared_files_or_dirs,
             extra_files_depending_on_kwargs=extra_files_depending_on_kwargs,
+            dataset_fn=dataset_fn,
         ),
+        # dataset_fn=dataset_fn,
     )
 
 
@@ -109,14 +118,9 @@ standardized_torchvision_datasets_dir = {
 
 prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareDatasetFn]] = {
     tvd.Caltech101: {
-        cluster: Compose(
-            SkipIfAlreadyPrepared(tvd.Caltech101),
+        cluster: prepare_vision_dataset(
             Compose(
-                # Try reading from another SLURM_TMPDIR:
-                SkipRestIfThisWorks(
-                    ReuseAlreadyPreparedDatasetOnSameNode(tvd.Caltech101, ["caltech101"])
-                ),
-                # Try reading from SLURM_TMPDIR:
+                # Try reading from SLURM_TMPDIR, skip the rest if that works.
                 SkipRestIfThisWorks(CallDatasetFn(tvd.Caltech101)),
                 MakeSymlinksToDatasetFiles(
                     {
@@ -129,21 +133,14 @@ prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareDatasetFn]] = {
                 ),
                 CallDatasetFn(tvd.Caltech101, extract_and_verify_archives=True),
             ),
-            MakePreparedDatasetUsableByOthersOnSameNode(tvd.Caltech101, ["caltech101"]),
-            AddToPreparedDatasetsFile(tvd.Caltech101),
+            prepared_files_or_dirs=["caltech101"],
         )
         for cluster, datasets_dir in standardized_torchvision_datasets_dir.items()
     },
     tvd.Caltech256: {
-        cluster: Compose(
-            SkipIfAlreadyPrepared(tvd.Caltech256),
+        cluster: prepare_vision_dataset(
             Compose(
                 SkipRestIfThisWorks(CallDatasetFn(tvd.Caltech256)),
-                SkipRestIfThisWorks(
-                    ReuseAlreadyPreparedDatasetOnSameNode(
-                        tvd.Caltech256, prepared_files_or_dirs=["caltech256"]
-                    )
-                ),
                 MakeSymlinksToDatasetFiles(
                     {
                         f"caltech256/{p}": f"{datasets_dir}/caltech256/{p}"
@@ -152,17 +149,14 @@ prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareDatasetFn]] = {
                 ),
                 CallDatasetFn(tvd.Caltech256, extract_and_verify_archives=True),
             ),
-            MakePreparedDatasetUsableByOthersOnSameNode(tvd.Caltech256, ["caltech256"]),
-            AddToPreparedDatasetsFile(tvd.Caltech256),
+            prepared_files_or_dirs=["caltech256"],
         )
         for cluster, datasets_dir in standardized_torchvision_datasets_dir.items()
     },
     tvd.CelebA: {
-        cluster: Compose(
-            SkipIfAlreadyPrepared(tvd.CelebA),
+        cluster: prepare_vision_dataset(
             Compose(
                 SkipRestIfThisWorks(CallDatasetFn(tvd.CelebA)),
-                SkipRestIfThisWorks(ReuseAlreadyPreparedDatasetOnSameNode(tvd.CelebA, ["celeba"])),
                 MakeSymlinksToDatasetFiles(f"{datasets_dir}/celeba"),
                 # Torchvision will look into a celeba directory to preprocess
                 # the dataset, so we move the files a new directory.
@@ -175,46 +169,27 @@ prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareDatasetFn]] = {
                 ),
                 CallDatasetFn(tvd.CelebA, extract_and_verify_archives=True),
             ),
-            MakePreparedDatasetUsableByOthersOnSameNode(tvd.CelebA, ["celeba"]),
-            AddToPreparedDatasetsFile(tvd.CelebA),
+            prepared_files_or_dirs=["celeba"],
         )
         for cluster, datasets_dir in standardized_torchvision_datasets_dir.items()
     },
     tvd.CIFAR10: {
-        cluster: Compose(
-            # Skip everything if the dataset is already marked as prepared.
-            SkipIfAlreadyPrepared(tvd.CIFAR10),
+        cluster: prepare_vision_dataset(
             Compose(
                 SkipRestIfThisWorks(CallDatasetFn(tvd.CIFAR10)),
-                SkipRestIfThisWorks(
-                    ReuseAlreadyPreparedDatasetOnSameNode(
-                        tvd.CIFAR10,
-                        prepared_files_or_dirs=[
-                            "cifar-10-batches-py",
-                            "cifar-10-python.tar.gz",
-                        ],
-                    )
-                ),
                 MakeSymlinksToDatasetFiles(
                     {"cifar-10-python.tar.gz": (f"{datasets_dir}/cifar10/cifar-10-python.tar.gz")}
                 ),
                 CallDatasetFn(tvd.CIFAR10, extract_and_verify_archives=True),
             ),
-            MakePreparedDatasetUsableByOthersOnSameNode(
-                tvd.CIFAR10, ["cifar-10-batches-py", "cifar-10-python.tar.gz"]
-            ),
-            AddToPreparedDatasetsFile(tvd.CIFAR10),
+            prepared_files_or_dirs=["cifar-10-batches-py", "cifar-10-python.tar.gz"],
         )
         for cluster, datasets_dir in standardized_torchvision_datasets_dir.items()
     },
     tvd.CIFAR100: {
-        cluster: Compose(
-            SkipIfAlreadyPrepared(tvd.CIFAR100),
+        cluster: prepare_vision_dataset(
             Compose(
                 SkipRestIfThisWorks(CallDatasetFn(tvd.CIFAR100)),
-                SkipRestIfThisWorks(
-                    ReuseAlreadyPreparedDatasetOnSameNode(tvd.CIFAR100, ["cifar-100-batches-py"])
-                ),
                 MakeSymlinksToDatasetFiles(
                     {
                         "cifar-100-python.tar.gz": (
@@ -224,35 +199,59 @@ prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareDatasetFn]] = {
                 ),
                 CallDatasetFn(tvd.CIFAR100, extract_and_verify_archives=True),
             ),
-            MakePreparedDatasetUsableByOthersOnSameNode(tvd.CIFAR100, ["cifar-100-batches-py"]),
-            AddToPreparedDatasetsFile(tvd.CIFAR100),
+            prepared_files_or_dirs=["cifar-100-batches-py"],
         )
         for cluster, datasets_dir in standardized_torchvision_datasets_dir.items()
     },
     tvd.Cityscapes: {
-        cluster: Compose(
-            SkipIfAlreadyPrepared(tvd.Cityscapes),
+        cluster: prepare_vision_dataset(
             Compose(
-                SkipRestIfThisWorks(CallDatasetFn(tvd.Cityscapes)),
+                # SkipRestIfThisWorks(CallDatasetFn(tvd.Cityscapes)),
                 # TODO: List the files to share for Cityscapes.
                 # TODO: Also possibly add a subdirectory for it, because it creates lots of folders
                 # SkipRestIfThisWorks(ReuseAlreadyPreparedDatasetOnSameNode(tvd.Cityscapes, ...)),
-                MakeSymlinksToDatasetFiles(f"{datasets_dir}/cityscapes"),
+                MakeSymlinksToDatasetFiles(
+                    {
+                        file: f"{datasets_dir}/cityscapes/{file}"
+                        for file in [
+                            "camera_trainextra.zip",
+                            "gtBbox_cityPersons_trainval.zip",
+                            "leftImg8bit_blurred.zip",
+                            "leftImg8bit_trainvaltest.zip",
+                            "camera_trainvaltest.zip",
+                            "gtCoarse.zip",
+                            "leftImg8bit_demoVideo.zip",
+                            "vehicle_trainextra.zip",
+                            "extra/leftImg8bit_sequence_trainvaltest.zip",
+                            "gtFine_trainvaltest.zip",
+                            "leftImg8bit_trainextra.zip",
+                            "vehicle_trainvaltest.zip",
+                        ]
+                    }
+                ),
                 CallDatasetFn(tvd.Cityscapes),
             ),
-            # MakePreparedDatasetUsableByOthersOnSameNode(tvd.Cityscapes, [...]),
-            AddToPreparedDatasetsFile(tvd.Cityscapes),
+            prepared_files_or_dirs=[
+                "camera_trainextra.zip",
+                "gtBbox_cityPersons_trainval.zip",
+                "leftImg8bit_blurred.zip",
+                "leftImg8bit_trainvaltest.zip",
+                "camera_trainvaltest.zip",
+                "gtCoarse.zip",
+                "leftImg8bit_demoVideo.zip",
+                "vehicle_trainextra.zip",
+                "extra/leftImg8bit_sequence_trainvaltest.zip",
+                "gtFine_trainvaltest.zip",
+                "leftImg8bit_trainextra.zip",
+                "vehicle_trainvaltest.zip",
+            ],
         )
         for cluster, datasets_dir in standardized_torchvision_datasets_dir.items()
     },
     tvd.FashionMNIST: {
-        cluster: Compose(
-            SkipIfAlreadyPrepared(tvd.FashionMNIST),
+        cluster: prepare_vision_dataset(
             Compose(
                 SkipRestIfThisWorks(CallDatasetFn(tvd.FashionMNIST)),
-                SkipRestIfThisWorks(
-                    ReuseAlreadyPreparedDatasetOnSameNode(tvd.FashionMNIST, ["FashionMNIST"])
-                ),
                 # Make symlinks + rename in one step:
                 MakeSymlinksToDatasetFiles(
                     {
@@ -267,29 +266,16 @@ prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareDatasetFn]] = {
                 ),
                 CallDatasetFn(tvd.FashionMNIST, extract_and_verify_archives=True),
             ),
-            MakePreparedDatasetUsableByOthersOnSameNode(tvd.FashionMNIST, ["FashionMNIST"]),
-            AddToPreparedDatasetsFile(tvd.FashionMNIST),
+            prepared_files_or_dirs=["FashionMNIST"],
         )
         for cluster, datasets_dir in standardized_torchvision_datasets_dir.items()
     },
     # TODO: We could further speed things up by only preparing the version that is required by the
     # user (within '2017', '2018', '2019', '2021_train', '2021_train_mini', '2021_valid')
     tvd.INaturalist: {
-        cluster: Compose(
-            SkipIfAlreadyPrepared(tvd.INaturalist),
+        cluster: prepare_vision_dataset(
             Compose(
                 SkipRestIfThisWorks(CallDatasetFn(tvd.INaturalist)),
-                SkipRestIfThisWorks(
-                    ReuseAlreadyPreparedDatasetOnSameNode(
-                        tvd.INaturalist,
-                        prepared_files_or_dirs=[
-                            "2021_train_mini.tgz",
-                            "2021_train.tgz",
-                            "2021_valid.tgz",
-                            "train",
-                        ],
-                    ),
-                ),
                 # Make symlinks + rename in one step:
                 MakeSymlinksToDatasetFiles(
                     {
@@ -303,52 +289,37 @@ prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareDatasetFn]] = {
                 ),
                 CallDatasetFn(tvd.INaturalist, extract_and_verify_archives=True),
             ),
-            # TODO: Here there's something interesting. For other splits, other folders will have
-            # been created (e.g. valid or train_mini). Therefore, we need to store which split was
-            # used in the file.
-            MakePreparedDatasetUsableByOthersOnSameNode(
-                tvd.INaturalist,
-                prepared_files_or_dirs=[
-                    "2021_train_mini.tgz",
-                    "2021_train.tgz",
-                    "2021_valid.tgz",
-                    "train",
-                ],
-            ),
-            AddToPreparedDatasetsFile(tvd.INaturalist),
+            prepared_files_or_dirs=[
+                "2021_train_mini.tgz",
+                "2021_train.tgz",
+                "2021_valid.tgz",
+            ],
+            # TODO: Figure out the additional files based on the version.
+            extra_files_depending_on_kwargs={
+                "version": {
+                    "2021_train": "2021_train",
+                    "2021_train_mini": "2021_train_mini",
+                    "2021_valid": "2021_valid",
+                    None: "2021_train",
+                }
+            },
         )
         for cluster, datasets_dir in standardized_torchvision_datasets_dir.items()
     },
     tvd.ImageNet: {
         # TODO: Write a customized function for ImageNet that uses Olexa's magic tar
         # commands (preferably in Python form).
-        # TODO: Add command-line args to select the ImageNet split.
-        cluster: Compose(
-            # Check if the dataset is already said to be implemented
-            # (in the prepared datasets file)
-            SkipIfAlreadyPrepared(tvd.ImageNet),
+        # """
+        # mkdir -p $SLURM_TMPDIR/imagenet/val
+        # cd       $SLURM_TMPDIR/imagenet/val
+        # tar  -xf /network/scratch/b/bilaniuo/ILSVRC2012_img_val.tar
+        # mkdir -p $SLURM_TMPDIR/imagenet/train
+        # cd       $SLURM_TMPDIR/imagenet/train
+        # tar  -xf /network/datasets/imagenet/ILSVRC2012_img_train.tar \
+        #      --to-command='mkdir ${TAR_REALNAME%.tar}; tar -xC ${TAR_REALNAME%.tar}'
+        # """
+        cluster: prepare_vision_dataset(
             Compose(
-                # Try creating the dataset from the root directory. Skip the rest of this inner
-                # list of operations if this works.
-                SkipRestIfThisWorks(CallDatasetFn(tvd.ImageNet)),
-                # Try creating the dataset by reusing a previously prepared copy on the same node.
-                # Skip the rest of this inner list if this works.
-                SkipRestIfThisWorks(
-                    ReuseAlreadyPreparedDatasetOnSameNode(
-                        tvd.ImageNet,
-                        prepared_files_or_dirs=[
-                            "ILSVRC2012_devkit_t12.tar.gz",
-                            "ILSVRC2012_img_train.tar",
-                            "ILSVRC2012_img_val.tar",
-                            "md5sums",
-                            "meta.bin",
-                        ],
-                        extra_files_depending_on_kwargs={
-                            "split": {"train": "train", "val": "val", None: "train"}
-                        },
-                    )
-                ),
-                # repare the dataset since it wasn't already.
                 MakeSymlinksToDatasetFiles(
                     {
                         archive: f"{datasets_dir}/imagenet/{archive}"
@@ -363,32 +334,23 @@ prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareDatasetFn]] = {
                 # Call the constructor to verify the checksums and extract the archives in `root`.
                 CallDatasetFn(tvd.ImageNet),
             ),
-            # Always do these steps after preparing the dataset for the first time.
-            MakePreparedDatasetUsableByOthersOnSameNode(
-                tvd.ImageNet,
-                prepared_files_or_dirs=[
-                    "ILSVRC2012_devkit_t12.tar.gz",
-                    "ILSVRC2012_img_train.tar",
-                    "ILSVRC2012_img_val.tar",
-                    "md5sums",
-                    "meta.bin",
-                ],
-                extra_files_depending_on_kwargs={
-                    "split": {"train": "train", "val": "val", None: "train"}
-                },
-            ),
-            AddToPreparedDatasetsFile(tvd.ImageNet),
+            prepared_files_or_dirs=[
+                "ILSVRC2012_devkit_t12.tar.gz",
+                "ILSVRC2012_img_train.tar",
+                "ILSVRC2012_img_val.tar",
+                "md5sums",
+                "meta.bin",
+            ],
+            extra_files_depending_on_kwargs={
+                "split": {"train": "train", "val": "val", None: "train"}
+            },
         )
         for cluster, datasets_dir in standardized_torchvision_datasets_dir.items()
     },
     tvd.KMNIST: {
-        cluster: Compose(
-            SkipIfAlreadyPrepared(tvd.KMNIST),
+        cluster: prepare_vision_dataset(
             Compose(
                 SkipRestIfThisWorks(CallDatasetFn(tvd.KMNIST)),
-                SkipRestIfThisWorks(
-                    ReuseAlreadyPreparedDatasetOnSameNode(tvd.KMNIST, ["KMNIST/raw"])
-                ),
                 MakeSymlinksToDatasetFiles(
                     {
                         f"KMNIST/raw/{file}": f"{datasets_dir}/kmnist/{file}"
@@ -412,14 +374,12 @@ prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareDatasetFn]] = {
                 ),
                 CallDatasetFn(tvd.KMNIST, extract_and_verify_archives=True),
             ),
-            MakePreparedDatasetUsableByOthersOnSameNode(tvd.KMNIST, ["KMNIST/raw"]),
-            AddToPreparedDatasetsFile(tvd.KMNIST),
+            prepared_files_or_dirs=["KMNIST/raw"],
         )
         for cluster, datasets_dir in standardized_torchvision_datasets_dir.items()
     },
     tvd.MNIST: {
-        cluster: Compose(
-            SkipIfAlreadyPrepared(tvd.MNIST),
+        cluster: prepare_vision_dataset(
             Compose(
                 SkipRestIfThisWorks(CallDatasetFn(tvd.MNIST)),
                 MakeSymlinksToDatasetFiles(
@@ -435,69 +395,63 @@ prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareDatasetFn]] = {
                 ),
                 CallDatasetFn(tvd.MNIST, extract_and_verify_archives=True),
             ),
-            AddToPreparedDatasetsFile(tvd.MNIST),
+            prepared_files_or_dirs=[
+                f"MNIST/raw/{filename}"
+                for filename in [
+                    "t10k-images-idx3-ubyte.gz",
+                    "t10k-labels-idx1-ubyte.gz",
+                    "train-images-idx3-ubyte.gz",
+                    "train-labels-idx1-ubyte.gz",
+                ]
+            ],
         )
         for cluster, datasets_dir in standardized_torchvision_datasets_dir.items()
     },
     tvd.QMNIST: {
-        cluster: Compose(
-            SkipRestIfThisWorks(CallDatasetFn(tvd.QMNIST)),
-            MakeSymlinksToDatasetFiles(
-                {
-                    f"QMNIST/raw/{p}": f"{datasets_dir}/qmnist/{p}"
-                    for p in [
-                        "qmnist-test-images-idx3-ubyte.gz",
-                        "qmnist-test-labels-idx2-int.gz",
-                        "qmnist-test-labels.tsv.gz",
-                        "qmnist-train-images-idx3-ubyte.gz",
-                        "qmnist-train-labels-idx2-int.gz",
-                        "qmnist-train-labels.tsv.gz",
-                        "xnist-images-idx3-ubyte.xz",
-                        "xnist-labels-idx2-int.xz",
-                    ]
-                }
+        cluster: prepare_vision_dataset(
+            Compose(
+                SkipRestIfThisWorks(CallDatasetFn(tvd.QMNIST)),
+                MakeSymlinksToDatasetFiles(
+                    {
+                        f"QMNIST/raw/{p}": f"{datasets_dir}/qmnist/{p}"
+                        for p in [
+                            "qmnist-test-images-idx3-ubyte.gz",
+                            "qmnist-test-labels-idx2-int.gz",
+                            "qmnist-test-labels.tsv.gz",
+                            "qmnist-train-images-idx3-ubyte.gz",
+                            "qmnist-train-labels-idx2-int.gz",
+                            "qmnist-train-labels.tsv.gz",
+                            "xnist-images-idx3-ubyte.xz",
+                            "xnist-labels-idx2-int.xz",
+                        ]
+                    }
+                ),
+                CallDatasetFn(tvd.QMNIST, extract_and_verify_archives=True),
             ),
-            CallDatasetFn(tvd.QMNIST, extract_and_verify_archives=True),
+            # TODO: Also enumerate the files here so we can check more explicitly.
+            prepared_files_or_dirs=["QMNIST/raw"],
         )
         for cluster, datasets_dir in standardized_torchvision_datasets_dir.items()
     },
     tvd.STL10: {
         # TODO: Add args for the split here?
-        cluster: Compose(
-            SkipIfAlreadyPrepared(tvd.STL10),
+        cluster: prepare_vision_dataset(
             Compose(
                 SkipRestIfThisWorks(CallDatasetFn(tvd.STL10)),
-                SkipRestIfThisWorks(
-                    ReuseAlreadyPreparedDatasetOnSameNode(tvd.STL10, ["stl10_binary.tar.gz"])
-                ),
                 MakeSymlinksToDatasetFiles(
                     {p: f"{datasets_folder}/stl10/{p}" for p in ["stl10_binary.tar.gz"]}
                 ),
                 CallDatasetFn(tvd.STL10, extract_and_verify_archives=True),
             ),
-            MakePreparedDatasetUsableByOthersOnSameNode(tvd.STL10, ["stl10_binary.tar.gz"]),
-            AddToPreparedDatasetsFile(tvd.STL10),
+            # TODO: Double-check this.
+            prepared_files_or_dirs=["stl10_binary.tar.gz", "stl10_binary"],
         )
         for cluster, datasets_folder in standardized_torchvision_datasets_dir.items()
     },
     tvd.SVHN: {
-        cluster: Compose(
-            SkipIfAlreadyPrepared(tvd.SVHN),
+        cluster: prepare_vision_dataset(
             Compose(
                 SkipRestIfThisWorks(CallDatasetFn(tvd.SVHN)),
-                SkipRestIfThisWorks(
-                    ReuseAlreadyPreparedDatasetOnSameNode(
-                        tvd.SVHN,
-                        [
-                            "extra_32x32.mat",
-                            "extra.tar.gz",
-                            "test_32x32.mat",
-                            "test.tar.gz",
-                            "train_32x32.mat",
-                            "train.tar.gz",
-                        ],
-                    )
-                ),
                 MakeSymlinksToDatasetFiles(
                     {
                         p: f"{datasets_dir}/svhn/{p}"
@@ -513,18 +467,14 @@ prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareDatasetFn]] = {
                 ),
                 CallDatasetFn(tvd.SVHN, extract_and_verify_archives=True),
             ),
-            MakePreparedDatasetUsableByOthersOnSameNode(
-                tvd.SVHN,
-                [
-                    "extra_32x32.mat",
-                    "extra.tar.gz",
-                    "test_32x32.mat",
-                    "test.tar.gz",
-                    "train_32x32.mat",
-                    "train.tar.gz",
-                ],
-            ),
-            AddToPreparedDatasetsFile(tvd.SVHN),
+            prepared_files_or_dirs=[
+                "extra_32x32.mat",
+                "extra.tar.gz",
+                "test_32x32.mat",
+                "test.tar.gz",
+                "train_32x32.mat",
+                "train.tar.gz",
+            ],
         )
         for cluster, datasets_dir in standardized_torchvision_datasets_dir.items()
     },
@@ -545,6 +495,7 @@ prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareDatasetFn]] = {
                     # CallDatasetConstructor(tvd.UCF101),
                     continue_if_raised=(FileNotFoundError,),
                 ),
+                # TODO: Debug this step here.
                 SkipRestIfThisWorks(
                     ReuseAlreadyPreparedDatasetOnSameNode(
                         tvd.UCF101,

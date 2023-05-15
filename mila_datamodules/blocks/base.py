@@ -21,12 +21,14 @@ class CallDatasetFn(Generic[D_co, P]):
 
     Parameters
     ----------
-    dataset_type :
+    dataset_fn :
         The dataset type or callable.
-    verify : bool, optional
-        If `verify` is `True` and the `dataset_type` takes a `download` argument, then `download`
-        is set to `False`. This is used to skip downloading files or verifying checksums of the
-        archives, making things faster if we just want to check that the dataset is setup properly.
+    extract_and_verify_archives : bool, optional
+        If `True` then `download=True` is passed to the `dataset_fn`.
+        For torchvision dataset classes, this makes them verify the checksums and extract the
+        archives if necessary.
+        NOTE: Even when this is set to `True`, this doesn't usually download anything, because this
+        block is usually preceded by some that create links to the required archives.
     get_index : int, optional
         If passed, the dataset instance is also indexed (`dataset[get_index]`) to check that the
         dataset is properly set up.

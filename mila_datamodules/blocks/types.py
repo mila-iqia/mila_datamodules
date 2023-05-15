@@ -17,7 +17,7 @@ logger = get_logger(__name__)
 
 # TODO: This is too complicated.
 class PrepareDatasetFn(Protocol[D, P]):
-    dataset_fn: type[D] | Callable[Concatenate[str, P], D]
+    dataset_fn: Callable[Concatenate[str, P], D] | None = None
 
     def __call__(
         self,
