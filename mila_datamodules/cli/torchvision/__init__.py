@@ -437,3 +437,14 @@ class INaturalistArgs(VisionDatasetArgs):
 
 
 command_line_args_for_dataset[tvd.INaturalist] = INaturalistArgs
+
+
+@dataclass
+class ImageNetArgs(VisionDatasetArgs):
+    """Prepare the ImageNet dataset."""
+
+    split: Literal["train", "val"] = "train"
+    """Which split to use."""
+
+
+command_line_args_for_dataset[tvd.ImageNet] = ImageNetArgs
