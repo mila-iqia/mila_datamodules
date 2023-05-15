@@ -93,6 +93,7 @@ def setup_cache(
     user_cache_dir: Path = DEFAULT_USER_CACHE_DIR,
     shared_cache_dir: Path = DEFAULT_SHARED_CACHE_DIR,
     subdirectory: str = "",
+    skip_modify_bash_aliases: bool = False,
 ) -> None:
     """Set up the user cache directory.
 
@@ -123,20 +124,21 @@ def setup_cache(
 
     create_links(user_cache_dir / subdirectory, shared_cache_dir / subdirectory)
 
-    bash_aliases_file = "~/.bash_aliases"
-    bash_aliases_file_changed = set_environment_variables(
-        user_cache_dir, bash_aliases_file=bash_aliases_file
-    )
-    if bash_aliases_file_changed:
-        logger.warning(
-            f"The {bash_aliases_file} was changed. You may need to restart your shell for the "
-            f"changes to take effect.\n"
-            f"To set the environment variables in the current shell, source the "
-            f"{bash_aliases_file} file like so:\n"
-            f"```\n"
-            f"source {bash_aliases_file}\n"
-            f"```\n"
+    if not skip_modify_bash_aliases:
+        bash_aliases_file = "~/.bash_aliases"
+        bash_aliases_file_changed = set_environment_variables(
+            user_cache_dir, bash_aliases_file=bash_aliases_file
         )
+        if bash_aliases_file_changed:
+            logger.warning(
+                f"The {bash_aliases_file} was changed. You may need to restart your shell for the "
+                f"changes to take effect.\n"
+                f"To set the environment variables in the current shell, source the "
+                f"{bash_aliases_file} file like so:\n"
+                f"```\n"
+                f"source {bash_aliases_file}\n"
+                f"```\n"
+            )
 
     print("DONE!")
 
