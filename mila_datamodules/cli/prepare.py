@@ -76,7 +76,7 @@ def prepare(args: argparse.Namespace):
     """Prepare a dataset."""
     args_dict = vars(args)
 
-    assert args_dict.pop("command_name") == "prepare"
+    # assert args_dict.pop("command_name") == "prepare"
     assert args_dict.pop("command") is prepare
     verbose: int = args_dict.pop("verbose") or 0
 
