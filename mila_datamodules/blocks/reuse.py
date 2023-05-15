@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import inspect
+import os
 from logging import getLogger as get_logger
 from pathlib import Path
 from typing import Any, Callable
@@ -51,7 +53,7 @@ class ReuseAlreadyPreparedDatasetOnSameNode(PrepareDatasetFn[D_co, P]):
 
     def __init__(
         self,
-        dataset_fn: Callable[Concatenate[str, P], D_co],
+        dataset_fn: type[D_co] | Callable[Concatenate[str, P], D_co],
         prepared_dataset_files_or_directories: list[str],
         extra_files_depending_on_kwargs: dict[str, dict[Any, str | list[str]]] | None = None,
     ) -> None:
@@ -63,14 +65,16 @@ class ReuseAlreadyPreparedDatasetOnSameNode(PrepareDatasetFn[D_co, P]):
         self.dataset_name = dataset_name(dataset_fn)
 
     def __call__(self, root: str | Path, *dataset_args: P.args, **dataset_kwargs: P.kwargs) -> str:
+        root = Path(root)
         dataset_files_or_directories = self.dataset_files_or_directories.copy()
         for kwarg, value_to_extra_files_or_dirs in self.extra_files_depending_on_kwargs.items():
             if dataset_kwargs.get(kwarg) in value_to_extra_files_or_dirs:
-                extra_path_or_paths = value_to_extra_files_or_dirs[dataset_kwargs[kwarg]]
+                extra_path_or_paths = value_to_extra_files_or_dirs[dataset_kwargs.get(kwarg)]
+                logger.info(f"Also sharing {extra_path_or_paths} with other users on this node.")
                 if isinstance(extra_path_or_paths, (str, Path)):
-                    dataset_files_or_directories.append(extra_path_or_paths)
+                    dataset_files_or_directories.append(str(root / extra_path_or_paths))
                 else:
-                    dataset_files_or_directories.extend(extra_path_or_paths)
+                    dataset_files_or_directories.extend(str(root / p) for p in extra_path_or_paths)
 
         success = reuse_already_prepared_dataset_on_same_node(
             root=Path(root),
@@ -163,7 +167,7 @@ def get_other_slurm_tmpdirs(root_dir_in_this_job: Path | None = None) -> list[Pa
     return list(
         d
         for d in root_dir_in_this_job.parent.iterdir()
-        if d.is_dir() and d != root_dir_in_this_job
+        if d.is_dir() and d != root_dir_in_this_job and "slurm" in d.name
     )
 
 
@@ -198,7 +202,8 @@ def cache_dirs_on_same_node_with_dataset_already_prepared(
             logger.debug(f"Unable to read from {d}: {err}")
             return False
 
-    logger.debug(f"Other slurm TMPDIRS: {other_slurm_tmpdirs}")
+    node_name = os.environ.get("SLURMD_NODENAME", "the current node")
+    logger.debug(f"Found {len(other_slurm_tmpdirs)} other slurm TMPDIRS on {node_name}.")
     # Look in those to check if any have a `cache` folder and possibly a file that shows which
     # dataset was prepared.
     usable_dirs: list[Path] = []
@@ -284,15 +289,93 @@ def is_already_prepared(
 
 
 class MakePreparedDatasetUsableByOthersOnSameNode(PrepareDatasetFn[D_co, P]):
-    def __init__(self, readable_files_or_directories: list[str] | None) -> None:
+    def __init__(
+        self,
+        readable_files_or_directories: list[str] | None,
+        dataset_fn: type[D_co] | Callable[P, D_co] | None = None,
+        extra_files_depending_on_kwargs: dict[str, dict[Any, str | list[str]]] | None = None,
+    ) -> None:
         super().__init__()
+        if readable_files_or_directories is None and extra_files_depending_on_kwargs:
+            raise RuntimeError(
+                f"Cannot use {readable_files_or_directories=} and extra_files_depending_on_kwargs"
+            )
+
         self.readable_files_or_directories = readable_files_or_directories
+        self.extra_files_depending_on_kwargs = extra_files_depending_on_kwargs or {}
+        self.dataset_fn = dataset_fn
 
     def __call__(self, root: str | Path, *dataset_args: P.args, **dataset_kwargs: P.kwargs) -> str:
-        make_prepared_dataset_usable_by_others_on_same_node(
-            root, self.readable_files_or_directories
-        )
+        root = Path(root)
+        if self.readable_files_or_directories is None:
+            readable_files_or_directories = None
+        else:
+            readable_files_or_directories = self.readable_files_or_directories.copy()
+            if self.extra_files_depending_on_kwargs:
+                readable_files_or_directories.extend(
+                    _extra_values_based_on_kwargs(
+                        root,
+                        extra_files_depending_on_kwargs=self.extra_files_depending_on_kwargs,
+                        dataset_fn=self.dataset_fn,
+                        *dataset_args,
+                        **dataset_kwargs,
+                    )
+                )
+
+        make_prepared_dataset_usable_by_others_on_same_node(root, readable_files_or_directories)
         return str(root)
+
+
+def _extra_values_based_on_kwargs(
+    root: str | Path,
+    extra_files_depending_on_kwargs: dict[str, dict[Any, str | list[str]]],
+    dataset_fn: type[D_co] | Callable[P, D_co] | None = None,
+    *dataset_args: P.args,
+    **dataset_kwargs: P.kwargs,
+) -> list[str]:
+    """Adds arguments based on the values argument passed to the dataset function.
+
+    For example, if a dataset function takes a `split` argument, and the value of that argument is
+    the list of directories to add for each split, then this function will add those directories to
+    a list and return it.
+    """
+    root = Path(root)
+    extra_values: list[str] = []
+
+    bound_args = None
+    if dataset_fn is not None:
+        try:
+            bound_args = inspect.signature(dataset_fn).bind_partial(
+                *dataset_args, **dataset_kwargs
+            )
+            bound_args.apply_defaults()
+        except TypeError:
+            pass
+
+    def _get_arg_value(arg_name: str) -> Any:
+        if bound_args is None:
+            return dataset_kwargs.get(arg_name)
+        return bound_args.arguments.get(arg_name)
+
+    for kwarg, value_to_extra_files_or_dirs in extra_files_depending_on_kwargs.items():
+        # NOTE: Using .get here so we also allow a default value to use if the kwarg isn't
+        # passed. For example:
+        # {"split": {"train": "train_dir", "val": "val_dir", None: "train_dir"}}
+        argument_value = _get_arg_value(kwarg)
+
+        if argument_value in value_to_extra_files_or_dirs:
+            extra_path_or_paths = value_to_extra_files_or_dirs[argument_value]
+            extra_paths = (
+                [extra_path_or_paths]
+                if isinstance(extra_path_or_paths, (str, Path))
+                else list(extra_path_or_paths)
+            )
+            logger.info(
+                f"Also sharing {[str(root / p) for p in extra_paths]} because "
+                f"{kwarg}={argument_value} was used."
+            )
+            extra_values.extend(p for p in extra_paths)
+    return extra_values
 
 
 def make_prepared_dataset_usable_by_others_on_same_node(
@@ -311,12 +394,11 @@ def make_prepared_dataset_usable_by_others_on_same_node(
             else:
                 dataset_files.append(file_or_dir)
 
-    assert all(p.exists() for p in dataset_files)
+    assert all(p.exists() for p in dataset_files), [p for p in dataset_files if not p.exists()]
 
+    logger.debug("Checking permissions on dataset files...")
     files_to_make_readonly_to_others = [
-        file
-        for file in rich_pbar(dataset_files, desc="Checking permissions on dataset files")
-        if not has_permission(file, "r", "others")
+        file for file in dataset_files if not has_permission(file, "r", "others")
     ]
     if not files_to_make_readonly_to_others:
         logger.info("All dataset files are already marked as readable by others.")

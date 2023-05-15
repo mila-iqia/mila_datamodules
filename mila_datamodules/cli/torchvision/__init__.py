@@ -146,6 +146,7 @@ prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareDatasetFn]] = {
     # user (within '2017', '2018', '2019', '2021_train', '2021_train_mini', '2021_valid')
     tvd.INaturalist: {
         cluster: Compose(
+            SkipIfAlreadyPrepared(dataset_name(tvd.INaturalist)),
             Compose(
                 SkipRestIfThisWorks(CallDatasetFn(tvd.INaturalist)),
                 SkipRestIfThisWorks(
@@ -210,11 +211,10 @@ prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareDatasetFn]] = {
                             "ILSVRC2012_img_val.tar",
                             "md5sums",
                             "meta.bin",
-                            "train",
                         ],
-                        # TODO: Add a way to specify additional files depending on the dataset
-                        # kwargs that get passed.
-                        # {"split": {"train": "train", "val": "val"}}
+                        extra_files_depending_on_kwargs={
+                            "split": {"train": "train", "val": "val", None: "train"}
+                        },
                     )
                 ),
                 # repare the dataset since it wasn't already.
@@ -225,6 +225,7 @@ prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareDatasetFn]] = {
                             "ILSVRC2012_devkit_t12.tar.gz",
                             "ILSVRC2012_img_train.tar",
                             "ILSVRC2012_img_val.tar",
+                            "md5sums",
                         ]
                     }
                 ),
@@ -239,8 +240,10 @@ prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareDatasetFn]] = {
                     "ILSVRC2012_img_val.tar",
                     "md5sums",
                     "meta.bin",
-                    "train",
                 ],
+                extra_files_depending_on_kwargs={
+                    "split": {"train": "train", "val": "val", None: "train"}
+                },
             ),
             AddDatasetNameToPreparedDatasetsFile(dataset_name(tvd.ImageNet)),
         )
