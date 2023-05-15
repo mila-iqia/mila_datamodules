@@ -16,14 +16,14 @@ from .reuse import (
     AddDatasetNameToPreparedDatasetsFile,
     MakePreparedDatasetUsableByOthersOnSameNode,
     ReuseAlreadyPreparedDatasetOnSameNode,
-    add_dataset_name_to_prepared_datasets_file,
+    add_dataset_to_prepared_datasets_file,
     make_prepared_dataset_usable_by_others_on_same_node,
     reuse_already_prepared_dataset_on_same_node,
 )
 from .types import PrepareDatasetFn
 
 __all__ = [
-    "add_dataset_name_to_prepared_datasets_file",
+    "add_dataset_to_prepared_datasets_file",
     "AddDatasetNameToPreparedDatasetsFile",
     "CallDatasetFn",
     "Compose",

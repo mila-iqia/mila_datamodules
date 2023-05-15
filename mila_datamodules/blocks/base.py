@@ -6,7 +6,7 @@ import subprocess
 from logging import getLogger as get_logger
 from pathlib import Path
 from shutil import unpack_archive
-from typing import Callable, Iterable
+from typing import Callable, Iterable, Union
 from zipfile import ZipFile
 
 from typing_extensions import Concatenate
@@ -17,6 +17,9 @@ from mila_datamodules.types import D, D_co, P
 from mila_datamodules.utils import copy_fn, dataset_name
 
 logger = get_logger(__name__)
+
+DatasetFn = Union[type[D_co], Callable[P, D_co]]
+DatasetFnWithStrArg = Union[type[D_co], Callable[Concatenate[str, P], D_co]]
 
 
 class CallDatasetFn(PrepareDatasetFn[D_co, P]):

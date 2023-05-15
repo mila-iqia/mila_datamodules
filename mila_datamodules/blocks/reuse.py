@@ -1,14 +1,17 @@
 from __future__ import annotations
 
+import dataclasses
 import inspect
 import os
+from dataclasses import dataclass
 from logging import getLogger as get_logger
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Union
 
-from typing_extensions import Concatenate
+import yaml
 
-from mila_datamodules.blocks.base import CallDatasetFn
+from mila_datamodules.blocks.base import CallDatasetFn, DatasetFnWithStrArg
+from mila_datamodules.blocks.compose import Compose
 from mila_datamodules.blocks.path_utils import has_permission, tree
 from mila_datamodules.blocks.types import PrepareDatasetFn
 from mila_datamodules.cli.utils import rich_pbar
@@ -17,7 +20,32 @@ from mila_datamodules.types import D_co, P
 from mila_datamodules.utils import dataset_name
 
 logger = get_logger(__name__)
-PREPARED_DATASETS_FILE = "prepared_datasets.txt"
+PREPARED_DATASETS_FILE = "prepared_datasets.yaml"
+
+DatasetFn = Union[type[D_co], Callable[P, D_co]]
+
+
+@dataclass(frozen=True)
+class PreparedDatasetEntry:
+    """Simple schema for the entries in the prepared datasets file.
+
+    Each entry represents a dataset that has already been prepared.
+    """
+
+    # NOTE: Storing the dataset function, just to keep this as general as possible.
+    # dataset_name: str
+
+    dataset_fn: Callable
+
+    dataset_args: list[Any]
+    """The positional arguments that are passed to the dataset function."""
+
+    dataset_kwargs: dict[str, Any]
+    """The keyword arguments that are passed to the dataset function (e.g. split="val")."""
+
+    # TODO: Actually make use of this, for example if there is the dataset is already prepared in a
+    # different dir, then reuse it.
+    prepared_at: str
 
 
 class ReuseAlreadyPreparedDatasetOnSameNode(PrepareDatasetFn[D_co, P]):
@@ -53,7 +81,7 @@ class ReuseAlreadyPreparedDatasetOnSameNode(PrepareDatasetFn[D_co, P]):
 
     def __init__(
         self,
-        dataset_fn: type[D_co] | Callable[Concatenate[str, P], D_co],
+        dataset_fn: DatasetFn[D_co, P],
         prepared_dataset_files_or_directories: list[str],
         extra_files_depending_on_kwargs: dict[str, dict[Any, str | list[str]]] | None = None,
     ) -> None:
@@ -91,10 +119,76 @@ class ReuseAlreadyPreparedDatasetOnSameNode(PrepareDatasetFn[D_co, P]):
             raise RuntimeError()
 
 
+# TODO: Check if the dataset is already setup in another SLURM_TMPDIR, and if so,
+# create hard links to the dataset files.
+class AddDatasetNameToPreparedDatasetsFile(PrepareDatasetFn[D_co, P]):
+    def __init__(self, dataset_fn: type[D_co] | Callable[P, D_co]) -> None:
+        super().__init__()
+        self.dataset_fn = dataset_fn
+        self.dataset_name = dataset_name(dataset_fn)
+
+    def __call__(self, root: str | Path, /, *args: P.args, **kwargs: P.kwargs) -> str:
+        # TODO: Use a yaml file so we can save more information than just the dataset name.
+        # TODO: Also save the *args and **kwargs in the file so we can check if the chosen split
+        # was already processed.
+        add_dataset_to_prepared_datasets_file(self.dataset_fn, root=root, *args, **kwargs)
+        return str(root)
+
+
+class SkipIfAlreadyPrepared(PrepareDatasetFn[D_co, P]):
+    def __init__(self, dataset_fn: type[D_co] | Callable[P, D_co]) -> None:
+        super().__init__()
+        self.dataset_fn = dataset_fn
+        self.dataset_name = dataset_name(dataset_fn)
+
+    def __call__(self, root: str | Path, *dataset_args: P.args, **dataset_kwargs: P.kwargs) -> str:
+        if is_already_prepared(self.dataset_fn, root=root, *dataset_args, **dataset_kwargs):
+            raise Compose.Stop
+        return str(root)
+
+
+class MakePreparedDatasetUsableByOthersOnSameNode(PrepareDatasetFn[D_co, P]):
+    def __init__(
+        self,
+        readable_files_or_directories: list[str] | None,
+        dataset_fn: type[D_co] | Callable[P, D_co] | None = None,
+        extra_files_depending_on_kwargs: dict[str, dict[Any, str | list[str]]] | None = None,
+    ) -> None:
+        super().__init__()
+        if readable_files_or_directories is None and extra_files_depending_on_kwargs:
+            raise RuntimeError(
+                f"Cannot use {readable_files_or_directories=} and extra_files_depending_on_kwargs"
+            )
+
+        self.readable_files_or_directories = readable_files_or_directories
+        self.extra_files_depending_on_kwargs = extra_files_depending_on_kwargs or {}
+        self.dataset_fn = dataset_fn
+
+    def __call__(self, root: str | Path, *dataset_args: P.args, **dataset_kwargs: P.kwargs) -> str:
+        root = Path(root)
+        if self.readable_files_or_directories is None:
+            readable_files_or_directories = None
+        else:
+            readable_files_or_directories = self.readable_files_or_directories.copy()
+            if self.extra_files_depending_on_kwargs:
+                readable_files_or_directories.extend(
+                    _extra_values_based_on_kwargs(
+                        root,
+                        extra_files_depending_on_kwargs=self.extra_files_depending_on_kwargs,
+                        dataset_fn=self.dataset_fn,
+                        *dataset_args,
+                        **dataset_kwargs,
+                    )
+                )
+
+        make_prepared_dataset_usable_by_others_on_same_node(root, readable_files_or_directories)
+        return str(root)
+
+
 def reuse_already_prepared_dataset_on_same_node(
     root: Path,
     dataset_name: str,
-    dataset_fn: Callable[Concatenate[str, P], Any],
+    dataset_fn: DatasetFnWithStrArg[D_co, P],
     dataset_files_or_directories: list[str],
     *dataset_args: P.args,
     **dataset_kwargs: P.kwargs,
@@ -134,9 +228,10 @@ def reuse_already_prepared_dataset_on_same_node(
             logger.info(f"Creating hard links in {root} pointing to the files in {potential_dir}.")
             make_links_to_dataset_files(link_paths_to_file_paths)
 
-        root = CallDatasetFn(dataset_fn, extract_and_verify_archives=False)(
+        root_str = CallDatasetFn(dataset_fn, extract_and_verify_archives=False)(
             root, *dataset_args, **dataset_kwargs
         )
+        root = Path(root_str)
         logger.info(f"SUCCESS! Dataset was already prepared in {potential_dir}!")
         # TODO: If calling the dataset constructor doesn't work for some reason, perhaps we
         # should remove all the hard links we just created?
@@ -217,113 +312,76 @@ def cache_dirs_on_same_node_with_dataset_already_prepared(
     return usable_dirs
 
 
-# TODO: Check if the dataset is already setup in another SLURM_TMPDIR, and if so,
-# create hard links to the dataset files.
-class AddDatasetNameToPreparedDatasetsFile(PrepareDatasetFn[D_co, P]):
-    def __init__(self, dataset_name: str) -> None:
-        super().__init__()
-        self.dataset_name = dataset_name
-
-    def __call__(self, root: str | Path, /, *args: P.args, **kwargs: P.kwargs) -> str:
-        # TODO: Use a yaml file so we can save more information than just the dataset name.
-        # TODO: Also save the *args and **kwargs in the file so we can check if the chosen split
-        # was already processed.
-        add_dataset_name_to_prepared_datasets_file(self.dataset_name, str(root), *args, **kwargs)
-        return str(root)
-
-
-def get_prepared_datasets_from_file(prepared_datasets_file: str | Path) -> list[str]:
+def get_prepared_datasets_from_file(
+    prepared_datasets_file: str | Path,
+) -> list[PreparedDatasetEntry]:
     prepared_datasets_file = Path(prepared_datasets_file)
     if not prepared_datasets_file.exists():
         return []
     with open(prepared_datasets_file, "r") as f:
-        return [line.strip() for line in f.readlines()]
+        yaml_contents = yaml.full_load(f)
+        return yaml_contents or []
 
 
-def add_dataset_name_to_prepared_datasets_file(
-    dataset_name: str, root: str, *args, **kwargs
+def add_dataset_to_prepared_datasets_file(
+    dataset_fn: DatasetFn[D_co, P],
+    root: str | Path,
+    *dataset_args: P.args,
+    **dataset_kwargs: P.kwargs,
 ) -> None:
     prepared_datasets_file = Path(root) / PREPARED_DATASETS_FILE
-    if prepared_datasets_file.exists():
-        datasets = prepared_datasets_file.read_text().splitlines(keepends=False)
-    else:
-        datasets = []
+    name = dataset_name(dataset_fn)
 
-    if dataset_name in datasets:
-        logger.debug(f"Dataset {dataset_name} is already in the prepared datasets file.")
-        return str(root)
+    # TODO: Do we want to store where the dataset was prepared?
+    new_entry = PreparedDatasetEntry(
+        # dataset_name=name,
+        dataset_fn=dataset_fn,
+        dataset_args=list(dataset_args),
+        dataset_kwargs=dataset_kwargs.copy(),
+        prepared_at=str(root),
+    )
 
-    with open(prepared_datasets_file, "a") as f:
-        logger.info(
-            f"Adding the '{dataset_name}' to the prepared datasets file at "
-            f"{prepared_datasets_file}."
+    previous_content = yaml.full_load(prepared_datasets_file.read_text()) or []
+    previous_entries = [PreparedDatasetEntry(**entry) for entry in previous_content]
+
+    # TODO: Use a there is already a prepared entry at a different `root`, still use it!
+    if new_entry in previous_entries:
+        logger.debug(
+            f"There is already an entry for dataset {name} in the prepared datasets file: "
+            f"{new_entry}"
         )
-        f.write(dataset_name + "\n")
+        return
 
+    if previous_entries:
+        logger.debug(
+            "Other prepared datasets:\n" + "\n".join(str(entry) for entry in previous_entries)
+        )
 
-class SkipIfAlreadyPrepared(PrepareDatasetFn[D_co, P]):
-    def __init__(self, dataset_name: str) -> None:
-        super().__init__()
-        self.dataset_name = dataset_name
-
-    def __call__(self, root: str | Path, *dataset_args: P.args, **dataset_kwargs: P.kwargs) -> str:
-        if is_already_prepared(self.dataset_name, root, *dataset_args, **dataset_kwargs):
-            from mila_datamodules.blocks.compose import Compose
-
-            raise Compose.Stop
-        return str(root)
+    with open(prepared_datasets_file, "w") as f:
+        logger.info(
+            f"Adding a new entry in the prepared dataset file ({prepared_datasets_file}):\n"
+            f"{new_entry}"
+        )
+        entries = previous_entries + [new_entry]
+        yaml.dump([dataclasses.asdict(entry) for entry in entries], stream=f)
 
 
 def is_already_prepared(
-    dataset_name: str, root: str | Path, *dataset_args, **dataset_kwagrs
+    dataset_fn: type[D_co] | Callable[P, D_co],
+    root: str | Path,
+    *dataset_args: P.args,
+    **dataset_kwagrs: P.kwargs,
 ) -> bool:
     prepared_datasets_file = Path(root) / PREPARED_DATASETS_FILE
-    if prepared_datasets_file.exists() and dataset_name in get_prepared_datasets_from_file(
+    name = dataset_name(dataset_fn)
+    if prepared_datasets_file.exists() and name in get_prepared_datasets_from_file(
         prepared_datasets_file
     ):
-        logger.info(f"Dataset {dataset_name} has already been prepared in {root}!")
+        logger.info(f"Dataset {name} has already been prepared in {root}!")
         return True
-    logger.info(f"Dataset {dataset_name} wasn't found in the prepared datasets file. Continuing.")
+    logger.info(f"Dataset {name} wasn't found in the prepared datasets file. Continuing.")
 
     return False
-
-
-class MakePreparedDatasetUsableByOthersOnSameNode(PrepareDatasetFn[D_co, P]):
-    def __init__(
-        self,
-        readable_files_or_directories: list[str] | None,
-        dataset_fn: type[D_co] | Callable[P, D_co] | None = None,
-        extra_files_depending_on_kwargs: dict[str, dict[Any, str | list[str]]] | None = None,
-    ) -> None:
-        super().__init__()
-        if readable_files_or_directories is None and extra_files_depending_on_kwargs:
-            raise RuntimeError(
-                f"Cannot use {readable_files_or_directories=} and extra_files_depending_on_kwargs"
-            )
-
-        self.readable_files_or_directories = readable_files_or_directories
-        self.extra_files_depending_on_kwargs = extra_files_depending_on_kwargs or {}
-        self.dataset_fn = dataset_fn
-
-    def __call__(self, root: str | Path, *dataset_args: P.args, **dataset_kwargs: P.kwargs) -> str:
-        root = Path(root)
-        if self.readable_files_or_directories is None:
-            readable_files_or_directories = None
-        else:
-            readable_files_or_directories = self.readable_files_or_directories.copy()
-            if self.extra_files_depending_on_kwargs:
-                readable_files_or_directories.extend(
-                    _extra_values_based_on_kwargs(
-                        root,
-                        extra_files_depending_on_kwargs=self.extra_files_depending_on_kwargs,
-                        dataset_fn=self.dataset_fn,
-                        *dataset_args,
-                        **dataset_kwargs,
-                    )
-                )
-
-        make_prepared_dataset_usable_by_others_on_same_node(root, readable_files_or_directories)
-        return str(root)
 
 
 def _extra_values_based_on_kwargs(

@@ -96,11 +96,28 @@ prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareDatasetFn]] = {
     },
     tvd.CIFAR10: {
         cluster: Compose(
-            SkipRestIfThisWorks(CallDatasetFn(tvd.CIFAR10)),
-            MakeSymlinksToDatasetFiles(
-                {"cifar-10-python.tar.gz": (f"{datasets_dir}/cifar10/cifar-10-python.tar.gz")}
+            # Skip everything if the dataset is already marked as prepared.
+            SkipIfAlreadyPrepared(tvd.CIFAR10),
+            Compose(
+                SkipRestIfThisWorks(CallDatasetFn(tvd.CIFAR10)),
+                SkipRestIfThisWorks(
+                    ReuseAlreadyPreparedDatasetOnSameNode(
+                        tvd.CIFAR10,
+                        prepared_dataset_files_or_directories=[
+                            "cifar-10-batches-py",
+                            "cifar-10-python.tar.gz",
+                        ],
+                    )
+                ),
+                MakeSymlinksToDatasetFiles(
+                    {"cifar-10-python.tar.gz": (f"{datasets_dir}/cifar10/cifar-10-python.tar.gz")}
+                ),
+                CallDatasetFn(tvd.CIFAR10, extract_and_verify_archives=True),
             ),
-            CallDatasetFn(tvd.CIFAR10, extract_and_verify_archives=True),
+            MakePreparedDatasetUsableByOthersOnSameNode(
+                ["cifar-10-batches-py", "cifar-10-python.tar.gz"]
+            ),
+            AddDatasetNameToPreparedDatasetsFile(tvd.CIFAR10),
         )
         for cluster, datasets_dir in standardized_torchvision_datasets_dir.items()
     },
