@@ -32,6 +32,7 @@ from mila_datamodules.cli.torchvision.coco import (
     PrepareCocoCaptions,
     PrepareCocoDetection,
 )
+from mila_datamodules.cli.torchvision.imagenet import prepare_imagenet
 from mila_datamodules.cli.torchvision.places365 import Places365Args, prepare_places365
 from mila_datamodules.clusters.cluster import Cluster
 from mila_datamodules.clusters.utils import get_slurm_tmpdir
@@ -331,6 +332,7 @@ prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareDatasetFn]] = {
                         ]
                     }
                 ),
+                prepare_imagenet,
                 # Call the constructor to verify the checksums and extract the archives in `root`.
                 CallDatasetFn(tvd.ImageNet),
             ),

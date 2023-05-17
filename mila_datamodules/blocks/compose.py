@@ -91,10 +91,7 @@ class SkipRestIfThisWorks(PrepareDatasetFn[D, P]):
             if isinstance(function_output, (str, Path)):
                 root = function_output
         except tuple(self.exceptions) as expected_exception:
-            logger.info(
-                f"Failed: dataset has not been prepared in {root}, continuing with dataset "
-                f"preparation."
-            )
+            logger.info("Check failed. Continuing with the dataset preparation...")
             logger.debug(f"Exceptions: {expected_exception}")
         else:
             logger.info("Success!")

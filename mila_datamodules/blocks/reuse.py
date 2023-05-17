@@ -13,7 +13,7 @@ import yaml
 from mila_datamodules.blocks.base import CallDatasetFn, DatasetFnWithStrArg
 from mila_datamodules.blocks.compose import Compose
 from mila_datamodules.blocks.path_utils import has_permission, tree
-from mila_datamodules.cli.utils import rich_pbar
+from mila_datamodules.cli.utils import pbar
 from mila_datamodules.clusters.utils import get_slurm_tmpdir
 from mila_datamodules.types import Concatenate, D, D_co, P
 from mila_datamodules.utils import dataset_name
@@ -229,8 +229,9 @@ def reuse_already_prepared_dataset_on_same_node(
 
 
 def make_links_to_dataset_files(link_path_to_file_path: dict[Path, Path]):
-    pbar = rich_pbar(list(link_path_to_file_path.items()), unit="Files", desc="Making links")
-    for link_path, file_path in pbar:
+    for link_path, file_path in pbar(
+        list(link_path_to_file_path.items()), unit="Files", desc="Making links"
+    ):
         assert file_path.exists(), file_path
         # Make a symlink in the local scratch directory to the archive on the network.
         if link_path.exists():
@@ -486,5 +487,5 @@ def make_prepared_dataset_usable_by_others_on_same_node(
     )
     root.chmod(root.stat().st_mode | 0b000_101_101)
 
-    for file in rich_pbar(files_to_make_readonly_to_others, desc="Making files readable..."):
+    for file in pbar(files_to_make_readonly_to_others, desc="Making files readable..."):
         file.chmod(file.stat().st_mode | 0b000_100_100)

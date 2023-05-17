@@ -1,17 +1,12 @@
 from __future__ import annotations
 
 import dataclasses
-import typing
-from typing import Any, Callable, TypeVar, Union
+from typing import Callable, TypeVar, Union
 
 import torchvision.datasets as tvd
 from typing_extensions import Concatenate, ParamSpec, Protocol
 
-if typing.TYPE_CHECKING:
-    P = ParamSpec("P")
-else:
-    P = ParamSpec("P", default=Any)
-
+P = ParamSpec("P")
 VD = TypeVar("VD", bound=tvd.VisionDataset)
 VD_co = TypeVar("VD_co", bound=tvd.VisionDataset, covariant=True)
 D = TypeVar("D")

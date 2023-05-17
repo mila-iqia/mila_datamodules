@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import contextlib
 import functools
+import logging
 import os
 import warnings
+from logging import getLogger as get_logger
 from typing import Callable, Iterable, TypeVar
 
 import torch
@@ -15,6 +17,8 @@ from typing_extensions import Concatenate, ParamSpec
 
 from mila_datamodules.clusters.cluster import Cluster
 from mila_datamodules.clusters.utils import get_slurm_tmpdir
+
+logger = get_logger(__name__)
 
 C = TypeVar("C", bound=Callable)
 
@@ -109,6 +113,8 @@ def _tqdm_rich_pbar(
         *args: _P.args,
         **kwargs: _P.kwargs,
     ) -> tqdm_rich[T]:
+        # TODO: Disable all the output when a --quiet/-q flag is passed on the command-line.
+        kwargs.setdefault("disable", logger.level == logging.NOTSET)
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", category=TqdmExperimentalWarning)
             return fn(seq, *args, **kwargs)
@@ -116,4 +122,4 @@ def _tqdm_rich_pbar(
     return _fn
 
 
-rich_pbar = _tqdm_rich_pbar()
+pbar = _tqdm_rich_pbar()
