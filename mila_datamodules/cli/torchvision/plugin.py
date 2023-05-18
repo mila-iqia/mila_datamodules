@@ -65,7 +65,11 @@ class TorchVisionPlugin(PreparePlugin):
 
         output = function(**kwargs)
 
-        logger.setLevel(logging.INFO)
+        quiet = get_logger("mila_datamodules").disabled
+
+        if not quiet:
+            # Turn on logging just for the last bit.
+            logger.setLevel(logging.INFO)
 
         new_root = output
 

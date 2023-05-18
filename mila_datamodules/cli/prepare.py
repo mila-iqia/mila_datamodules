@@ -42,8 +42,15 @@ class PreparePlugin(Protocol):
 
 def add_prepare_arguments(parser: ArgumentParser):
     parser.add_argument("-v", "--verbose", action="count")
+    parser.add_argument(
+        "-q",
+        "--quiet",
+        default=False,
+        action="store_true",
+        help="Don't write anything to stdout/stderr.",
+    )
     subparsers = parser.add_subparsers(
-        title="dataset", description="Which dataset to prepare", dest="dataset"
+        title="dataset/model", description="Which dataset or model to prepare", dest="dataset"
     )
 
     # Get the prepare_plugin entry points:
@@ -63,22 +70,24 @@ def add_prepare_arguments(parser: ArgumentParser):
     _previous_parsers = {}
     for plugin in plugins:
         _previous_parsers.update(subparsers.choices)
+
+        # Let the plugin add all its subparsers (datasets/model weights that can be prepared).
         plugin.add_prepare_args(subparsers)
-        plugin_parsers = {
-            k: v for k, v in subparsers.choices.copy().items() if k not in _previous_parsers
-        }
-        for dataset, dataset_parser in plugin_parsers.items():
-            dataset_parser.set_defaults(prepare_fn=plugin.prepare)
-            dataset_parser.set_defaults(dataset=dataset)
+
+        # Collect the newly added parsers and do the `.setdefaults` on them automatically.
+        for dataset_name, dataset_parser in subparsers.choices.items():
+            if dataset_name not in _previous_parsers:
+                dataset_parser.set_defaults(prepare_fn=plugin.prepare)
+                dataset_parser.set_defaults(dataset=dataset_name)
 
 
 def prepare(args: argparse.Namespace):
     """Prepare a dataset."""
     args_dict = vars(args)
 
-    # assert args_dict.pop("command_name") == "prepare"
-    assert args_dict.pop("command") is prepare
+    # assert args_dict.pop("command") in [prepare, None]
     verbose: int = args_dict.pop("verbose") or 0
+    quiet: bool = args_dict.pop("quiet")
 
     def _level(verbose: int) -> int:
         return (
@@ -94,10 +103,12 @@ def prepare(args: argparse.Namespace):
     logger = logging.getLogger("mila_datamodules")
     logger.addHandler(rich.logging.RichHandler(markup=True, tracebacks_width=100))
     logger.setLevel(_level(verbose))
+    logger.disabled = quiet
 
     hf_logger = logging.getLogger("datasets")
     hf_logger.setLevel(_level(verbose - 2))
     hf_logger.addHandler(rich.logging.RichHandler(markup=True, tracebacks_width=100))
+    hf_logger.disabled = quiet
 
     # TODO: Dispatch what to do with `args` (and the output of the function) in a smarter way,
     # based on which module was selected.
