@@ -23,7 +23,10 @@ from logging import getLogger as get_logger
 from pathlib import Path
 from typing import Callable, Iterable, Sequence, TypeVar
 
+import tqdm
+import tqdm.rich
 from simple_parsing import field
+from tqdm.std import TqdmExperimentalWarning
 
 logger = get_logger(__name__)
 logger.setLevel(logging.INFO)
@@ -120,7 +123,9 @@ def setup_cache(
 
     set_striping_config_for_dir(user_cache_dir)
 
-    delete_broken_symlinks_to_shared_cache(user_cache_dir, shared_cache_dir)
+    delete_broken_symlinks_to_shared_cache(
+        user_cache_dir / subdirectory, shared_cache_dir / subdirectory
+    )
 
     create_links(user_cache_dir / subdirectory, shared_cache_dir / subdirectory)
 
@@ -151,6 +156,7 @@ def set_striping_config_for_dir(dir: Path, num_targets: int = 4, chunksize: str 
 
     NOTE: This only affects the files that are added in this directory *after* this command is ran.
     """
+    # TODO: Find the command to get the striping pattern and only change it if necessary.
     logger.info(f"Setting the striping config for {dir}")
     output = subprocess.check_output(
         shlex.split(
@@ -159,13 +165,53 @@ def set_striping_config_for_dir(dir: Path, num_targets: int = 4, chunksize: str 
         ),
         encoding="utf-8",
     )
+    logger.info("Done setting the striping config.")
+
     logger.debug(output)
+
+
+def _enumerate_all_files_in_dir(
+    directory: Path,
+    write_filecount_txt: bool = True,
+    desc: str = "",
+    skip_file: Predicate[Path] | None = None,
+    skip_dir: Predicate[Path] | None = None,
+) -> Iterable[Path]:
+    filecount = 0
+    filecount_file = directory / ".file_count.txt"
+    expected_filecount: int | None = None
+    if filecount_file.exists():
+        expected_filecount = int(filecount_file.read_text())
+
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", category=TqdmExperimentalWarning)
+        total = expected_filecount
+        pbar_to_use = tqdm.rich.tqdm_rich if total is not None else tqdm.tqdm
+        for file in pbar_to_use(
+            _tree(directory, skip_file=skip_file, skip_dir=skip_dir),
+            desc=desc or f"Iterating through all the files in {directory}",
+            unit="Files",
+            total=total,
+        ):
+            yield file
+            filecount += 1
+
+    if write_filecount_txt and filecount != expected_filecount:
+        try:
+            filecount_file.write_text(str(filecount))
+            logger.debug(f"Updated the filecount file at {filecount_file} to {filecount}")
+        except IOError:
+            pass
 
 
 def delete_broken_symlinks_to_shared_cache(user_cache_dir: Path, shared_cache_dir: Path):
     """Delete all symlinks in the user cache directory that point to files that don't exist anymore
     in the shared cache directory."""
-    for file in user_cache_dir.rglob("*"):
+    logger.info(f"Looking for broken symlinks in {user_cache_dir}")
+    for file in _enumerate_all_files_in_dir(
+        user_cache_dir,
+        desc=f"Looking for broken symlinks in {user_cache_dir} ...",
+    ):
         if (
             file.is_symlink()
             and not file.exists()
@@ -199,26 +245,29 @@ def create_links(
 
     # TODO: Create the list of all files (exhaust the generator below) and use multiprocessing to
     # speed this up.
-
-    paths_in_shared_cache = list(_tree(shared_cache_dir, skip_file=skip_file, skip_dir=skip_dir))
-    paths_in_user_cache = [
-        user_cache_dir / path.relative_to(shared_cache_dir) for path in paths_in_shared_cache
-    ]
-
-    from tqdm.rich import tqdm
-    from tqdm.std import TqdmExperimentalWarning
-
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore", category=TqdmExperimentalWarning)
-        pbar = tqdm(list(zip(paths_in_user_cache, paths_in_shared_cache)), unit="Files")
+        # TODO: Could put a file in the shared_cache dir that gives the total number of files in
+        # the shared cache.
+        for path_in_shared_cache in _enumerate_all_files_in_dir(
+            shared_cache_dir,
+            desc=f"Creating symlinks in {user_cache_dir} ...",
+            skip_file=skip_file,
+            skip_dir=skip_dir,
+        ):
+            path_in_user_cache = user_cache_dir / (
+                path_in_shared_cache.relative_to(shared_cache_dir)
+            )
+            _create_link(
+                path_in_user_cache=path_in_user_cache,
+                path_in_shared_cache=path_in_shared_cache,
+            )
 
-    for path_in_user_cache, path_in_shared_cache in pbar:
-        # TODO: Add a cool progress bar box like in Milabench!
-        # pbar.set_description(f"{path_in_shared_cache}")
-        _create_link(
-            path_in_user_cache=path_in_user_cache,
-            path_in_shared_cache=path_in_shared_cache,
-        )
+    # for path_in_user_cache, path_in_shared_cache in pbar:
+    #     _create_link(
+    #         path_in_user_cache=path_in_user_cache,
+    #         path_in_shared_cache=path_in_shared_cache,
+    #     )
 
 
 def _create_link(path_in_user_cache: Path, path_in_shared_cache: Path) -> None:

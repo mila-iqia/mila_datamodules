@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 from logging import getLogger as get_logger
+from typing import Callable
 
 from mila_datamodules.cli.dataset_args import DatasetArguments
 from mila_datamodules.cli.huggingface.base import (
     HfDatasetsEnvVariables,
     PrepareGenericDatasetArgs,
-    PrepareHfDatasetFn,
-    prepare_generic,
+    prepare_hf_dataset,
 )
 from mila_datamodules.cli.huggingface.wikitext import PrepareWikitextArgs, prepare_wikitext
 from mila_datamodules.clusters.cluster import Cluster
@@ -15,9 +15,11 @@ from mila_datamodules.clusters.utils import get_scratch_dir, get_slurm_tmpdir
 
 logger = get_logger(__name__)
 
-prepare_huggingface_dataset_fns: dict[str, dict[Cluster, PrepareHfDatasetFn]] = {
+prepare_huggingface_dataset_fns: dict[
+    str, dict[Cluster, Callable[..., HfDatasetsEnvVariables]]
+] = {
     "wikitext": {Cluster.Mila: prepare_wikitext},
-    "huggingface": {Cluster.Mila: prepare_generic},
+    "huggingface": {Cluster.Mila: prepare_hf_dataset},
 }
 
 command_line_args_for_hf_dataset: dict[str, DatasetArguments | type[DatasetArguments]] = {

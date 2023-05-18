@@ -9,7 +9,7 @@ from typing import Literal
 from simple_parsing import field
 
 from mila_datamodules.cli.dataset_args import DatasetArguments
-from mila_datamodules.cli.huggingface.base import HfDatasetsEnvVariables, prepare_generic
+from mila_datamodules.cli.huggingface.base import HfDatasetsEnvVariables, prepare_hf_dataset
 
 logger = get_logger(__name__)
 
@@ -25,8 +25,6 @@ class PrepareWikitextArgs(DatasetArguments):
     name: WikitextName = field(positional=True)
 
 
-def prepare_wikitext(name: WikitextName) -> HfDatasetsEnvVariables:
+def prepare_wikitext(name: WikitextName, *args, **kwargs) -> HfDatasetsEnvVariables:
     """Prepare the wikitext dataset."""
-    return prepare_generic(path="wikitext", name=name)
-
-    return prepare_generic(path="wikitext", name=name)
+    return prepare_hf_dataset(path="wikitext", name=name, *args, **kwargs)

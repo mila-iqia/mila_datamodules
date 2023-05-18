@@ -12,10 +12,11 @@ import warnings
 from dataclasses import asdict, dataclass
 from logging import getLogger as get_logger
 from pathlib import Path
-from typing import Literal, Optional, Protocol, TypedDict, Union
+from typing import Any, Callable, Literal, Protocol, TypedDict
 
 from datasets import DownloadConfig, Version, load_dataset, load_dataset_builder
 from simple_parsing import field
+from typing_extensions import Concatenate, TypeVar
 
 from mila_datamodules.cli.dataset_args import DatasetArguments
 from mila_datamodules.cli.shared_cache.setup import (
@@ -23,17 +24,12 @@ from mila_datamodules.cli.shared_cache.setup import (
 )
 from mila_datamodules.clusters.cluster import Cluster
 from mila_datamodules.clusters.utils import get_scratch_dir, get_slurm_tmpdir
+from mila_datamodules.types import P
 from mila_datamodules.utils import cpus_per_node
 
 logger = get_logger(__name__)
 
-
-class PrepareHfDatasetFn(Protocol):
-    """A function that prepares a HuggingFace dataset, and returns the environment variables that
-    should be set in the user job."""
-
-    def __call__(self, *args, **kwargs) -> HfDatasetsEnvVariables:
-        ...
+_LoadDatasetFn = TypeVar("_LoadDatasetFn", bound=Callable)
 
 
 @dataclass
@@ -51,44 +47,157 @@ class PrepareGenericDatasetArgs(DatasetArguments):
     # features: Optional[Features] = None
     # download_config: Optional[DownloadConfig] = None
     # download_mode: Optional[Union[DownloadMode, str]] = None
-    revision: Optional[Union[str, Version]] = None
-    use_auth_token: Optional[Union[bool, str]] = None
+    revision: str | Version | None = None
+    use_auth_token: bool | str | None = None
     # storage_options: Optional[dict] = None
 
 
-def prepare_generic(path: str, name: str, **load_dataset_builder_kwargs) -> HfDatasetsEnvVariables:
-    """Prepare the wikitext dataset."""
+class PrepareHfDatasetFn(Protocol):
+    """A function that prepares a HuggingFace dataset, and returns the environment variables that
+    should be set in the user job."""
+
+    def __call__(
+        self,
+        root: str,
+        name: str | None = None,
+        /,
+        _fn: Callable[Concatenate[str, str | None, P], Any] = load_dataset,
+        *args: P.args,
+        **kwargs: P.kwargs,
+    ) -> HfDatasetsEnvVariables:
+        ...
+
+
+C = TypeVar("C", bound=Callable)
+
+
+class WithEnvVars(PrepareHfDatasetFn):
+    """A decorator that sets the environment variables before calling the function."""
+
+    def __init__(self, env_vars: HfDatasetsEnvVariables, fn: PrepareHfDatasetFn):
+        self.env_vars = env_vars
+        self.fn = fn
+
+    def __call__(
+        self,
+        root: str,
+        name: str | None = None,
+        _fn: Callable[Concatenate[str, str | None, P], Any] = load_dataset,
+        *args: P.args,
+        **kwargs: P.kwargs,
+    ) -> HfDatasetsEnvVariables:
+        with use_variables(self.env_vars):
+            self.fn(root, name, _fn=_fn, *args, **kwargs)
+        return self.env_vars
+
+
+# def prepare_generic_v2(
+#     path: str,
+#     name: str | None = None,
+#     __fn: Callable[Concatenate[str, str | None, P], Any] = load_dataset,
+#     *args: P.args,
+#     **kwargs: P.kwargs,
+# ):
+#     # TODO: Specify a subdirectory so that we only setup the huggingface stuff.
+#     setup_cache(
+#         user_cache_dir=user_cache_dir,
+#         # subdirectory="huggingface",
+#     )
+
+#     dataset_constructor = functools.partial(__fn, path, name, *args, **kwargs)
+#     hf_in_slurm_tmpdir = HfDatasetsEnvVariables(
+#         HF_DATASETS_CACHE=get_slurm_tmpdir() / "cache/huggingface/datasets",
+#     )
+#     hf_in_scratch = HfDatasetsEnvVariables(
+#         HF_DATASETS_CACHE=get_scratch_dir() / "cache/huggingface/datasets",
+#     )
+#     fn = Compose(
+#         # Try to load the dataset from SLURM_TMPDIR/cache.
+#         SkipRestIfThisWorks(WithEnvVars(hf_in_slurm_tmpdir, dataset_constructor)),
+#         lambda root, *args, **kwargs: setup_cache(
+#             user_cache_dir=get_scratch_dir() / "cache", subdirectory="huggingface"
+#         ),
+#         # Setup the dataset in $SCRATCH/cache/huggingface
+#         WithEnvVars(hf_in_scratch, dataset_constructor),
+#         # Make symlinks in $SLURM_TMPDIR for every file in $SCRATCH/cache/huggingface
+#         lambda root, *args, **kwargs: setup_cache(
+#             user_cache_dir=get_slurm_tmpdir() / "cache",
+#             shared_cache_dir=get_scratch_dir() / "cache",
+#             subdirectory="huggingface",
+#             skip_modify_bash_aliases=True,
+#         ),
+#     )
+#     return fn
+
+
+def prepare_hf_dataset(
+    path: str, name: str, **load_dataset_builder_kwargs
+) -> HfDatasetsEnvVariables:
+    """Prepare the a generic HuggingFace dataset."""
     cluster = Cluster.current_or_error()
     scratch = get_scratch_dir()
     slurm_tmpdir = get_slurm_tmpdir()
-    from mila_datamodules.cli.shared_cache.setup_shared_cache import logger as setup_cache_logger
+    from mila_datamodules.cli.shared_cache.setup import (
+        DEFAULT_SHARED_CACHE_DIR,
+    )
+    from mila_datamodules.cli.shared_cache.setup import (
+        logger as setup_cache_logger,
+    )
 
     setup_cache_logger.setLevel(logging.INFO)
     setup_cache_logger.removeHandler(setup_cache_logger.handlers[0])
 
     # Load the dataset under $SCRATCH/cache/huggingface first, since we don't have a shared copy
     # on the cluster.
-    user_cache_dir = scratch / "cache"
-    scratch_hf_datasets_cache = user_cache_dir / "huggingface/datasets"
+    scratch_cache_dir = scratch / "cache"
+    shared_cache_dir = DEFAULT_SHARED_CACHE_DIR
 
-    # TODO: Specify a subdirectory so that we only setup the huggingface stuff.
-    setup_cache(
-        user_cache_dir=user_cache_dir,
-        # subdirectory="huggingface",
+    dataset_subdir = Path("huggingface/datasets") / path
+    if name is not None:
+        dataset_subdir = dataset_subdir / name
+
+    logger.info(
+        f"Making symlinks from {scratch_cache_dir/dataset_subdir} to "
+        f"{shared_cache_dir/dataset_subdir}"
     )
+    setup_cache(
+        user_cache_dir=scratch_cache_dir,
+        shared_cache_dir=shared_cache_dir,
+        subdirectory=str(dataset_subdir),
+    )
+
+    # # TODO: On the second run, this will remove the files in $SLURM_TMPDIR that aren't symlinks
+    # slurm_tmpdir_cache_dir = slurm_tmpdir / "cache"
+    # logger.info(
+    #     f"Making symlinks from {slurm_tmpdir_cache_dir/subdirectory} to "
+    #     f"{scratch_cache_dir/subdirectory}"
+    # )
+    # # NOTE: Can reuse the same exact script to make the symlinks.
+    # # because it thinks are duplicates. We don't want that.
+    # setup_cache(
+    #     user_cache_dir=scratch_cache_dir,
+    #     shared_cache_dir=shared_cache_dir,
+    #     subdirectory=subdirectory,
+    # )
 
     # Number of processes to use for preparing the dataset. Note, since this is expected to be only
     # executed once per node, we can use all the CPUs
     num_proc = cpus_per_node()
 
+    scratch_hf_datasets_cache = scratch_cache_dir / "huggingface/datasets"
     with use_variables(HF_DATASETS_CACHE=scratch_hf_datasets_cache):
-        load_dataset(path, name, num_proc=num_proc, **load_dataset_builder_kwargs)
-        # dataset_builder = load_dataset_builder(path, name, **load_dataset_builder_kwargs)
+        logger.info(f"Downloading and preparing the dataset in {scratch_hf_datasets_cache} ...")
+        # load_dataset(path, name, num_proc=num_proc, **load_dataset_builder_kwargs)
+        dataset_builder = load_dataset_builder(path, name, **load_dataset_builder_kwargs)
         # # TODO: There are tons of arguments that we could probably pass here.
-        # dataset_builder.download_and_prepare(num_proc=num_proc)
+        dataset_builder.download_and_prepare(num_proc=num_proc)
 
     # Copy the dataset from $SCRATCH to $SLURM_TMPDIR
+    # TODO: if a `name` is passed, only copy that sub-subdirectory.
     dataset_dir = scratch_hf_datasets_cache / path
+    if name is not None:
+        dataset_dir = dataset_dir / name
+
     relative_path = dataset_dir.relative_to(scratch)
     logger.info(f"Copying dataset from {dataset_dir} -> {slurm_tmpdir / relative_path}")
     try:
@@ -99,7 +208,7 @@ def prepare_generic(path: str, name: str, **load_dataset_builder_kwargs) -> HfDa
             dirs_exist_ok=True,
         )
     except shutil.Error as err:
-        source, dest, messages = zip(*err.args[0])
+        _, _, messages = zip(*err.args[0])
         for message in messages:
             assert isinstance(message, str)
             if not message.startswith("[Errno 17] File exists"):
@@ -112,23 +221,14 @@ def prepare_generic(path: str, name: str, **load_dataset_builder_kwargs) -> HfDa
             HF_DATASETS_OFFLINE=1,  # Disabling internet just to be sure everything is setup.
         )
     ):
-        download_config = DownloadConfig(
-            local_files_only=True,
-        )
-        dataset_builder = load_dataset_builder(
-            path,
-            name,
-            **dict(**load_dataset_builder_kwargs, download_config=download_config),
-        )
-        dataset_builder.download_and_prepare(
-            download_config=download_config,
-            num_proc=num_proc,
-        )
+        download_config = DownloadConfig(local_files_only=True)
+        load_dataset_builder_kwargs = load_dataset_builder_kwargs.copy()
+        load_dataset_builder_kwargs.setdefault("download_config", download_config)
+        load_dataset_builder_kwargs.setdefault("num_proc", num_proc)
         load_dataset(
             path,
             name,
-            download_config=download_config,
-            num_proc=num_proc,
+            **load_dataset_builder_kwargs,
         )
 
     offline_bit = 0 if cluster.internet_access_on_compute_nodes else 1

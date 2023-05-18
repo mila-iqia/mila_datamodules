@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import os
+from pathlib import Path
 
 default_shared_cache_dir = "/network/datasets/.weights/shared_cache"
 
@@ -89,6 +90,15 @@ def main(argv: list[str] | None = None):
     for model in torchvision_models_to_download:
         print(f"Downloading {model}")
         torch.hub.load("pytorch/vision", model, weights="DEFAULT")
+
+    #
+    total_number_of_files_in_shared_cache = 0
+    for file in Path(shared_cache_dir).rglob("*"):
+        if not file.is_dir():
+            total_number_of_files_in_shared_cache += 1
+    (Path(shared_cache_dir) / ".file_count.txt").write_text(
+        str(total_number_of_files_in_shared_cache)
+    )
 
 
 if __name__ == "__main__":
