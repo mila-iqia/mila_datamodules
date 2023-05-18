@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import contextlib
 import functools
-import logging
 import os
 import warnings
 from logging import getLogger as get_logger
@@ -114,7 +113,7 @@ def _tqdm_rich_pbar(
         **kwargs: _P.kwargs,
     ) -> tqdm_rich[T]:
         # TODO: Disable all the output when a --quiet/-q flag is passed on the command-line.
-        kwargs.setdefault("disable", logger.level == logging.NOTSET)
+        # kwargs.setdefault("disable", logger.level == logging.NOTSET)
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", category=TqdmExperimentalWarning)
             return fn(seq, *args, **kwargs)
