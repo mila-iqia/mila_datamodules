@@ -23,13 +23,28 @@ from logging import getLogger as get_logger
 from pathlib import Path
 from typing import Callable, Iterable, Sequence, TypeVar
 
-import tqdm
-import tqdm.rich
-from simple_parsing import field
-from tqdm.std import TqdmExperimentalWarning
-
 logger = get_logger(__name__)
 logger.setLevel(logging.INFO)
+
+
+# simple-parsing is an optional import that makes the command-line parsing code simpler.
+try:
+    from simple_parsing import field
+except ImportError:
+    from dataclasses import field as _field
+
+    def field(default, *args, action="count", alias="-v", **kwargs):
+        return _field(default=default, *args, **kwargs, metadata=dict(action=action, alias=alias))
+
+
+# Optional imports that make the script output prettier: tqdm, rich
+try:
+    import tqdm
+    import tqdm.rich
+    from tqdm.std import TqdmExperimentalWarning
+except ImportError:
+    tqdm = None
+    TqdmExperimentalWarning = RuntimeWarning
 
 try:
     import rich.logging
@@ -42,13 +57,13 @@ except ImportError:
 SCRATCH = Path(os.environ["SCRATCH"])
 DEFAULT_USER_CACHE_DIR = SCRATCH / "cache"
 DEFAULT_SHARED_CACHE_DIR = Path("/network/weights/shared_cache")
+QUIET: bool = False
 
-
-IGNORE_DIRS = ("__pycache__", ".env")
+IGNORE_DIRS = ("__pycache__", ".env", ".git")
 """Don't create symlinks to files in directories in the shared cache whose name matches any of
 these patterns."""
 
-IGNORE_FILES = ("*.lock",)
+IGNORE_FILES = ("*.lock", ".file_count.txt")
 """Don't create symlinks to files in the shared cache that match any of these patterns."""
 
 
@@ -81,10 +96,17 @@ class Options:
     The default logging level is `INFO`. Use -v to increase the verbosity to `DEBUG`.
     """
 
+    quiet: bool = False
+    """Disable all logging output."""
+
 
 def main(argv: list[str] | None = None):
+    global QUIET
     options: Options = _parse_args(argv)
     logger.setLevel(_log_level(options.verbose))
+    if options.quiet:
+        logger.disabled = True
+        QUIET = True
     setup_cache(
         user_cache_dir=options.user_cache_dir,
         shared_cache_dir=options.shared_cache_dir,
@@ -145,7 +167,8 @@ def setup_cache(
                 f"```\n"
             )
 
-    print("DONE!")
+    if not QUIET:
+        print("DONE!")
 
 
 def set_striping_config_for_dir(dir: Path, num_targets: int = 4, chunksize: str = "512k"):
@@ -168,40 +191,6 @@ def set_striping_config_for_dir(dir: Path, num_targets: int = 4, chunksize: str 
     logger.info("Done setting the striping config.")
 
     logger.debug(output)
-
-
-def _enumerate_all_files_in_dir(
-    directory: Path,
-    write_filecount_txt: bool = True,
-    desc: str = "",
-    skip_file: Predicate[Path] | None = None,
-    skip_dir: Predicate[Path] | None = None,
-) -> Iterable[Path]:
-    filecount = 0
-    filecount_file = directory / ".file_count.txt"
-    expected_filecount: int | None = None
-    if filecount_file.exists():
-        expected_filecount = int(filecount_file.read_text())
-
-    with warnings.catch_warnings():
-        warnings.filterwarnings("ignore", category=TqdmExperimentalWarning)
-        total = expected_filecount
-        pbar_to_use = tqdm.rich.tqdm_rich if total is not None else tqdm.tqdm
-        for file in pbar_to_use(
-            _tree(directory, skip_file=skip_file, skip_dir=skip_dir),
-            desc=desc or f"Iterating through all the files in {directory}",
-            unit="Files",
-            total=total,
-        ):
-            yield file
-            filecount += 1
-
-    if write_filecount_txt and filecount != expected_filecount:
-        try:
-            filecount_file.write_text(str(filecount))
-            logger.debug(f"Updated the filecount file at {filecount_file} to {filecount}")
-        except IOError:
-            pass
 
 
 def delete_broken_symlinks_to_shared_cache(user_cache_dir: Path, shared_cache_dir: Path):
@@ -236,46 +225,84 @@ def create_links(
     skip_dir: Predicate[Path] = _skip_dir,
 ):
     """Create symlinks to the shared cache directory in the user cache directory."""
-    # For every file in the shared cache dir, create a (symbolic?) link to it in the user cache dir
+    # For every file in the shared cache dir, create a symbolic link to it in the user cache dir
 
-    # TODO: Using `shutil.copytree` raises a bunch of errors at the end. I'm not sure why.
-    # Using the more direct method below instead. One disadvantage is that we can't really use
-    # `shutil.ignore_dirs` which would be useful to ignore some directories in the shared cache.
+    # TODO: Using `shutil.copytree` with a custom `copy_fn` raises a bunch of errors at the end.
+    # I'm not sure why. Using this more direct method instead. One disadvantage is that we can't
+    # really use `shutil.ignore_dirs` which would be useful to ignore some directories in the
+    # shared cache.
     logger.info(f"Creating symlinks in {user_cache_dir} to files in {shared_cache_dir}")
+    for path_in_shared_cache in _enumerate_all_files_in_dir(
+        shared_cache_dir,
+        desc=f"Creating symlinks in {user_cache_dir} ...",
+        skip_file=skip_file,
+        skip_dir=skip_dir,
+    ):
+        path_in_user_cache = user_cache_dir / (path_in_shared_cache.relative_to(shared_cache_dir))
+        _create_link(
+            path_in_user_cache=path_in_user_cache,
+            path_in_shared_cache=path_in_shared_cache,
+        )
 
-    # TODO: Create the list of all files (exhaust the generator below) and use multiprocessing to
-    # speed this up.
+
+def _enumerate_all_files_in_dir(
+    directory: Path,
+    write_filecount_txt: bool = True,
+    desc: str = "",
+    skip_file: Predicate[Path] | None = None,
+    skip_dir: Predicate[Path] | None = None,
+) -> Iterable[Path]:
+    file_iterator = _tree(directory, skip_file=skip_file, skip_dir=skip_dir)
+
+    if tqdm is None:
+        yield from file_iterator
+        return
+
+    # Using TQDM to make a nice progress bar.
+
+    filecount: int = 0
+    expected_filecount: int | None = None
+
+    # Save a 'hint' (or true value if possible) of the number of files in the shared cache
+    # directory in a file. This is just used to make a pretty progress bar, and doesn't affect
+    # the functionality (If the actual filecount is higher, the progress bar just shows 101/100,
+    # 102/100, etc.)
+    filecount_file = directory / ".file_count.txt"
+    if filecount_file.exists():
+        expected_filecount = int(filecount_file.read_text())
+
+    # Catch warning that is raised when instantiating a new `tqdm_rich` progress bar.
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore", category=TqdmExperimentalWarning)
-        # TODO: Could put a file in the shared_cache dir that gives the total number of files in
-        # the shared cache.
-        for path_in_shared_cache in _enumerate_all_files_in_dir(
-            shared_cache_dir,
-            desc=f"Creating symlinks in {user_cache_dir} ...",
-            skip_file=skip_file,
-            skip_dir=skip_dir,
-        ):
-            path_in_user_cache = user_cache_dir / (
-                path_in_shared_cache.relative_to(shared_cache_dir)
-            )
-            _create_link(
-                path_in_user_cache=path_in_user_cache,
-                path_in_shared_cache=path_in_shared_cache,
-            )
+        total = expected_filecount
+        pbar_to_use = tqdm.rich.tqdm_rich if total is not None else tqdm.tqdm
+        file_iterator = pbar_to_use(
+            file_iterator,
+            desc=desc or f"Iterating through all the files in {directory}",
+            unit="Files",
+            total=total,
+            disable=QUIET,
+        )
 
-    # for path_in_user_cache, path_in_shared_cache in pbar:
-    #     _create_link(
-    #         path_in_user_cache=path_in_user_cache,
-    #         path_in_shared_cache=path_in_shared_cache,
-    #     )
+    for file in file_iterator:
+        yield file
+        filecount += 1
+
+    if write_filecount_txt and filecount != expected_filecount:
+        try:
+            filecount_file.write_text(str(filecount))
+            logger.debug(f"Updated the filecount file at {filecount_file} to {filecount}")
+        except IOError:
+            pass
 
 
 def _create_link(path_in_user_cache: Path, path_in_shared_cache: Path) -> None:
     """Create a symlink in the user cache directory to the file in the shared cache directory.
 
-    TODO: Need to refactor this, way too complicated for my taste.
     TODO: Could possibly return the saved storage space (in bytes)?
+    TODO: Use the `stat` module directly to reduce the number of system calls and make this faster.
     """
+
     if _is_broken_symlink(path_in_shared_cache):
         logger.warning(f"Ignoring a broken symlink in shared cache at {path_in_shared_cache}!")
         return
@@ -337,7 +364,7 @@ def _create_link(path_in_user_cache: Path, path_in_shared_cache: Path) -> None:
 
     if user_cache_file_target == path_in_shared_cache:
         # Symlink from a previous run, nothing to do.
-        logger.debug(f"Symlink from a previous run at {path_in_user_cache}")
+        # logger.debug(f"Symlink from a previous run at {path_in_user_cache}")
         return
 
     # Note: Shouldn't happen, since we already should have removed broken symlinks in the
@@ -470,9 +497,7 @@ def _parse_args(argv: list[str] | None) -> Options:
 
         parser = ArgumentParser(description=__doc__)
         parser.add_arguments(Options, dest="options")
-        # parser.add_argument("-v", "--verbose", action="count", default=0)
         args = parser.parse_args(argv)
-        # logger.setLevel(max(0, logging.INFO - 10 * args.verbose))
         options: Options = args.options
     except ImportError:
         from argparse import ArgumentParser
@@ -493,16 +518,31 @@ def _parse_args(argv: list[str] | None) -> Options:
                 "by the IDT team on the Mila cluster."
             ),
         )
-        # parser.add_argument("-v", "--verbose", action="count", default=0)
+        parser.add_argument(
+            "--subdirectory",
+            type=str,
+            default="",
+            help="Only create links for files in this subdirectory of the shared cache.",
+        )
+        parser.add_argument(
+            "-v",
+            "--verbose",
+            default=0,
+            action="count",
+            help="Logging verbosity. The default logging level is `INFO`. Use -v to increase the "
+            "verbosity to `DEBUG`.",
+        )
+        parser.add_argument(
+            "-q", "--quiet", default=False, action="store_true", help="Disable logging output."
+        )
 
         args = parser.parse_args(argv)
-
-        user_cache_dir: Path = args.user_cache_dir
-        shared_cache_dir: Path = args.shared_cache_dir
-        # logger.setLevel(max(0, logging.INFO - 10 * args.verbose))
         options = Options(
-            user_cache_dir=user_cache_dir,
-            shared_cache_dir=shared_cache_dir,
+            user_cache_dir=args.user_cache_dir,
+            shared_cache_dir=args.shared_cache_dir,
+            subdirectory=args.subdirectory,
+            verbose=args.verbose,
+            quiet=args.quiet,
         )
     return options
 
@@ -545,6 +585,7 @@ def _update_start_and_end_flags(file: Path, start_flag: str, end_flag: str) -> b
 
 
 def _matches_pattern(path: str | Path, patterns: str | Sequence[str]) -> bool:
+    """Checks if the given path matches any of the given patterns."""
     path = Path(path)
     patterns = [patterns] if isinstance(patterns, str) else list(patterns)
     return any(
@@ -553,10 +594,10 @@ def _matches_pattern(path: str | Path, patterns: str | Sequence[str]) -> bool:
 
 
 @functools.lru_cache(maxsize=None)
-def _files_in_dir_matching_pattern(dir: Path, pattern: str) -> list[Path]:
+def _files_in_dir_matching_pattern(readonly_dir: Path, pattern: str) -> list[Path]:
     # Reduce redundant calls to dir.glob(pattern) (which needs to list out the dir contents)
     # IDEA: Could add a system audit hook to invalidate the cache if we add files in any of `dirs`?
-    return list(dir.glob(pattern))
+    return list(readonly_dir.glob(pattern))
 
 
 def _tree(
