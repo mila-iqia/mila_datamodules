@@ -92,7 +92,7 @@ class TorchVisionPlugin(PreparePlugin):
         )
         # fn = logger.info if verbose > 0 else print
         logger.info(
-            "Here's how you can use this prepared dataset in your job:\n"
+            "Here's how you can use this dataset in your job:\n"
             + "\n"
             + "```python\n"
             + "import os\n"

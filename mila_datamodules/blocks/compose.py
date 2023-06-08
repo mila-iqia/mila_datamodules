@@ -91,7 +91,7 @@ class SkipRestIfThisWorks(PrepareDatasetFn[D, P]):
             if isinstance(function_output, (str, Path)):
                 root = function_output
         except tuple(self.exceptions) as expected_exception:
-            logger.info("Check failed. Continuing with the dataset preparation...")
+            logger.info("Fast path failed, continuing with dataset preparation...")
             logger.debug(f"Exceptions: {expected_exception}")
         else:
             logger.info("Success!")
@@ -99,7 +99,7 @@ class SkipRestIfThisWorks(PrepareDatasetFn[D, P]):
         return str(root)
 
 
-class SkipRestIf(PrepareDatasetFn[D_co, P]):
+class SkipRestIf(PrepareDatasetFn[D, P]):
     """Raises a special Stop exception when the output of the function is truthy.
 
     This is used to skip the rest of the operations in a `Compose` block.

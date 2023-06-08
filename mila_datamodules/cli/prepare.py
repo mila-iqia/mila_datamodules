@@ -61,11 +61,18 @@ def add_prepare_arguments(parser: ArgumentParser):
     # work fine when doing just `mila_datamodules prepare --help`.
     prepare_plugin_entry_points = entry_points(group="mila_datamodules.prepare_plugin")
 
+    # TODO: These logger.debug calls are can't be seen because the logging level hasn't been
+    # configured yet.
     plugins: list[PreparePlugin] = []
     for plugin_entry_point in prepare_plugin_entry_points:
-        plugin_class = plugin_entry_point.load()
-        plugin = plugin_class()
-        plugins.append(plugin)
+        try:
+            plugin_class = plugin_entry_point.load()
+            plugin = plugin_class()
+        except (ImportError, ModuleNotFoundError) as err:
+            logger.debug(f"Unable to load the '{plugin_entry_point.name}' dataset plugin: {err}")
+        else:
+            logger.debug(f"Loaded plugin: {plugin}")
+            plugins.append(plugin)
 
     _previous_parsers = {}
     for plugin in plugins:
@@ -106,7 +113,7 @@ def prepare(args: argparse.Namespace):
 
     logger = logging.getLogger("mila_datamodules")
     logger.addHandler(rich.logging.RichHandler(markup=True, tracebacks_width=100))
-    logger.setLevel(_level(verbose))
+    logger.setLevel(_level(verbose + 1))
     logger.disabled = quiet
 
     hf_logger = logging.getLogger("datasets")

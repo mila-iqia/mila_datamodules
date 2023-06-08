@@ -87,7 +87,7 @@ def reuse_across_nodes(
 
 
 def prepare_vision_dataset(
-    preparation_step: PrepareDatasetFn[D, P],
+    preparation_step: Callable[P, D] | PrepareDatasetFn[D, P],
     prepared_files_or_dirs: list[str],
     extra_files_depending_on_kwargs: dict[str, dict[Any, str | list[str]]] | None = None,
     dataset_fn: Callable[Concatenate[str, P], D] | None = None,
@@ -308,8 +308,8 @@ prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareDatasetFn]] = {
         for cluster, datasets_dir in standardized_torchvision_datasets_dir.items()
     },
     tvd.ImageNet: {
-        # TODO: Write a customized function for ImageNet that uses Olexa's magic tar
-        # commands (preferably in Python form).
+        # NOTE: `prepare_imagenet` is a custom function for ImageNet that uses Olexa's magic tar
+        # commands in Python form:
         # """
         # mkdir -p $SLURM_TMPDIR/imagenet/val
         # cd       $SLURM_TMPDIR/imagenet/val
@@ -320,22 +320,7 @@ prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareDatasetFn]] = {
         #      --to-command='mkdir ${TAR_REALNAME%.tar}; tar -xC ${TAR_REALNAME%.tar}'
         # """
         cluster: prepare_vision_dataset(
-            Compose(
-                MakeSymlinksToDatasetFiles(
-                    {
-                        archive: f"{datasets_dir}/imagenet/{archive}"
-                        for archive in [
-                            "ILSVRC2012_devkit_t12.tar.gz",
-                            "ILSVRC2012_img_train.tar",
-                            "ILSVRC2012_img_val.tar",
-                            "md5sums",
-                        ]
-                    }
-                ),
-                prepare_imagenet,
-                # Call the constructor to verify the checksums and extract the archives in `root`.
-                CallDatasetFn(tvd.ImageNet),
-            ),
+            prepare_imagenet,
             prepared_files_or_dirs=[
                 "ILSVRC2012_devkit_t12.tar.gz",
                 "ILSVRC2012_img_train.tar",
@@ -346,6 +331,7 @@ prepare_torchvision_datasets: dict[type, dict[Cluster, PrepareDatasetFn]] = {
             extra_files_depending_on_kwargs={
                 "split": {"train": "train", "val": "val", None: "train"}
             },
+            dataset_fn=tvd.ImageNet,
         )
         for cluster, datasets_dir in standardized_torchvision_datasets_dir.items()
     },

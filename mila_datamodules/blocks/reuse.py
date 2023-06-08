@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import dataclasses
+import functools
 import inspect
 import os
 from dataclasses import dataclass
@@ -19,13 +20,14 @@ from mila_datamodules.types import Concatenate, D, D_co, P
 from mila_datamodules.utils import dataset_name
 
 logger = get_logger(__name__)
-PREPARED_DATASETS_FILE = "prepared_datasets.yaml"
+PREPARED_DATASETS_FILENAME = "prepared_datasets.yaml"
+PREPARED_DATASETS_FILE = get_slurm_tmpdir() / "prepared_datasets.yaml"
 
 DatasetFn = Callable[P, D_co]
 
 
 @dataclass(frozen=True)
-class PreparedDatasetEntry:
+class PreparedDatasetInfo:
     """Simple schema for the entries in the prepared datasets file.
 
     Each entry represents a dataset that has already been prepared.
@@ -36,15 +38,38 @@ class PreparedDatasetEntry:
 
     dataset_fn: Callable
 
-    dataset_args: list[Any]
-    """The positional arguments that are passed to the dataset function."""
+    dataset_args: tuple[Any, ...]
+    """The positional arguments that are passed to the dataset function.
+    
+    NOTE: This doesn't include the 'root' argument, which is stored in `prepared_at`.
+    """
 
     dataset_kwargs: dict[str, Any]
     """The keyword arguments that are passed to the dataset function (e.g. split="val")."""
 
-    # TODO: Actually make use of this, for example if there is the dataset is already prepared in a
-    # different dir, then reuse it.
     prepared_at: str
+
+    prepared_by: str | None = None
+    """Who actually prepared this dataset."""
+
+    @classmethod
+    def from_signature(
+        cls,
+        dataset_fn: Callable,
+        root: str | Path,
+        dataset_args: tuple | list,
+        dataset_kwargs: dict[str, Any],
+    ):
+        """Creates a PreparedDatasetInfo for the dataset that would be instantiated by calling
+        `dataset_fn` with the given args and kwargs."""
+        bound_args = _get_bound_args(dataset_fn, *dataset_args, **dataset_kwargs)
+        return cls(
+            dataset_fn=dataset_fn,
+            dataset_args=tuple(bound_args.args if bound_args else dataset_args),
+            dataset_kwargs=(bound_args.kwargs if bound_args else dataset_kwargs),
+            prepared_at=str(root),
+            prepared_by=Path(root).owner(),
+        )
 
 
 class SkipIfAlreadyPrepared(Generic[D, P]):
@@ -56,8 +81,21 @@ class SkipIfAlreadyPrepared(Generic[D, P]):
     def __call__(
         self, root: str | Path, /, *dataset_args: P.args, **dataset_kwargs: P.kwargs
     ) -> str:
-        if is_already_prepared(self.dataset_fn, root=root, *dataset_args, **dataset_kwargs):
+        logger.debug(
+            f"Checking {PREPARED_DATASETS_FILE} to see if the {self.dataset_name} dataset has "
+            f"already been prepared at {root}..."
+        )
+        prepared_dataset_info = is_already_prepared_at(
+            self.dataset_fn, root=root, *dataset_args, **dataset_kwargs
+        )
+        if prepared_dataset_info:
+            logger.info(f"Dataset {self.dataset_name} is already prepared in {root}.")
             raise Compose.Stop
+        assert False
+        logger.debug(
+            f"Dataset {self.dataset_name} isn't already prepared in {root} (no match found in "
+            f"{PREPARED_DATASETS_FILE})."
+        )
         return str(root)
 
 
@@ -151,10 +189,13 @@ class MakePreparedDatasetUsableByOthersOnSameNode(Generic[D, P]):
     ) -> str:
         root = Path(root)
         if self.readable_files_or_directories is None:
-            logger.info(f"Listing all the files in the {root} directory...")
+            logger.info(
+                f"Sharing all files in {root} in read-only mode with others on the same node."
+            )
             readable_files_or_directories = list(all_files_in_dir(root))
         else:
             readable_files_or_directories = self.readable_files_or_directories.copy()
+
             if self.extra_files_depending_on_kwargs:
                 readable_files_or_directories.extend(
                     _extra_values_based_on_kwargs(
@@ -165,6 +206,11 @@ class MakePreparedDatasetUsableByOthersOnSameNode(Generic[D, P]):
                         **dataset_kwargs,
                     )
                 )
+            logger.debug(
+                f"Sharing these files and directories in read-only mode with others on this node:"
+                f"\n"
+                f"{readable_files_or_directories}"
+            )
         make_prepared_dataset_usable_by_others_on_same_node(root, readable_files_or_directories)
         return str(root)
 
@@ -177,7 +223,7 @@ def reuse_already_prepared_dataset_on_same_node(
     *dataset_args: P.args,
     **dataset_kwargs: P.kwargs,
 ) -> bool:
-    potential_dirs = cache_dirs_on_same_node_with_dataset_already_prepared(
+    potential_dirs = _cache_dirs_on_same_node_with_dataset_already_prepared(
         root=root,
         dataset_name=dataset_name,
     )
@@ -220,8 +266,9 @@ def reuse_already_prepared_dataset_on_same_node(
         # TODO: If calling the dataset constructor doesn't work for some reason, perhaps we
         # should remove all the hard links we just created?
         return True
-
-    logger.info("Unable to find an already prepared version of this dataset on this node.")
+    logger.info(
+        "Unable to find an already prepared version of this dataset in other $SLURM_TMPDIRs on this node."
+    )
     return False
 
 
@@ -240,7 +287,7 @@ def make_links_to_dataset_files(link_path_to_file_path: dict[Path, Path]):
         file_path.link_to(link_path)
 
 
-def get_other_slurm_tmpdirs(root_dir_in_this_job: Path | None = None) -> list[Path]:
+def _get_other_slurm_tmpdirs(root_dir_in_this_job: Path | None = None) -> list[Path]:
     # TODO: This might vary by cluster. Assumes that SLURM_TMPDIR is in a dir with other
     # SLURM_TMPDIR's
     root_dir_in_this_job = root_dir_in_this_job or get_slurm_tmpdir()
@@ -251,14 +298,14 @@ def get_other_slurm_tmpdirs(root_dir_in_this_job: Path | None = None) -> list[Pa
     )
 
 
-def cache_dirs_on_same_node_with_dataset_already_prepared(
+def _cache_dirs_on_same_node_with_dataset_already_prepared(
     root: Path,
     dataset_name: str,
 ) -> list[Path]:
     root = Path(root)
     # TODO: `cache` is currently only created when using HuggingFace datasets.
     slurm_tmpdir = get_slurm_tmpdir()
-    other_slurm_tmpdirs = get_other_slurm_tmpdirs()
+    other_slurm_tmpdirs = _get_other_slurm_tmpdirs()
 
     if not root.is_relative_to(slurm_tmpdir):
         raise RuntimeError(f"Expected root ({root}) to be under SLURM_TMPDIR ({slurm_tmpdir})!")
@@ -268,15 +315,17 @@ def cache_dirs_on_same_node_with_dataset_already_prepared(
         other_slurm_tmpdir / relative_path_to_root for other_slurm_tmpdir in other_slurm_tmpdirs
     ]
 
-    def _can_be_used(d: Path) -> bool:
+    def _can_be_used(slurm_tmpdir: Path, root_dir: Path) -> bool:
         try:
+            d = root_dir
+            prepared_datasets_file = slurm_tmpdir / PREPARED_DATASETS_FILENAME
             return (
-                d.exists()
+                root_dir.exists()
                 and d.is_dir()
                 and has_permission(d, "x", "others")
-                and (d / PREPARED_DATASETS_FILE).exists()
-                and has_permission(d / PREPARED_DATASETS_FILE, "r", "others")
-                and dataset_name in get_prepared_datasets_from_file(d / PREPARED_DATASETS_FILE)
+                and (prepared_datasets_file).exists()
+                and has_permission(prepared_datasets_file, "r", "others")
+                and dataset_name in get_prepared_datasets_from_file(prepared_datasets_file)
             )
         except IOError:
             # logger.debug(f"Unable to read from {d}.")
@@ -287,8 +336,8 @@ def cache_dirs_on_same_node_with_dataset_already_prepared(
     # Look in those to check if any have a `cache` folder and possibly a file that shows which
     # dataset was prepared.
     usable_dirs: list[Path] = []
-    for other_root_dir in other_root_dirs:
-        if _can_be_used(other_root_dir):
+    for other_slurm_tmpdir, other_root_dir in zip(other_slurm_tmpdirs, other_root_dirs):
+        if _can_be_used(other_slurm_tmpdir, other_root_dir):
             logger.debug(
                 f"Able to read the dataset from {other_root_dir} (owned by "
                 f"{other_root_dir.owner()})!"
@@ -299,13 +348,13 @@ def cache_dirs_on_same_node_with_dataset_already_prepared(
 
 def get_prepared_datasets_from_file(
     prepared_datasets_file: str | Path,
-) -> list[PreparedDatasetEntry]:
+) -> list[PreparedDatasetInfo]:
     prepared_datasets_file = Path(prepared_datasets_file)
     if not prepared_datasets_file.exists():
         return []
     with open(prepared_datasets_file, "r") as f:
         yaml_contents = yaml.full_load(f)
-        return yaml_contents or []
+    return [PreparedDatasetInfo(**entry) for entry in yaml_contents]
 
 
 def add_dataset_to_prepared_datasets_file(
@@ -314,23 +363,15 @@ def add_dataset_to_prepared_datasets_file(
     *dataset_args: P.args,
     **dataset_kwargs: P.kwargs,
 ) -> None:
-    prepared_datasets_file = Path(root) / PREPARED_DATASETS_FILE
+    prepared_datasets_file = PREPARED_DATASETS_FILE
     name = dataset_name(dataset_fn)
-
-    # TODO: Do we want to store where the dataset was prepared?
-    new_entry = PreparedDatasetEntry(
-        # dataset_name=name,
+    new_entry = PreparedDatasetInfo.from_signature(
         dataset_fn=dataset_fn,
-        dataset_args=list(dataset_args),
-        dataset_kwargs=dataset_kwargs.copy(),
-        prepared_at=str(root),
+        root=root,
+        dataset_args=dataset_args,
+        dataset_kwargs=dataset_kwargs,
     )
-
-    if prepared_datasets_file.exists():
-        previous_content = yaml.full_load(prepared_datasets_file.read_text()) or []
-        previous_entries = [PreparedDatasetEntry(**entry) for entry in previous_content]
-    else:
-        previous_entries = []
+    previous_entries = get_prepared_datasets_from_file(prepared_datasets_file)
 
     # TODO: Use a there is already a prepared entry at a different `root`, still use it!
     if new_entry in previous_entries:
@@ -354,22 +395,79 @@ def add_dataset_to_prepared_datasets_file(
         yaml.dump([dataclasses.asdict(entry) for entry in entries], stream=f)
 
 
-def is_already_prepared(
-    dataset_fn: DatasetFn[P, D],
+def find_already_prepared_matching_dataset(
+    dataset_fn: Callable[P, Any],
     root: str | Path,
     *dataset_args: P.args,
-    **dataset_kwagrs: P.kwargs,
-) -> bool:
-    prepared_datasets_file = Path(root) / PREPARED_DATASETS_FILE
-    name = dataset_name(dataset_fn)
-    if prepared_datasets_file.exists() and name in get_prepared_datasets_from_file(
-        prepared_datasets_file
-    ):
-        logger.info(f"Dataset {name} has already been prepared in {root}!")
-        return True
-    logger.info(f"Dataset {name} wasn't found in the prepared datasets file. Continuing.")
+    **dataset_kwargs: P.kwargs,
+) -> list[PreparedDatasetInfo]:
+    """Finds everywhere where this dataset has already been prepared."""
+    # TODO: The prepared datasets file shouldn't be based on `root`, it should be at a fixed path
+    # in $SLURM_TMPDIR.
+    # TODO: Also look in other places on the same node here, not just our prepared datasets file.
+    prepared_datasets_file = PREPARED_DATASETS_FILE
+    prepared_dataset_infos = get_prepared_datasets_from_file(prepared_datasets_file)
+    matching_prepared_datasets: list[PreparedDatasetInfo] = []
+    dataset_info = PreparedDatasetInfo.from_signature(
+        dataset_fn, root, dataset_args, dataset_kwargs
+    )
+    for prepared_dataset in prepared_dataset_infos:
+        # Check if the dataset constructor would get the same arguments as it had previously.
+        # NOTE: This makes it work when the split="train" is passed explicitly vs not passed
+        # and set to "train" since that is the default value for that argument.
+        if dataset_info == prepared_dataset:
+            matching_prepared_datasets.append(prepared_dataset)
+        elif _signatures_match_except_root(prepared_dataset, dataset_info):
+            matching_prepared_datasets.append(prepared_dataset)
 
-    return False
+    return matching_prepared_datasets
+
+
+@functools.lru_cache()
+def _get_bound_args(
+    dataset_fn: Callable[P, Any], *dataset_args: P.args, **dataset_kwargs: P.kwargs
+) -> inspect.BoundArguments | None:
+    try:
+        bound_args = inspect.signature(dataset_fn).bind_partial(*dataset_args, **dataset_kwargs)
+        bound_args.apply_defaults()
+    except TypeError as err:
+        logger.debug(f"Unable to bind arguments to {dataset_fn}: {err}")
+        bound_args = None
+    return bound_args
+
+
+def _signatures_match_except_root(
+    prepared_dataset_info: PreparedDatasetInfo,
+    dataset_info: PreparedDatasetInfo,
+) -> bool:
+    """Returns whether the prepared dataset has the same signature as calling dataset_fn with the
+    given arguments.
+
+    This returns True even if the prepared dataset was prepared at a different location.
+    """
+    potential_entry = dataset_info
+    return (
+        prepared_dataset_info.dataset_fn == potential_entry.dataset_fn
+        and prepared_dataset_info.dataset_args == potential_entry.dataset_args
+        and prepared_dataset_info.dataset_kwargs == potential_entry.dataset_kwargs
+    )
+
+
+def is_already_prepared_at(
+    dataset_fn: Callable[P, Any],
+    root: str | Path,
+    *dataset_args: P.args,
+    **dataset_kwargs: P.kwargs,
+) -> PreparedDatasetInfo | None:
+    already_prepared_datasets = find_already_prepared_matching_dataset(
+        dataset_fn, root, *dataset_args, **dataset_kwargs
+    )
+    new_entry = PreparedDatasetInfo.from_signature(
+        dataset_fn=dataset_fn, root=root, dataset_args=dataset_args, dataset_kwargs=dataset_kwargs
+    )
+    if new_entry in already_prepared_datasets:
+        return new_entry
+    return None
 
 
 def _extra_values_based_on_kwargs(
@@ -416,10 +514,10 @@ def _extra_values_based_on_kwargs(
                 if isinstance(extra_path_or_paths, (str, Path))
                 else list(extra_path_or_paths)
             )
-            logger.info(
-                f"Also sharing {[str(root / p) for p in extra_paths]} because "
-                f"{kwarg}={argument_value} was used."
-            )
+            # logger.debug(
+            #     f"Also sharing {[str(root / p) for p in extra_paths]} because "
+            #     f"{kwarg}={argument_value} was used."
+            # )
             extra_values.extend(p for p in extra_paths)
     return extra_values
 
@@ -447,7 +545,7 @@ def make_prepared_dataset_usable_by_others_on_same_node(
     root = Path(root)
     dataset_files: list[Path] = list(_all_files_under(root, files_or_dirs_in_root))
 
-    assert all(p.exists() for p in dataset_files), [p for p in dataset_files if not p.exists()]
+    # assert all(p.exists() for p in dataset_files), [p for p in dataset_files if not p.exists()]
 
     logger.debug("Checking permissions on dataset files...")
 
