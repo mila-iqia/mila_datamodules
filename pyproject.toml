@@ -8,11 +8,12 @@ readme = "README.md"
 packages = [{include = "mila_datamodules"}]
 
 [tool.poetry.dependencies]
-python = "^3.9"
+python = ">=3.9,<3.12"
 simple-parsing = "^0.1.2"
 filelock = "^3.12.0"
 pydantic = "^1.10.7"
 rich = "^13.3.4"
+tqdm = "^4.65.0"
 
 [tool.poetry.group.dev.dependencies]
 black = "^23.3.0"
@@ -24,6 +25,9 @@ pytest-xdist = "^3.2.1"
 pytest-timeout = "^2.1.0"
 pytest-socket = "^0.6.0"
 pytest-regressions = "^2.4.2"
+torchvision = {version = "^0.15.2", extras = ["torchvision"]}
+triton = {version = "^2.0.0.post1", extras = ["torchvision"]}
+scipy = {version = "^1.10.1", extras = ["torchvision"]}
 
 [tool.poetry.scripts]
 prepare = "mila_datamodules.cli.main:main"
