@@ -81,6 +81,10 @@ def add_prepare_arguments(parser: ArgumentParser):
                 dataset_parser.set_defaults(dataset=dataset_name)
 
 
+def quiet_logging() -> bool:
+    return logging.getLogger("mila_datamodules").disabled
+
+
 def prepare(args: argparse.Namespace):
     """Prepare a dataset."""
     args_dict = vars(args)

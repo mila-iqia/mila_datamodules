@@ -1,5 +1,4 @@
-"""TODO: Write some dataset preparation functions for HuggingFace datasets.
-"""
+"""Preparation functions for HuggingFace datasets."""
 from __future__ import annotations
 
 import contextlib
@@ -19,8 +18,13 @@ from simple_parsing import field
 from typing_extensions import Concatenate, TypeVar
 
 from mila_datamodules.cli.dataset_args import DatasetArguments
+from mila_datamodules.cli.prepare import quiet_logging
 from mila_datamodules.cli.shared_cache.setup import (
+    DEFAULT_SHARED_CACHE_DIR,
     setup_cache,
+)
+from mila_datamodules.cli.shared_cache.setup import (
+    logger as setup_cache_logger,
 )
 from mila_datamodules.clusters.cluster import Cluster
 from mila_datamodules.clusters.utils import get_scratch_dir, get_slurm_tmpdir
@@ -28,8 +32,6 @@ from mila_datamodules.types import P
 from mila_datamodules.utils import cpus_per_node
 
 logger = get_logger(__name__)
-
-_LoadDatasetFn = TypeVar("_LoadDatasetFn", bound=Callable)
 
 
 @dataclass
@@ -137,15 +139,13 @@ def prepare_hf_dataset(
     cluster = Cluster.current_or_error()
     scratch = get_scratch_dir()
     slurm_tmpdir = get_slurm_tmpdir()
-    from mila_datamodules.cli.shared_cache.setup import (
-        DEFAULT_SHARED_CACHE_DIR,
-    )
-    from mila_datamodules.cli.shared_cache.setup import (
-        logger as setup_cache_logger,
-    )
+    # Number of processes to use for preparing the dataset. Note, since this is expected to be only
+    # executed once per node, we can use all the CPUs
+    num_proc = cpus_per_node()
 
     setup_cache_logger.setLevel(logging.INFO)
     setup_cache_logger.removeHandler(setup_cache_logger.handlers[0])
+    setup_cache_logger.disabled = quiet_logging()
 
     # Load the dataset under $SCRATCH/cache/huggingface first, since we don't have a shared copy
     # on the cluster.
@@ -180,20 +180,13 @@ def prepare_hf_dataset(
     #     subdirectory=subdirectory,
     # )
 
-    # Number of processes to use for preparing the dataset. Note, since this is expected to be only
-    # executed once per node, we can use all the CPUs
-    num_proc = cpus_per_node()
-
     scratch_hf_datasets_cache = scratch_cache_dir / "huggingface/datasets"
     with use_variables(HF_DATASETS_CACHE=scratch_hf_datasets_cache):
         logger.info(f"Downloading and preparing the dataset in {scratch_hf_datasets_cache} ...")
-        # load_dataset(path, name, num_proc=num_proc, **load_dataset_builder_kwargs)
         dataset_builder = load_dataset_builder(path, name, **load_dataset_builder_kwargs)
-        # # TODO: There are tons of arguments that we could probably pass here.
         dataset_builder.download_and_prepare(num_proc=num_proc)
 
-    # Copy the dataset from $SCRATCH to $SLURM_TMPDIR
-    # TODO: if a `name` is passed, only copy that sub-subdirectory.
+    # Copy the dataset from $SCRATCH to $SLURM_TMPDIR (overwriting existing files if needed.)
     dataset_dir = scratch_hf_datasets_cache / path
     if name is not None:
         dataset_dir = dataset_dir / name

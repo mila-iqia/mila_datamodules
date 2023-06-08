@@ -63,7 +63,6 @@ def prepare_imagenet(
                 total=1000,  # hard-coded here, since we know there are 1000 folders.
                 desc="Extracting train archive",
                 unit="Directories",
-                disable=False,  # TODO: Make configurable via CLI.
                 position=0,
             ):
                 buffer = train_tarfile.extractfile(member)
