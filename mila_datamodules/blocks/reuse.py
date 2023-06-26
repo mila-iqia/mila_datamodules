@@ -91,7 +91,6 @@ class SkipIfAlreadyPrepared(Generic[D, P]):
         if prepared_dataset_info:
             logger.info(f"Dataset {self.dataset_name} is already prepared in {root}.")
             raise Compose.Stop
-        assert False
         logger.debug(
             f"Dataset {self.dataset_name} isn't already prepared in {root} (no match found in "
             f"{PREPARED_DATASETS_FILE})."

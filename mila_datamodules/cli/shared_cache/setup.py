@@ -1,14 +1,27 @@
 #!/network/weights/shared_cache/.env/bin/python
-"""Sets up a user cache directory for commonly used libraries, while reusing shared cache entries.
+"""Sets up the user cache directory with links to pre-downloaded datasets and model weights.
 
-This command adds symlinks to (some of) the files contained in the *shared* cache directory to this
-user cache directory.
+This command makes it possible to use many of the datasets and model weights from HuggingFace
+without having to download them yourself, by making symlinks to the files which are already
+downloaded in /network/weights/shared_cache.
+This can help free up space in your $HOME and $SCRATCH directories.
 
-Use this to avoid having to download files to the $HOME directory, as well as to remove
-duplicated downloads and free up space in your $HOME and $SCRATCH directories.
+- To see which datasets and model weights are pre-downloaded in the shared cache, take a look at
+  `/network/weights/shared_cache/populate.py`.
+- To request a dataset to be dowloaded please fill in [this form.](https://forms.gle/vDVwD2rZBmYHENgZA)
+- To request model weights to be downloaded, please fill in [this form.](https://forms.gle/HLeBkJBozjC3jG2D9)
+
+NOTES:
+- The user cache directory is set to $SCRATCH/cache by default.
+- The shared cache directory is set to /network/weights/shared_cache by default.
+- If duplicated files are found in the user cache (for example, a previous download of the WikiText
+  dataset from HuggingFace) they are replaced which symlinks to the same files on the shared
+  filesystem.
+- Other files in the user cache directory that do not have a same-name equivalent in the shared
+  cache directory are left as-is.
 
 This command also sets the environment variables via a block in the `$HOME/.bash_aliases` file.
-This makes these libraries look in the specified user cache for these files.
+Libraries such as HuggingFace then look in the specified user cache for these files.
 """
 from __future__ import annotations
 
@@ -23,35 +36,15 @@ from logging import getLogger as get_logger
 from pathlib import Path
 from typing import Callable, Iterable, Sequence, TypeVar
 
+import rich.logging
+import tqdm
+import tqdm.rich
+from simple_parsing import field
+from tqdm.std import TqdmExperimentalWarning
+
 logger = get_logger(__name__)
 logger.setLevel(logging.INFO)
-
-
-# simple-parsing is an optional import that makes the command-line parsing code simpler.
-try:
-    from simple_parsing import field
-except ImportError:
-    from dataclasses import field as _field
-
-    def field(default, *args, action="count", alias="-v", **kwargs):
-        return _field(default=default, *args, **kwargs, metadata=dict(action=action, alias=alias))
-
-
-# Optional imports that make the script output prettier: tqdm, rich
-try:
-    import tqdm
-    import tqdm.rich
-    from tqdm.std import TqdmExperimentalWarning
-except ImportError:
-    tqdm = None
-    TqdmExperimentalWarning = RuntimeWarning
-
-try:
-    import rich.logging
-
-    logger.addHandler(rich.logging.RichHandler(rich_tracebacks=True))
-except ImportError:
-    pass
+logger.addHandler(rich.logging.RichHandler(rich_tracebacks=True))
 
 
 SCRATCH = Path(os.environ["SCRATCH"])
@@ -104,6 +97,11 @@ def main(argv: list[str] | None = None):
     global QUIET
     options: Options = _parse_args(argv)
     logger.setLevel(_log_level(options.verbose))
+    # logging.basicConfig(
+    #     level=_log_level(options.verbose),
+    #     format="%(message)s",
+    #     handlers=[rich.logging.RichHandler(markup=True)],
+    # )
     if options.quiet:
         logger.disabled = True
         QUIET = True
