@@ -8,7 +8,7 @@ This can help free up space in your $HOME and $SCRATCH directories.
 
 - To see which datasets and model weights are pre-downloaded in the shared cache, take a look at
   `/network/weights/shared_cache/populate.py`.
-- To request a dataset to be dowloaded please fill in [this form.](https://forms.gle/vDVwD2rZBmYHENgZA)
+- To request a dataset to be downloaded please fill in [this form.](https://forms.gle/vDVwD2rZBmYHENgZA)
 - To request model weights to be downloaded, please fill in [this form.](https://forms.gle/HLeBkJBozjC3jG2D9)
 
 NOTES:
@@ -26,7 +26,6 @@ Libraries such as HuggingFace then look in the specified user cache for these fi
 from __future__ import annotations
 
 import functools
-import glob
 import logging
 import os
 import shlex
@@ -108,11 +107,22 @@ def main(argv: list[str] | None = None):
     if options.quiet:
         logger.disabled = True
         QUIET = True
+
+    compare_before_and_after = False
+    if options.user_cache_dir.exists() and not QUIET:
+        compare_before_and_after = True
+        print("Disk usage before:")
+        subprocess.run(["du", "-h", "-d", "2", str(options.user_cache_dir)])
+
     setup_cache(
         user_cache_dir=options.user_cache_dir,
         shared_cache_dir=options.shared_cache_dir,
         subdirectory=options.subdirectory,
     )
+
+    if compare_before_and_after:
+        print("Disk usage after:")
+        subprocess.run(["du", "-h", "-d", "2", str(options.user_cache_dir)])
 
 
 def setup_cache(
@@ -391,7 +401,7 @@ def _create_link(
     # previous step.
     if not user_cache_file_target.exists():
         # broken symlink (perhaps from a previous run?)
-        logger.warning(f"Replacing a broken symlink: {path_in_user_cache}")
+        logger.debug(f"Replacing a broken symlink: {path_in_user_cache}")
         path_in_user_cache.unlink()
         path_in_user_cache.symlink_to(path_in_shared_cache)
         return
