@@ -26,9 +26,11 @@ Libraries such as HuggingFace then look in the specified user cache for these fi
 from __future__ import annotations
 
 import functools
+import glob
 import logging
 import os
 import shlex
+import shutil
 import subprocess
 import warnings
 from dataclasses import dataclass
@@ -59,6 +61,7 @@ these patterns."""
 IGNORE_FILES = ("*.lock", ".file_count.txt")
 """Don't create symlinks to files in the shared cache that match any of these patterns."""
 
+COPY_FILES = "*.py"  # copy these files instead of creating symlinks.
 
 T = TypeVar("T")
 Predicate = Callable[[T], bool]
@@ -294,8 +297,16 @@ def _enumerate_all_files_in_dir(
             pass
 
 
-def _create_link(path_in_user_cache: Path, path_in_shared_cache: Path) -> None:
+def _create_link(
+    path_in_user_cache: Path,
+    path_in_shared_cache: Path,
+    copy_files_patterns: str | Sequence[str] = COPY_FILES,
+) -> None:
     """Create a symlink in the user cache directory to the file in the shared cache directory.
+
+    NOTE: The relative path from user cache to the file is usually the same as the path from the
+    share cache to the file, but perhaps it's best not to rely on that here so we can use this for
+    other things later?
 
     TODO: Could possibly return the saved storage space (in bytes)?
     TODO: Use the `stat` module directly to reduce the number of system calls and make this faster.
@@ -343,12 +354,23 @@ def _create_link(path_in_user_cache: Path, path_in_shared_cache: Path) -> None:
         return
 
     if not path_in_user_cache.exists():
-        logger.debug(f"Creating a new symlink at {path_in_user_cache}")
-        # NOTE: Remove the file, because it might be a broken symlink.
-        path_in_user_cache.symlink_to(path_in_shared_cache)
+        # If the file matches the `copy_files_patterns` pattern, then we copy it instead of
+        # creating a symlink;
+        if _matches_pattern(path_in_shared_cache, copy_files_patterns):
+            logger.debug(
+                f"Copying file from share cache to {path_in_user_cache} because it matches one of "
+                f"the patterns in {copy_files_patterns!r}"
+            )
+            shutil.copyfile(path_in_shared_cache, path_in_user_cache)
+        else:
+            logger.debug(f"Creating a new symlink at {path_in_user_cache}")
+            path_in_user_cache.symlink_to(path_in_shared_cache)
         return
 
-    if not path_in_user_cache.is_symlink():
+    if (
+        not _matches_pattern(path_in_shared_cache, copy_files_patterns)
+        and not path_in_user_cache.is_symlink()
+    ):
         logger.info(
             f"Replacing duplicate downloaded file {path_in_user_cache} with a symlink to the "
             f"same file in the shared cache."
